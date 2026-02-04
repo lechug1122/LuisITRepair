@@ -1,0 +1,32 @@
+.scan-page{
+  min-height: 100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding: 16px;
+  background:#f3f4f6;
+}
+
+.scan-box{
+  width: min(520px, 95vw);
+  background:#fff;
+  border-radius: 16px;
+  border: 1px solid rgba(0,0,0,.08);
+  padding: 16px;
+}
+
+.scan-reader{
+  margin-top: 12px;
+  border-radius: 12px;
+  overflow:hidden;
+}
+
+.scan-box button{
+  margin-top: 12px;
+  border:0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background:#111;
+  color:#fff;
+  cursor:pointer;
+}

@@ -1,0 +1,90 @@
+mutation CreateDemoData @transaction @auth(level: PUBLIC, insecureReason: "This operation is to seed the database with demo data.") {
+  customer_insertMany(data: [
+    {
+      firstName: "John",
+      lastName: "Doe",
+      email: "john.doe@example.com",
+      phone: "555-123-4567",
+      address: "123 Main St"
+      createdAt_expr: "request.time"
+    },
+    {
+      firstName: "Jane",
+      lastName: "Smith",
+      email: "jane.smith@example.com",
+      phone: "555-987-6543",
+      address: "456 Elm St"
+      createdAt_expr: "request.time"
+    }
+  ])
+  device_insertMany(data: [
+    {
+      customerId: "550e8400-e29b-41d4-a716-446655440000", # Assuming John Doe's ID
+      manufacturer: "Apple",
+      model: "iPhone 13",
+      serialNumber: "C39GH7DHJ4W",
+      type: "Phone"
+      createdAt_expr: "request.time"
+    },
+    {
+      customerId: "550e8400-e29b-41d4-a716-446655440001", # Assuming Jane Smith's ID
+      manufacturer: "Samsung",
+      model: "Galaxy S21",
+      serialNumber: "R28KF9GJS7B",
+      type: "Phone"
+      createdAt_expr: "request.time"
+    }
+  ])
+  repairTicket_insertMany(data: [
+    {
+      customerId: "550e8400-e29b-41d4-a716-446655440000", # John Doe
+      deviceId: "650e8400-e29b-41d4-a716-446655440002", # Apple iPhone 13
+      issueDescription: "Cracked screen",
+      status: "Open",
+      createdAt_expr: "request.time",
+      updatedAt_expr: "request.time"
+    },
+   {
+      customerId: "550e8400-e29b-41d4-a716-446655440001", # Jane Smith
+      deviceId: "650e8400-e29b-41d4-a716-446655440003", # Samsung Galaxy S21
+      issueDescription: "Battery drains quickly",
+      status: "In progress",
+      createdAt_expr: "request.time",
+      updatedAt_expr: "request.time"
+    }
+  ])
+  part_insertMany(data: [
+    {
+      repairTicketId: "750e8400-e29b-41d4-a716-446655440004", # Cracked screen
+      name: "Screen Replacement",
+      quantity: 1,
+      unitCost: 79.99,
+      createdAt_expr: "request.time"
+    },
+   {
+      repairTicketId: "750e8400-e29b-41d4-a716-446655440005", # Battery Drain
+      name: "New Battery",
+      quantity: 1,
+      unitCost: 49.99,
+      createdAt_expr: "request.time"
+    }
+  ])
+   service_insertMany(data: [
+    {
+      repairTicketId: "750e8400-e29b-41d4-a716-446655440004", # Cracked screen
+      name: "Screen Replacement Service",
+      description: "Replaced cracked screen with a new one.",
+      quantity: 1,
+      price: 99.99,
+      createdAt_expr: "request.time"
+    },
+    {
+      repairTicketId: "750e8400-e29b-41d4-a716-446655440005", # Battery Drain
+      name: "Battery Replacement Service",
+      description: "Replaced old battery with a new one.",
+      quantity: 1,
+      price: 69.99,
+      createdAt_expr: "request.time"
+    }
+  ])
+}

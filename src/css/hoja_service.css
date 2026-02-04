@@ -1,0 +1,113 @@
+/* ✅ NO uses flex en body, eso centra y encajona todo */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #3f87a6, #ebf8e1);
+  min-height: 100vh;
+  margin: 0;
+}
+
+/* ✅ Espacio general bajo el navbar fixed-top */
+.hoja-page {
+  padding: 24px;
+}
+
+.container {
+  background: #fff;
+  padding: 30px;
+  border-radius: 15px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+  width: 90%;
+  max-width: 700px;
+}
+h1 {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #2c3e50;
+}
+form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px; /* antes 15px */ /* antes 15px */
+}
+form > div,
+form fieldset {
+  margin-bottom: 28px; /* antes 18px */
+}
+.full {
+  grid-column: span 2;
+}
+label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: #34495e;
+}
+input, textarea, select {
+  margin-bottom: 18px; /* antes 10px */
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 14px;
+}
+textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+button {
+  grid-column: span 2;
+  background: #3f87a6;
+  color: white;
+  font-size: 16px;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+}
+button:hover {
+  background: #326b84;
+}
+.hidden {
+  display: none !important;
+}
+.costo-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 28px;
+  justify-content: flex-start;
+}
+.costo-row label {
+  margin-bottom: 0;
+  font-weight: bold;
+  color: #34495e;
+  white-space: nowrap;
+}
+fieldset > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px 40px; /* 32px entre filas, 40px entre columnas */
+  margin-bottom: 0;
+}
+/* ===== Fieldset Laptop / PC ===== */
+.fieldset-equipo {
+  border: 2px solid #3f87a6;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.fieldset-equipo legend {
+  width: auto;
+  padding: 0 12px;
+  font-weight: 600;
+  color: #3f87a6;
+  font-size: 1rem;
+}
+/* 🔒 Arregla desbordes de inputs */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+.card-body {
+  overflow-x: hidden;
+}

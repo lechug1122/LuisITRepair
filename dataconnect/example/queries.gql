@@ -1,0 +1,25 @@
+mutation CreateCustomer($firstName: String!, $lastName: String!, $email: String!, $address: String, $phone: String, $createdAt: Timestamp!) @auth(level: USER) {
+  customer_insert(data: {firstName: $firstName, lastName: $lastName, email: $email, address: $address, phone: $phone, createdAt: $createdAt})
+}
+
+query GetRepairTicketsByCustomer($customerId: UUID!) @auth(level: USER) {
+  repairTickets(where: {customerId: {eq: $customerId}}) {
+    id
+    issueDescription
+    status
+  }
+}
+
+mutation UpdateRepairTicketStatus($id: UUID!, $status: String!) @auth(level: USER) {
+  repairTicket_update(key: {id: $id}, data: {status: $status, updatedAt_expr: "request.time"})
+}
+
+query ListAllDevices @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public") {
+  devices {
+    id
+    manufacturer
+    model
+    type
+    serialNumber
+  }
+}

@@ -1,0 +1,47 @@
+type Customer @table {
+  firstName: String!
+  lastName: String!
+  createdAt: Timestamp!
+  email: String
+  phone: String
+  address: String
+}
+
+type Device @table {
+  type: String!
+  manufacturer: String!
+  model: String!
+  serialNumber: String!
+  createdAt: Timestamp!
+  customer: Customer
+}
+
+type RepairTicket @table {
+  status: String!
+  issueDescription: String!
+  createdAt: Timestamp!
+  updatedAt: Timestamp!
+  resolutionDetails: String
+  estimatedCost: Float
+  customer: Customer
+  device: Device
+}
+
+type Service @table {
+  name: String!
+  description: String!
+  quantity: Int!
+  price: Float!
+  createdAt: Timestamp!
+  repairTicket: RepairTicket
+}
+
+type Part @table {
+  name: String!
+  quantity: Int!
+  unitCost: Float!
+  createdAt: Timestamp!
+  supplier: String
+  partNumber: String
+  repairTicket: RepairTicket
+}

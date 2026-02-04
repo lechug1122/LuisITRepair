@@ -1,0 +1,151 @@
+.tabla-wrapper {
+  margin-top: 14px;
+}
+
+/* 🔲 RECTÁNGULO BLANCO */
+.tabla-box {
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.08);
+  border: 1px solid rgba(0,0,0,.08);
+  overflow-x: auto;
+}
+
+/* TABLA */
+.tabla-servicios {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.tabla-servicios th {
+  background: #f5f7fa;
+  padding: 10px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.tabla-servicios td {
+  padding: 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.tabla-servicios tr:last-child td {
+  border-bottom: none;
+}
+.servicios-page{
+  padding: 24px;
+}
+
+.servicios-box{
+  background: #fff;
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.06);
+  border: 1px solid rgba(0,0,0,.08);
+}
+
+/* ✅ fila superior */
+.servicios-title-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+/* ✅ título visible */
+.servicios-title{
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  color: #111;
+}
+.tipo-col{
+  text-transform: capitalize;
+  opacity: .9;
+}
+
+/* ✅ Badge de estado (color) */
+.estado-badge{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+  border: 1px solid transparent;
+}
+
+/* Pendiente */
+.estado-pendiente{
+  background: #fff7ed;
+  color: #9a3412;
+  border-color: #fed7aa;
+}
+
+/* Finalizado (o completado) */
+.estado-finalizado,
+.estado-completado{
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+/* Cancelado */
+.estado-cancelado{
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+/* En proceso (por si luego lo agregas) */
+.estado-enproceso,
+.estado-proceso{
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+/* Contenedor de tabs */
+.servicios-tabs{
+  display: flex;
+  gap: 12px;                /* ✅ separación entre botones */
+  margin: 16px 0 20px;
+}
+
+/* Botón base */
+.tab-btn{
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all .25s ease;
+}
+
+/* Hover */
+.tab-btn:hover{
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+/* ✅ Activo */
+.tab-btn.active{
+  background: #2563eb;      /* azul */
+  color: #fff;
+  border-color: #2563eb;
+  box-shadow: 0 6px 16px rgba(37,99,235,.25);
+}
+
+/* Evita que se aplasten en móvil */
+@media (max-width: 600px){
+  .servicios-tabs{
+    flex-wrap: wrap;
+  }
+}

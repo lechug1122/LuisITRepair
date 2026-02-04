@@ -1,0 +1,491 @@
+.ticket-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: #f3f4f6;
+}
+
+.ticket-paper {
+  width: 58mm; /* vista normal */
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 14px;
+}
+
+.ticket-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+.ticket-logo img {
+  max-height: 60px;
+  width: auto;
+}
+
+.ticket-header {
+  text-align: center;
+  margin-bottom: 10px;
+}
+.ticket-title {
+  font-size: 18px;
+  font-weight: 800;
+}
+.ticket-sub {
+  font-size: 12px;
+  opacity: 0.85;
+  margin-top: 2px;
+}
+
+.ticket-section {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.ticket-section-title {
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.ticket-wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ticket-divider {
+  margin: 12px 0;
+  border-top: 1px dashed rgba(0, 0, 0, 0.25);
+}
+
+.ticket-status {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+.ticket-status-pendiente {
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fed7aa;
+}
+.ticket-status-finalizado {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.ticket-qr {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.ticket-qr-text {
+  font-size: 12px;
+}
+.ticket-link {
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+.ticket-footer {
+  text-align: center;
+  margin-top: 12px;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.ticket-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+}
+.ticket-actions button {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+
+@media print {
+  /* ❌ Oculta navbar y cualquier cosa que no sea ticket */
+  .no-print,
+  .navbar,
+  header,
+  nav {
+    display: none !important;
+  }
+  /* ✅ Fuerza papel térmico 58mm */
+  @page {
+    size: 58mm auto;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 58mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    overflow: hidden;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .ticket-page {
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    display: block !important;
+  }
+
+  .ticket-paper {
+    width: 58mm !important;
+    max-width: 58mm !important;
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 2mm !important; /* pequeño margen interno */
+    box-shadow: none !important;
+  }
+
+  /* ✅ QR y textos no se desbordan */
+  .ticket-wrap {
+    word-break: break-word;
+  }
+
+  .ticket-logo img {
+    max-height: 35mm; /* ajusta si quieres */
+  }
+}
+
+.ticket-admin-layout{
+  display: grid;
+  grid-template-columns: 420px 1fr;
+  gap: 24px;
+  padding: 24px;
+  align-items: start;
+}
+
+.ticket-left{ display:flex; flex-direction:column; gap: 12px; }
+.ticket-right{ padding: 12px; }
+
+@media (max-width: 980px){
+  .ticket-admin-layout{ grid-template-columns: 1fr; }
+}
+
+.ticket-status-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.ticket-dot{
+  width:12px;
+  height:12px;
+  border-radius:999px;
+}
+
+.ticket-status-pill{
+  display:inline-block;
+  border:1px solid;
+  padding:6px 10px;
+  border-radius:999px;
+  font-weight:700;
+  font-size:12px;
+}
+/* ✅ Rectángulo del panel derecho */
+.admin-card{
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 22px 22px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.08);
+  border: 1px solid rgba(0,0,0,.06);
+  max-width: 980px;
+}
+
+/* títulos */
+.admin-title{
+  margin: 0 0 14px 0;
+  font-size: 44px;
+  font-weight: 800;
+}
+
+.admin-subtitle{
+  margin: 0 0 10px 0;
+  font-size: 32px;
+  font-weight: 800;
+}
+
+.admin-section{
+  margin-bottom: 18px;
+}
+
+.admin-label{
+  display: block;
+  margin: 10px 0 6px;
+  font-weight: 700;
+}
+
+.admin-select{
+  width: 100%;
+  height: 52px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,.18);
+  padding: 0 14px;
+  outline: none;
+}
+
+.admin-save{
+  margin-top: 14px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* textarea */
+.admin-notes{
+  width: 100%;
+  min-height: 140px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.18);
+  padding: 14px;
+  resize: vertical;
+  outline: none;
+}
+
+/* ✅ Botones acomodados */
+.admin-actions{
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;      /* si se reduce pantalla, bajan */
+  justify-content: flex-start;
+  margin-top: 18px;
+}
+
+.admin-btn{
+  padding: 12px 18px;
+  border-radius: 14px;
+  border: none;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* variantes */
+.admin-btn-secondary{
+  opacity: .9;
+}
+
+.admin-btn-danger{
+  background: #ef4444;
+  color: #fff;
+}
+
+/* ✅ si quieres que los 3 queden “del mismo ancho” */
+@media (min-width: 900px){
+  .admin-actions .admin-btn{
+    flex: 1;            /* los 3 se reparten el ancho */
+    min-width: 220px;
+    text-align: center;
+  }
+}
+.progress-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin: 24px 0;
+}
+
+.progress-step {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.progress-line {
+  width: 60px;
+  height: 4px;
+  margin-right: 12px;
+  border-radius: 4px;
+}
+
+.progress-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: white;
+}
+
+.progress-text {
+  display: flex;
+  flex-direction: column;
+  margin-left: 12px;
+}
+
+.step-title {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.step-status {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  margin-top: 4px;
+  width: fit-content;
+}
+.wizard-progress{
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+  position: relative;
+  margin: 14px 0 18px;
+}
+
+.wizard-progress .step{
+  display: table-cell;
+  text-align: center;
+  vertical-align: top;
+  position: relative;
+  font-size: 12px;
+  color: #111;            /* <-- antes era blanco */
+  font-weight: 700;
+  padding-top: 2px;
+}
+
+.wizard-progress .step:not(:last-child)::before{
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 30px;
+  height: 6px;
+  width: 100%;
+  background: #d0d0d0;    /* <-- línea gris visible en fondo blanco */
+  border-radius: 999px;
+}
+
+.wizard-progress .node{
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 16px;
+  width: 16px;
+  border-radius: 50%;
+  border: 4px solid #d0d0d0;
+  background: #fff;
+}
+
+/* COMPLETADO */
+.wizard-progress .step.complete::before{
+  background: #0077cc;
+}
+.wizard-progress .step.complete .node{
+  border-color: #0077cc;
+  background: #0077cc;
+}
+
+/* EN PROCESO */
+.wizard-progress .step.in-progress::before{
+  background: linear-gradient(to right, #0077cc 0%, #d0d0d0 100%);
+}
+.wizard-progress .step.in-progress .node{
+  border-color: #0077cc;
+  background: #fff;
+}
+.wizard-progress2{
+  position: relative;
+  width: 100%;
+  margin: 12px 0 18px;
+  padding: 10px 0 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-items: start;
+  --main: #0077cc;
+  --base: #d0d0d0;
+  --text: #111;
+}
+
+.wizard-progress2.wizard--danger{
+  --main: #d62828;
+}
+.wizard-progress2.wizard--muted{
+  --main: #6b7280;
+}
+
+.wizard-track{
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--base);
+}
+
+.wizard-fill{
+  position: absolute;
+  left: 0;
+  top: 18px;
+  height: 6px;
+  border-radius: 999px;
+  width: var(--pct);
+  background: var(--main);
+}
+
+.wizard-step{
+  position: relative;
+  text-align: center;
+}
+
+.wizard-node{
+  position: relative;
+  margin: 0 auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 4px solid var(--base);
+  z-index: 2;
+}
+
+.wizard-step.complete .wizard-node{
+  border-color: var(--main);
+  background: var(--main);
+}
+
+.wizard-step.in-progress .wizard-node{
+  border-color: var(--main);
+  background: #fff;
+}
+
+.wizard-label{
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+}
+.wizard-block { margin: 10px 0 16px; }
+
+.wizard-debug{
+  display:flex;
+  gap: 14px;
+  font-size: 12px;
+  color: #111;
+  opacity: .8;
+  margin-bottom: 6px;
+}
+
+.wizard-fill{
+  transition: width .25s ease;
+}

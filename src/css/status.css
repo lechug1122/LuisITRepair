@@ -1,0 +1,312 @@
+/* =========================
+   CONTENEDOR GENERAL
+========================= */
+
+
+.page-container {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  background: linear-gradient(135deg, #3f87a6, #ebf8e1);
+  padding: 20px 16px;
+}
+
+/* =========================
+   RECTÁNGULO BASE
+========================= */
+.status-box {
+  background: #ffffff;
+  width: 100%;
+  max-width: 360px;
+  padding: 30px;
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  text-align: center;
+}
+
+/* =========================
+   RECTÁNGULO DETALLE
+========================= */
+.status-box--wide {
+  max-width: 980px;
+  text-align: left;
+  padding: 22px;
+}
+
+/* =========================
+   TÍTULOS
+========================= */
+.status-box h2 {
+  margin: 0 0 8px;
+  color: #1f2937;
+  font-size: 22px;
+}
+
+.status-box--wide h2 {
+  font-size: 24px;
+}
+
+.status-box p {
+  font-size: 14px;
+  opacity: 0.8;
+  margin: 6px 0;
+}
+
+/* Última actualización */
+.status-lastupdate {
+  font-size: 13px;
+  opacity: 0.85;
+  margin-top: 4px;
+}
+
+/* =========================
+   BOTONES (GENÉRICO)
+========================= */
+.status-box button {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+  background: #3f87a6;
+  color: #ffffff;
+  transition: background 0.2s ease, transform 0.1s ease;
+}
+
+.status-box button:hover {
+  background: #346f88;
+  transform: translateY(-1px);
+}
+
+.status-box button:active {
+  transform: translateY(0);
+}
+
+/* =========================
+   SECCIONES INTERNAS
+========================= */
+.status-section {
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 14px;
+  padding: 14px;
+  background: #ffffff;
+  margin-top: 14px;
+}
+
+.status-section h3 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+/* =========================
+   KPIs
+========================= */
+.status-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.status-kpi {
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 12px;
+  padding: 10px;
+  background: #f9fafb;
+}
+
+.status-kpi .k {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.status-kpi .v {
+  font-size: 14px;
+  font-weight: 900;
+  margin-top: 4px;
+}
+
+/* =========================
+   OBSERVACIONES / TEXTAREA (READ ONLY)
+========================= */
+.statusd-textarea {
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 12px;
+  padding: 12px;
+  background: #f9fafb;
+  font-size: 14px;
+  line-height: 1.4;
+}
+/* =========================
+   BOTONES SEPARADOS
+========================= */
+.status-actions {
+  display: flex;
+  gap: 12px;              /* 👈 separación real */
+  margin-top: 6px;
+}
+
+.status-actions .status-button {
+  flex: 1;                /* mismo tamaño */
+  margin-bottom: 0;       /* quita el margen viejo */
+}
+
+/* Botón secundario */
+.status-button-secondary {
+  background-color: #4b8fa9;
+}
+
+.status-button-secondary:hover {
+  background-color: #3e7b92;
+}
+
+/* Responsive: en móvil se apilan */
+@media (max-width: 420px) {
+  .status-actions {
+    flex-direction: column;
+  }
+}
+
+
+/* Texto muted */
+.statusd-muted {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+/* =========================
+   TABLA BOLETA
+========================= */
+.statusd-tablewrap {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+.statusd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.statusd-table th {
+  background: #2563eb;
+  color: #ffffff;
+  padding: 10px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.statusd-table td {
+  padding: 8px;
+  border-bottom: 1px solid rgba(0,0,0,.08);
+}
+
+.statusd-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* =========================
+   FOOTER
+========================= */
+.statusd-foot {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+/* =========================
+   WIZARD PROGRESS
+========================= */
+.wizard-progress2 {
+  position: relative;
+  width: 100%;
+  margin: 14px 0 6px;
+  padding-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+
+  --main: #2563eb;
+  --base: #d1d5db;
+  --pct: 0%;
+}
+
+.wizard-progress2.wizard--danger { --main: #ef4444; }
+.wizard-progress2.wizard--muted { --main: #6b7280; }
+.wizard-progress2.wizard--normal { --main: #2563eb; }
+
+.wizard-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18px;
+  height: 6px;
+  background: var(--base);
+  border-radius: 999px;
+}
+
+.wizard-fill {
+  position: absolute;
+  left: 0;
+  top: 18px;
+  height: 6px;
+  width: var(--pct);
+  background: var(--main);
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.wizard-step {
+  text-align: center;
+  position: relative;
+}
+
+.wizard-node {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin: 0 auto;
+  background: #ffffff;
+  border: 4px solid var(--base);
+  z-index: 2;
+}
+
+.wizard-step.complete .wizard-node {
+  background: var(--main);
+  border-color: var(--main);
+}
+
+.wizard-step.in-progress .wizard-node {
+  border-color: var(--main);
+}
+
+.wizard-label {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+@media (max-width: 900px) {
+  .status-box--wide {
+    max-width: 100%;
+    padding: 18px;
+  }
+
+  .status-kpis {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .status-box {
+    padding: 22px;
+  }
+
+  .status-box h2 {
+    font-size: 20px;
+  }
+}
