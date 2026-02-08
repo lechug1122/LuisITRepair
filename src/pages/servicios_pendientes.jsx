@@ -6,6 +6,19 @@ import {
 import { useNavigate } from "react-router-dom";
 import "../css/servicios.css";
 
+/* ✅ Normaliza status para usarlo como className CSS */
+function normalizarClaseEstado(raw) {
+  if (!raw) return "pendiente";
+  return raw
+    .toString()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, "")
+    .trim()
+    .replace(/\s+/g, "_");
+}
+
 export default function Servicios() {
   const [tab, setTab] = useState("pendientes");
   const [items, setItems] = useState([]);
@@ -23,7 +36,7 @@ export default function Servicios() {
             ? await listarServiciosPendientes()
             : await listarServiciosHistorial();
 
-        if (alive) setItems(data);
+        if (alive) setItems(Array.isArray(data) ? data : []);
       } finally {
         if (alive) setLoading(false);
       }
@@ -47,14 +60,14 @@ export default function Servicios() {
             <button
               className={tab === "pendientes" ? "tab-bn active" : "tab-bn"}
               onClick={() => setTab("pendientes")}
-              
+              type="button"
             >
               Pendientes
             </button>
             <button
               className={tab === "historial" ? "tab-bn active" : "tab-bn"}
               onClick={() => setTab("historial")}
-              
+              type="button"
             >
               Historial
             </button>
@@ -68,9 +81,10 @@ export default function Servicios() {
         )}
 
         {!loading && items.length > 0 && (
-          <div className="tabla-wrapper">
-            <div className="tabla-box">
-              {
+          <>
+            {/* ✅ DESKTOP/TABLET: TABLA */}
+            <div className="tabla-wrapper only-desktop">
+              <div className="tabla-box">
                 <table className="tabla-servicios">
                   <thead>
                     <tr>
@@ -84,45 +98,108 @@ export default function Servicios() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((s) => (
-                      <tr key={s.id}>
-                        <td>
-                          <b>{s.folio}</b>
-                        </td>
-                        <td>{s.trabajo || "—"}</td>
-                        <td>{s.nombre || "—"}</td>
+                    {items.map((s) => {
+                      const clsEstado = normalizarClaseEstado(s.status);
 
-                        <td className="tipo-col">
-                          {" "}
-                          {/* ✅ NUEVO */}
-                          {s.tipoDispositivo || "—"}
-                        </td>
-
-                        <td>{formatFecha(s.createdAt)}</td>
-
-                        <td>
-                          <span
-                            className={`estado-badge estado-${(s.status || "pendiente").toLowerCase()}`}
-                          >
-                            {s.status || "pendiente"}
-                          </span>
-                        </td>
-
-                        <td>
-                          <button
-                            className="btn-ver"
-                           onClick={() => navigate(`/servicios/${s.folio}`)}
-                          >
-                            Ver
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                      return (
+                        <tr key={s.id}>
+                          <td>
+                            <b>{s.folio}</b>
+                          </td>
+                          <td className="desc-col">{s.trabajo || "—"}</td>
+                          <td>{s.nombre || "—"}</td>
+                          <td className="tipo-col">{s.tipoDispositivo || "—"}</td>
+                          <td>{formatFecha(s.createdAt)}</td>
+                          <td>
+                            <span className={`estado-badge estado-${clsEstado}`}>
+                              {s.status || "Pendiente"}
+                            </span>
+                          </td>
+                          <td>
+                            <button
+                              className="btn-ver"
+                              onClick={() => navigate(`/servicios/${s.folio}`)}
+                              type="button"
+                            >
+                              Ver
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-              }
+              </div>
             </div>
-          </div>
+
+            {/* ✅ MOBILE: CARDS */}
+            <div className="cards-wrapper only-mobile">
+              {items.map((s) => {
+                const clsEstado = normalizarClaseEstado(s.status);
+
+                return (
+                  <div
+                    key={s.id}
+                    className="serv-card"
+                    onClick={() => navigate(`/servicios/${s.folio}`)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        navigate(`/servicios/${s.folio}`);
+                      }
+                    }}
+                  >
+                    <div className="serv-card-top">
+                      <div className="serv-card-folio">
+                        <span className="muted">Folio</span>
+                        <b className="folio">{s.folio || "—"}</b>
+                      </div>
+
+                      <span className={`estado-badge estado-${clsEstado}`}>
+                        {s.status || "Pendiente"}
+                      </span>
+                    </div>
+
+                    <div className="serv-card-body">
+                      <div className="serv-row">
+                        <span className="muted">Cliente</span>
+                        <span className="value">{s.nombre || "—"}</span>
+                      </div>
+
+                      <div className="serv-row">
+                        <span className="muted">Tipo</span>
+                        <span className="value">{s.tipoDispositivo || "—"}</span>
+                      </div>
+
+                      <div className="serv-row">
+                        <span className="muted">Ingreso</span>
+                        <span className="value">{formatFecha(s.createdAt)}</span>
+                      </div>
+
+                      <div className="serv-row serv-desc">
+                        <span className="muted">Descripción</span>
+                        <span className="value">{s.trabajo || "—"}</span>
+                      </div>
+                    </div>
+
+                    <div className="serv-card-actions">
+                      <button
+                        className="btn-ver full"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/servicios/${s.folio}`);
+                        }}
+                        type="button"
+                      >
+                        Ver detalle
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
       </div>
     </div>

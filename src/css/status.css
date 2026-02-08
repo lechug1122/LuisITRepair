@@ -310,3 +310,30 @@
     font-size: 20px;
   }
 }
+/* =========================
+   ESTADO BADGE (texto + circulito)
+   Sirve para: className="estado-badge estado-xxxx"
+========================= */
+.estado-badge{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  border: 1px solid currentColor;
+  background: #ffffff;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+/* circulito automático */
+.estado-badge::before{
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(0,0,0,.06);
+}

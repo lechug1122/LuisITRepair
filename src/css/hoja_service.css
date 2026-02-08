@@ -11,6 +11,14 @@ body {
   padding: 24px;
 }
 
+/* ✅ OJO: si usas Bootstrap, "container" es global.
+   Mejor limitarlo a tu página para no afectar otras vistas. */
+.hoja-page .container,
+.hoja-page .container-fluid {
+  background: transparent; /* el fondo blanco lo da el card */
+}
+
+/* ✅ Card blanca (si NO usas card, deja este container como antes) */
 .container {
   background: #fff;
   padding: 30px;
@@ -19,41 +27,52 @@ body {
   width: 90%;
   max-width: 700px;
 }
+
+/* títulos */
 h1 {
   text-align: center;
   margin-bottom: 20px;
   color: #2c3e50;
 }
+
+/* ====== FORM (desktop) ====== */
 form {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 28px; /* antes 15px */ /* antes 15px */
+  gap: 28px;
 }
+
 form > div,
 form fieldset {
-  margin-bottom: 28px; /* antes 18px */
+  margin-bottom: 28px;
 }
+
 .full {
   grid-column: span 2;
 }
+
 label {
   display: block;
   margin-bottom: 5px;
   font-weight: bold;
   color: #34495e;
 }
+
 input, textarea, select {
-  margin-bottom: 18px; /* antes 10px */
+  margin-bottom: 18px;
   width: 100%;
   padding: 10px;
   border: 1px solid #ccc;
   border-radius: 8px;
   font-size: 14px;
 }
+
 textarea {
   resize: vertical;
   min-height: 80px;
 }
+
+/* botón */
 button {
   grid-column: span 2;
   background: #3f87a6;
@@ -64,31 +83,40 @@ button {
   border-radius: 10px;
   cursor: pointer;
 }
+
 button:hover {
   background: #326b84;
 }
+
 .hidden {
   display: none !important;
 }
+
+/* ====== Costo row (desktop) ====== */
 .costo-row {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 10px;
   margin-bottom: 28px;
   justify-content: flex-start;
+  flex-wrap: nowrap;
 }
+
 .costo-row label {
   margin-bottom: 0;
   font-weight: bold;
   color: #34495e;
   white-space: nowrap;
 }
+
+/* ===== Fieldset inner grid (desktop) ===== */
 fieldset > div {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 32px 40px; /* 32px entre filas, 40px entre columnas */
+  gap: 32px 40px;
   margin-bottom: 0;
 }
+
 /* ===== Fieldset Laptop / PC ===== */
 .fieldset-equipo {
   border: 2px solid #3f87a6;
@@ -104,10 +132,202 @@ fieldset > div {
   color: #3f87a6;
   font-size: 1rem;
 }
+
 /* 🔒 Arregla desbordes de inputs */
 *, *::before, *::after {
   box-sizing: border-box;
 }
+
 .card-body {
   overflow-x: hidden;
+}
+
+/* =========================
+   ✅ RESPONSIVE: Teléfonos / Tablets
+========================= */
+
+/* Tablets y abajo */
+@media (max-width: 768px) {
+  .hoja-page {
+    padding: 14px;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 100%;
+    padding: 18px;
+    border-radius: 14px;
+  }
+
+  h1 {
+    font-size: 20px;
+    margin-bottom: 14px;
+  }
+
+  /* ✅ form a 1 columna */
+  form {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  /* ✅ full ya no necesita span 2 */
+  .full {
+    grid-column: auto;
+  }
+
+  /* ✅ fieldset interno también a 1 columna */
+  fieldset > div {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  /* ✅ costo row en móvil: wrap */
+  .costo-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* si tu input costo tiene ancho fijo por inline style,
+     esto lo fuerza a 100% en móvil */
+  .costo-row input[type="number"],
+  .costo-row #costo {
+    width: 100% !important;
+  }
+
+  /* botón 100% */
+  button {
+    grid-column: auto;
+    width: 100%;
+    padding: 13px;
+    font-size: 15px;
+  }
+}
+
+/* Teléfonos chicos */
+@media (max-width: 420px) {
+  .hoja-page {
+    padding: 10px;
+  }
+
+  .container {
+    padding: 14px;
+  }
+
+  input, textarea, select {
+    font-size: 14px;
+    padding: 10px;
+  }
+
+  .fieldset-equipo {
+    padding: 14px;
+  }
+
+  .fieldset-equipo legend {
+    font-size: 0.95rem;
+  }
+}
+@media (max-width: 768px) {
+  form {
+    display: grid;
+    grid-template-columns: 1fr !important;
+  }
+
+  form > div,
+  form fieldset {
+    grid-column: 1 / -1 !important;
+  }
+
+  .full {
+    grid-column: 1 / -1 !important;
+  }
+}
+/* =========================
+   🔥 MODO COMPACTO (como antes)
+   Todo se hace chiquito, mismo layout
+========================= */
+
+@media (max-width: 768px) {
+
+  /* contenedor general */
+  .hoja-page {
+    padding: 12px;
+    padding-top: 90px; /* sigue respetando navbar */
+  }
+
+  .container {
+    padding: 16px;
+    max-width: 100%;
+  }
+
+  /* título */
+  h1, h2 {
+    font-size: 18px;
+    margin-bottom: 12px;
+  }
+
+  /* FORM: sigue en 2 columnas */
+  form {
+    grid-template-columns: 1fr 1fr;
+    gap: 14px; /* 🔥 antes 28 */
+  }
+
+  form > div,
+  form fieldset {
+    margin-bottom: 14px;
+  }
+
+  /* labels */
+  label {
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+
+  /* inputs */
+  input,
+  select,
+  textarea {
+    font-size: 13px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+    border-radius: 6px;
+  }
+
+  textarea {
+    min-height: 60px;
+  }
+
+  /* fieldsets */
+  .fieldset-equipo {
+    padding: 12px;
+    margin-top: 12px;
+    border-radius: 10px;
+  }
+
+  .fieldset-equipo legend {
+    font-size: 0.9rem;
+    padding: 0 8px;
+  }
+
+  /* grid interno de fieldsets */
+  fieldset > div {
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  /* costo */
+  .costo-row {
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .costo-row label {
+    font-size: 13px;
+  }
+
+  /* botón */
+  button {
+    font-size: 14px;
+    padding: 10px;
+    border-radius: 8px;
+  }
 }
