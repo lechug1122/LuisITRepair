@@ -1,16 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "../css/hoja_service.css";
 import doneCsv from "../csv/mindfactory_done.csv?raw";
 import updatedCsv from "../csv/mindfactory_updated.csv?raw";
 import { guardarServicio } from "../js/services/servicios_firestore";
 import { useNavigate } from "react-router-dom";
 
-
 import {
   cargarCatalogoEquiposDesdeTextos,
   obtenerSpecsPorModelo,
 } from "../js/models_equipos";
 import { generarPdfHojaServicio } from "../js/services/pdf_hoja_servicio";
+
+// ✅ NUEVO (buscador + create/update cliente)
+import {
+  buscarClientesSimilares,
+  crearCliente,
+  actualizarCliente,
+} from "../js/services/clientes_firestore";
 
 const initialForm = {
   // Cliente
@@ -54,11 +60,18 @@ export default function HojaServicio() {
   const navigate = useNavigate();
   const [form, setForm] = useState(initialForm);
 
-  // ✅ estado para catálogo desde CSV
+  // ✅ catálogo desde CSV
   const [marcasModelos, setMarcasModelos] = useState({});
   const [modelosData, setModelosData] = useState({});
 
-  // ✅ tus marcas (igual que antes)
+  // ✅ autocomplete (clientes)
+  const [sugerencias, setSugerencias] = useState([]);
+  const [showSug, setShowSug] = useState(false);
+  const [selectedCliente, setSelectedCliente] = useState(null); // {id,...} o null
+
+  const lastQueryRef = useRef("");
+  const nombreWrapRef = useRef(null);
+
   const marcas = useMemo(
     () => ["Apple", "MSI", "Lenovo", "Acer", "Dell", "Ateck", "Asus", "HP"],
     [],
@@ -116,6 +129,56 @@ export default function HojaServicio() {
   const showImpresora = form.tipoDispositivo === "impresora";
   const showMonitor = form.tipoDispositivo === "monitor";
 
+  // ✅ Buscar sugerencias al escribir nombre (debounce)
+  useEffect(() => {
+    const nombre = (form.nombre || "").trim();
+
+    // Si el usuario modifica el nombre manualmente, se "desselecciona"
+    if (selectedCliente && nombre !== selectedCliente.nombre) {
+      setSelectedCliente(null);
+    }
+
+    if (nombre.length < 3) {
+      setSugerencias([]);
+      setShowSug(false);
+      lastQueryRef.current = "";
+      return;
+    }
+
+    // evita consultas repetidas por el mismo texto
+    const qKey = nombre.toLowerCase();
+    if (qKey === lastQueryRef.current) return;
+
+    const t = setTimeout(async () => {
+      try {
+        lastQueryRef.current = qKey;
+        const res = await buscarClientesSimilares(nombre, {
+          maxFetch: 50,
+          maxReturn: 8,
+        });
+        setSugerencias(res);
+        setShowSug(res.length > 0);
+      } catch (e) {
+        console.error("Error buscando sugerencias:", e);
+        setSugerencias([]);
+        setShowSug(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(t);
+  }, [form.nombre]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function seleccionarCliente(cli) {
+    setSelectedCliente(cli);
+    setForm((prev) => ({
+      ...prev,
+      nombre: cli.nombre || prev.nombre,
+      telefono: cli.telefono || "",
+      direccion: cli.direccion || "",
+    }));
+    setShowSug(false);
+  }
+
   function handleChange(e) {
     const { name, value, type, checked } = e.target;
 
@@ -146,23 +209,66 @@ export default function HojaServicio() {
     });
   }
 
+  // ✅ cerrar sugerencias si clic fuera
+  useEffect(() => {
+    function onDocClick(ev) {
+      if (!nombreWrapRef.current) return;
+      if (!nombreWrapRef.current.contains(ev.target)) setShowSug(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
   async function handleSubmit(e) {
-    e.preventDefault();
-    try {
+  e.preventDefault();
+
+  try {
+    let clienteIdFinal = selectedCliente?.id;
+
+    // ✅ 1) Cliente
+    if (selectedCliente?.id) {
+      await actualizarCliente(selectedCliente.id, {
+        nombre: form.nombre,
+        telefono: form.telefono,
+        direccion: form.direccion,
+      });
+    } else {
+      const nuevo = await crearCliente({
+        nombre: form.nombre,
+        telefono: form.telefono,
+        direccion: form.direccion,
+      });
+
+      clienteIdFinal = nuevo.id; // 🔥 ESTE ERA EL FALTANTE
+    }
+
+    if (!clienteIdFinal) {
+      alert("❌ No se pudo determinar el cliente");
+      return;
+    }
+
+    // ✅ 2) Generar PDF
     await generarPdfHojaServicio(form);
-    
-    const res = await guardarServicio(form); // { id, folio }
+
+    // ✅ 3) Guardar servicio (AQUÍ VA LA CLAVE)
+    const res = await guardarServicio({
+      ...form,
+      clienteId: clienteIdFinal, // 🔥🔥🔥 AQUÍ EXACTAMENTE
+    });
+
     navigate(`/ticket/${res.folio}`);
 
-
-    // opcional: reset form
+    // reset
     setForm(initialForm);
+    setSelectedCliente(null);
+    setSugerencias([]);
+    setShowSug(false);
+    lastQueryRef.current = "";
   } catch (err) {
-    console.error("Error guardando en Firebase:", err);
-    alert("❌ No se pudo guardar. Revisa consola y reglas de Firestore.");
+    console.error("Error guardando:", err);
+    alert("❌ No se pudo guardar.");
   }
-    
-  }
+}
 
   return (
     <div className="container- hoja-page">
@@ -174,16 +280,68 @@ export default function HojaServicio() {
               <h2 className="text-center mb-4">Registro de Servicio Técnico</h2>
 
               <form id="formRegistro" onSubmit={handleSubmit}>
-                {/* Datos del Cliente */}
-                <div>
+                {/* ===== Cliente ===== */}
+                <div ref={nombreWrapRef} style={{ position: "relative" }}>
                   <label>Nombre del Cliente:</label>
                   <input
                     type="text"
                     name="nombre"
                     value={form.nombre}
-                    onChange={handleChange}
+                    onChange={(e) => {
+                      handleChange(e);
+                      setShowSug(true);
+                    }}
+                    onFocus={() => sugerencias.length > 0 && setShowSug(true)}
+                    autoComplete="off"
                     required
                   />
+
+                  {/* ✅ Lista de sugerencias */}
+                  {showSug && sugerencias.length > 0 && (
+                    <div className="cliente-sugerencias">
+                      {sugerencias.map((c) => (
+                        <button
+                          type="button"
+                          key={c.id}
+                          className="cliente-sug-item"
+                          onMouseDown={() => seleccionarCliente(c)}
+                        >
+                          <div className="cliente-sug-nombre">{c.nombre}</div>
+                          <div className="cliente-sug-sub">
+                            {c.telefono
+                              ? `📞 ${c.telefono}`
+                              : "📞 (sin teléfono)"}
+                            {c.direccion ? ` • 📍 ${c.direccion}` : ""}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* indicador cuando se seleccionó */}
+                  {selectedCliente?.id && (
+                    <div className="cliente-selected-hint">
+                      ✅ Cliente seleccionado: <b>{selectedCliente.nombre}</b>
+                      <button
+                        type="button"
+                        className="cliente-clear"
+                        onClick={() => {
+                          setSelectedCliente(null);
+                          setSugerencias([]);
+                          setShowSug(false);
+                          // 🔥 LIMPIA LOS CAMPOS DEL CLIENTE
+                          setForm((prev) => ({
+                            ...prev,
+                            nombre: "",
+                            telefono: "",
+                            direccion: "",
+                          }));
+                        }}
+                      >
+                        Quitar
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -199,10 +357,21 @@ export default function HojaServicio() {
                 <div>
                   <label>Teléfono:</label>
                   <input
-                    type="text"
+                    type="tel"
                     name="telefono"
                     value={form.telefono}
-                    onChange={handleChange}
+                    maxLength={10}
+                    inputMode="numeric"
+                    pattern="[0-9]{10}"
+                    placeholder="10 dígitos"
+                    onChange={(e) => {
+                      // 🔒 solo números
+                      const soloNumeros = e.target.value.replace(/\D/g, "");
+                      setForm((prev) => ({
+                        ...prev,
+                        telefono: soloNumeros.slice(0, 10), // máximo 10
+                      }));
+                    }}
                   />
                 </div>
 
@@ -408,7 +577,7 @@ export default function HojaServicio() {
                   </div>
                 )}
 
-                {/* Campos específicos Impresora */}
+                {/* Impresora */}
                 {showImpresora && (
                   <div id="camposImpresora" className="full">
                     <fieldset
@@ -467,7 +636,7 @@ export default function HojaServicio() {
                   </div>
                 )}
 
-                {/* Campos específicos Monitor */}
+                {/* Monitor */}
                 {showMonitor && (
                   <div id="camposMonitor" className="full">
                     <fieldset

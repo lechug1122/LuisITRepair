@@ -226,9 +226,8 @@ export default function PanelAdminServicio({
           onChange={(e) => setStatus(e.target.value)}
           disabled={saving || entregadoBool} // opcional: bloquear cambios si ya entregó
         >
-          {STATUS.map((e) => (
-            // ✅ En tu implementación actual estás usando label como value
-            <option key={e.key} value={e.label}>
+          {STATUS.map((e, idx) => (
+            <option key={`status-${idx}`} value={e.value}>
               {e.label}
             </option>
           ))}

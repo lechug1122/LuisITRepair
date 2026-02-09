@@ -9,8 +9,8 @@ import {
   updateDoc,
   serverTimestamp,
   runTransaction,
-  setDoc,
 } from "firebase/firestore";
+
 import { db } from "../../initializer/firebase";
 import { generarFolio } from "../utils_folio";
 
@@ -38,8 +38,7 @@ function isFinalStatus(status) {
    ✅ Folio helpers (índice único)
 ========================= */
 function folioToKey(folio) {
-  // Firestore NO permite "/" en IDs
-  return (folio || "").trim().replace(/\//g, "-");
+  return (folio || "").trim().replace(/\//g, "-"); // Firestore NO permite "/" en IDs
 }
 
 function throwNice(msg) {
@@ -48,12 +47,19 @@ function throwNice(msg) {
 
 /* =========================
    ✅ arma un payload LIMPIO según tipoDispositivo
+   ✅ IMPORTANTE: folio estable (no se regenera si ya existe)
 ========================= */
 function construirPayload(form) {
   const tipo = form.tipoDispositivo;
 
+  // ✅ Folio estable:
+  // - si form.folio viene (ya generado antes), lo respetamos
+  // - si no viene, lo generamos
+  const folioFinal = (form.folio || generarFolio(form.marca) || "").trim();
+
   const payload = {
     // Cliente
+    clienteId: form.clienteId || null, // ✅ para historial por cliente
     nombre: form.nombre || "",
     direccion: form.direccion || "",
     telefono: form.telefono || "",
@@ -73,7 +79,7 @@ function construirPayload(form) {
     fechaEntregado: null,
 
     // extras
-    folio: generarFolio(form.marca),
+    folio: folioFinal,
     status: "pendiente",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -114,8 +120,6 @@ function construirPayload(form) {
 
 /* =========================
    ✅ CREAR (BLOQUEA duplicado por folio)
-   - Si tu UI por error llama "guardar" otra vez,
-     esto lo bloqueará y NO se duplicará.
 ========================= */
 export async function guardarServicio(form) {
   const payload = construirPayload(form);
@@ -150,9 +154,8 @@ export async function guardarServicio(form) {
 
 /* =========================
    ✅ UPSERT por FOLIO (ANTI-DUPLICADOS)
-   ÚSALO si quieres que "si ya existe el folio, actualice",
-   y si no existe, cree.
-   (Esto corrige el caso típico de UI que vuelve a mandar el form)
+   - si existe => actualiza
+   - si no existe => crea
 ========================= */
 export async function guardarOActualizarPorFolio(form) {
   const payload = construirPayload(form);
@@ -186,7 +189,7 @@ export async function guardarOActualizarPorFolio(form) {
 
     const servRef = doc(db, "servicios", servicioId);
 
-    // IMPORTANTE: no sobreescribas createdAt al actualizar
+    // no sobreescribas createdAt al actualizar
     const patch = { ...payload };
     delete patch.createdAt;
     patch.updatedAt = serverTimestamp();
@@ -220,10 +223,11 @@ export async function buscarServicioPorFolio(folio) {
     return { id: servSnap.id, ...servSnap.data() };
   }
 
-  // fallback (por si hay registros viejos sin índice)
+  // fallback (registros viejos sin índice)
   const q = query(collection(db, "servicios"), where("folio", "==", folioLimpio));
   const snap = await getDocs(q);
   if (snap.empty) return null;
+
   const d = snap.docs[0];
   return { id: d.id, ...d.data() };
 }
@@ -262,20 +266,17 @@ export async function listarServiciosHistorial() {
 
 /* =========================
    ✅ Actualizar por ID (NO crea, NO duplica)
-   - Bloquea cambiar folio (para evitar inconsistencias del índice).
-   - updatedAt siempre
-   - maneja entregado/fechaEntregado
+   - Bloquea cambiar folio
 ========================= */
 export async function actualizarServicioPorId(id, data) {
   const ref = doc(db, "servicios", id);
 
-  // leemos actual para bloquear cambios de folio
   const before = await getDoc(ref);
   if (!before.exists()) throwNice("Servicio no encontrado.");
 
   const current = before.data() || {};
 
-  // ❌ Bloquear cambio de folio (recomendado)
+  // ❌ Bloquear cambio de folio
   if (data?.folio && data.folio.trim() !== (current.folio || "").trim()) {
     throwNice("No se permite cambiar el folio de un servicio existente.");
   }
@@ -289,4 +290,25 @@ export async function actualizarServicioPorId(id, data) {
 
   const snap = await getDoc(ref);
   return { id: snap.id, ...snap.data() };
+}
+
+/* =========================
+   ✅ Servicios por clienteId
+   (para ClienteDetalle)
+========================= */
+export async function listarServiciosPorClienteId(clienteId) {
+  if (!clienteId) return [];
+
+  const q = query(
+    collection(db, "servicios"),
+    where("clienteId", "==", clienteId), // 🔴 ESTE CAMPO ES CLAVE
+    orderBy("createdAt", "desc")
+  );
+
+  const snapshot = await getDocs(q);
+
+  return snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...doc.data(),
+  }));
 }

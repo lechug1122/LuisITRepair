@@ -331,3 +331,74 @@ fieldset > div {
     border-radius: 8px;
   }
 }
+/* ✅ Contenedor relativo para que el dropdown se ancle al input */
+.cliente-wrap{
+  position: relative;
+}
+
+/* ✅ Lista pegada al input, sin huecos, fondo lleno */
+.cliente-sugerencias{
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% - 1px);       /* 🔥 pegado exacto al input */
+  background: #fff;
+
+  border: 1px solid rgba(0,0,0,.12);
+  border-top: 0;               /* 🔥 se une con el input */
+  border-radius: 0 0 12px 12px;
+
+  z-index: 2000;
+
+  max-height: 260px;
+  overflow-y: auto;
+
+  box-shadow: 0 10px 20px rgba(0,0,0,.10);
+}
+
+/* ✅ Cada fila como lista, sin tarjetas */
+.cliente-sug-item{
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 10px 12px;
+  cursor: pointer;
+
+  display: flex;
+  flex-direction: column;
+}
+
+/* Separador de lista */
+.cliente-sug-item + .cliente-sug-item{
+  border-top: 1px solid rgba(0,0,0,.08);
+}
+
+/* hover suave */
+.cliente-sug-item:hover{
+  background: rgba(63,135,166,.08);
+}
+
+/* Texto */
+.cliente-sug-nombre{
+  font-weight: 700;
+  color: #111;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.cliente-sug-sub{
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+/* ✅ En móvil más compacto */
+@media (max-width: 520px){
+  .cliente-sugerencias{
+    max-height: 220px;
+  }
+  .cliente-sug-item{
+    padding: 9px 10px;
+  }
+}

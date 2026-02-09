@@ -9,8 +9,9 @@ import ServicioDetalle from "./pages/servicio_detalle";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Ticket from "./pages/tickets";
 import StatusScan from "./pages/status_scan";
-
-
+import Clientes from "./pages/Clientes";
+import ClienteDetalle from "./pages/ClienteDetalle";
+import NotFound from "./pages/NotFound";
 export default function App() {
   return (
     <Routes>
@@ -34,10 +35,14 @@ export default function App() {
         <Route path="/servicios" element={<Servicios />} />
         <Route path="/servicios/:folio" element={<ServicioDetalle />} />
         <Route path="/ticket/:folio" element={<Ticket />} />
-
+        <Route path="/clientes" element={<Clientes />} />
+        <Route path="/clientes/:id" element={<ClienteDetalle />} />
       </Route>
 
-      <Route path="*" element={<div style={{ padding: 20 }}>Ruta no encontrada</div>} />
+      <Route
+        path="*"
+        element={<NotFound />}
+      />
     </Routes>
   );
 }
