@@ -247,17 +247,18 @@ export default function HojaServicio() {
       return;
     }
 
-    // ✅ 2) Generar PDF
-    await generarPdfHojaServicio(form);
+const res = await guardarServicio({
+  ...form,
+  clienteId: clienteIdFinal,
+});
 
-    // ✅ 3) Guardar servicio (AQUÍ VA LA CLAVE)
-    const res = await guardarServicio({
-      ...form,
-      clienteId: clienteIdFinal, // 🔥🔥🔥 AQUÍ EXACTAMENTE
-    });
+// 🔥 ESTE ES EL CAMBIO CLAVE
+await generarPdfHojaServicio(
+  form,        // datos del formulario
+  res.folio    // ✅ folio real de Firestore
+);
 
-    navigate(`/ticket/${res.folio}`);
-
+navigate(`/ticket/${res.folio}`);
     // reset
     setForm(initialForm);
     setSelectedCliente(null);

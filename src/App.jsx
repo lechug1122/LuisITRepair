@@ -12,6 +12,7 @@ import StatusScan from "./pages/status_scan";
 import Clientes from "./pages/Clientes";
 import ClienteDetalle from "./pages/ClienteDetalle";
 import NotFound from "./pages/NotFound";
+import Home from "./pages/home";
 export default function App() {
   return (
     <Routes>
@@ -30,7 +31,7 @@ export default function App() {
         }
       >
         <Route path="/" element={<HojaServicio />} />
-        <Route path="/home" element={<HojaServicio />} />
+        <Route path="/home" element={<Home />} />
         <Route path="/hoja_servicio" element={<HojaServicio />} />
         <Route path="/servicios" element={<Servicios />} />
         <Route path="/servicios/:folio" element={<ServicioDetalle />} />

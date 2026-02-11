@@ -49,36 +49,31 @@ function throwNice(msg) {
    ✅ arma un payload LIMPIO según tipoDispositivo
    ✅ IMPORTANTE: folio estable (no se regenera si ya existe)
 ========================= */
-function construirPayload(form) {
+async function construirPayload(form) {
   const tipo = form.tipoDispositivo;
 
-  // ✅ Folio estable:
-  // - si form.folio viene (ya generado antes), lo respetamos
-  // - si no viene, lo generamos
-  const folioFinal = (form.folio || generarFolio(form.marca) || "").trim();
+  // ✅ Folio estable (await OBLIGATORIO)
+  const folioFinal = (
+    form.folio || (await generarFolio(form.marca)) || ""
+  ).trim();
 
   const payload = {
-    // Cliente
-    clienteId: form.clienteId || null, // ✅ para historial por cliente
+    clienteId: form.clienteId || null,
     nombre: form.nombre || "",
     direccion: form.direccion || "",
     telefono: form.telefono || "",
 
-    // Equipo general
     tipoDispositivo: tipo || "",
     marca: form.marca || "",
     modelo: form.modelo || "",
 
-    // Otros
     trabajo: form.trabajo || "",
     precioDespues: !!form.precioDespues,
     costo: form.precioDespues ? "" : form.costo || "",
 
-    // control entrega
     entregado: false,
     fechaEntregado: null,
 
-    // extras
     folio: folioFinal,
     status: "pendiente",
     createdAt: serverTimestamp(),
@@ -122,7 +117,8 @@ function construirPayload(form) {
    ✅ CREAR (BLOQUEA duplicado por folio)
 ========================= */
 export async function guardarServicio(form) {
-  const payload = construirPayload(form);
+  // 🔥 AQUÍ EL CAMBIO
+  const payload = await construirPayload(form);
 
   const folio = (payload.folio || "").trim();
   if (!folio) throwNice("No se pudo generar folio.");
@@ -151,6 +147,7 @@ export async function guardarServicio(form) {
 
   return { id: servicioRef.id, folio };
 }
+
 
 /* =========================
    ✅ UPSERT por FOLIO (ANTI-DUPLICADOS)
@@ -276,15 +273,24 @@ export async function actualizarServicioPorId(id, data) {
 
   const current = before.data() || {};
 
-  // ❌ Bloquear cambio de folio
   if (data?.folio && data.folio.trim() !== (current.folio || "").trim()) {
     throwNice("No se permite cambiar el folio de un servicio existente.");
   }
 
   const patch = { ...data, updatedAt: serverTimestamp() };
 
-  if (data?.entregado === true) patch.fechaEntregado = serverTimestamp();
-  if (data?.entregado === false) patch.fechaEntregado = null;
+  // 🔥 SI CAMBIA STATUS A ENTREGADO → GUARDA FECHA
+  if (normalizarStatus(data?.status) === "entregado") {
+    patch.fechaEntregado = serverTimestamp();
+  }
+
+  // 🔥 SI DEJA DE SER ENTREGADO → BORRA FECHA
+  if (
+    data?.status &&
+    normalizarStatus(data.status) !== "entregado"
+  ) {
+    patch.fechaEntregado = null;
+  }
 
   await updateDoc(ref, patch);
 

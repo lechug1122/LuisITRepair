@@ -75,69 +75,46 @@ async function convertirADataURLPNG(dataUrl) {
 
   return canvas.toDataURL("image/png");
 }
-
-// ===============================
-// Utilidades: folio
-// ===============================
-function generarFolio(marca) {
-  const m = (marca || "").trim().toLowerCase();
-  const letras = m.substring(0, 3);
-  const fecha = new Date();
-  const dia = String(fecha.getDate()).padStart(2, "0");
-  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
-  const anio = String(fecha.getFullYear()).slice(-2);
-
-  if (letras.length === 3) return `${letras}${dia}${mes}${anio}`;
-  return `${dia}${mes}${anio}`;
-}
-
 // ===============================
 // ✅ PDF Principal
 // ===============================
-export async function generarPdfHojaServicio(form) {
+export async function generarPdfHojaServicio(form, folio) {
   try {
     const doc = new jsPDF();
-    const folio = generarFolio(form.marca);
 
-    // ===== Logo (a prueba de PNG/JPG/WEBP renombrado) =====
+    // ===== Logo =====
     let logoDataUrlPng = null;
     try {
-      const { dataUrl, tipo } = await fetchAsDataURL(logoUrl);
-      console.log("🖼️ Logo detectado como:", tipo);
-
-      // ✅ Siempre lo convertimos a PNG real para jsPDF
+      const { dataUrl } = await fetchAsDataURL(logoUrl);
       logoDataUrlPng = await convertirADataURLPNG(dataUrl);
     } catch (e) {
-      console.warn("⚠️ Logo no cargado / no convertido:", e.message);
+      console.warn("⚠️ Logo no cargado:", e.message);
     }
 
-    // ===== Borde general del documento =====
-    doc.setDrawColor(0, 0, 0);
+    // ===== Borde =====
     doc.setLineWidth(0.7);
     doc.rect(10, 10, 190, 285);
 
-    // ===== Logo y encabezado =====
     if (logoDataUrlPng) {
       doc.addImage(logoDataUrlPng, "PNG", 15, 12, 32, 32);
     }
 
-    // Título grande
     doc.setFont("helvetica", "bold");
     doc.setFontSize(30);
     doc.text("Hoja De Servicio", 60, 30);
 
-    // Fecha y hora
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
     const ahora = new Date();
-    const fechaActual = ahora.toLocaleDateString();
-    const horaActual = ahora.toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    doc.text(`Fecha: ${fechaActual} ${horaActual}`, 150, 24);
+    doc.text(
+      `Fecha: ${ahora.toLocaleDateString()} ${ahora.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`,
+      150,
+      24
+    );
 
-    // ===== Layout =====
     let yInicio = 45;
 
     // ===============================
