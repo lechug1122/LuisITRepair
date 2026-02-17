@@ -1,0 +1,87 @@
+.selector-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+}
+
+.selector-modal {
+  width: 700px;
+  max-width: 95%;
+  max-height: 85vh;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+}
+
+.selector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.selector-header h3 {
+  margin: 0;
+}
+
+.selector-header button {
+  grid-column: auto !important;
+  width: 34px;
+  border: none;
+  background: #e2e8f0;
+  border-radius: 8px;
+  height: 34px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.selector-subtitle {
+  margin: 10px 0 14px;
+  color: #334155;
+}
+
+.selector-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.selector-item {
+  grid-column: auto !important;
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  text-align: left;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.selector-item:hover {
+  border-color: #0ea5e9;
+  background: #f0f9ff;
+}
+
+.selector-item.agotado {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.selector-nombre {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.selector-meta {
+  margin-top: 6px;
+  color: #475569;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}

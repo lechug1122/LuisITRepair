@@ -7,6 +7,7 @@ import PanelAdminServicio from "../components/paneladminservicio";
 
 import { getEstadoInfo } from "../js/services/estado_config";
 import "../css/ticket.css";
+import logoUrl from "../assets/logo.png";
 
 export default function Ticket() {
   const { folio } = useParams();
@@ -87,7 +88,7 @@ export default function Ticket() {
         <div className="ticket-paper" id="ticket">
           {/* ✅ Logo */}
           <div className="ticket-logo">
-            <img src="../src/assets/logo.png" alt="Logo" />
+            <img src={logoUrl} alt="Logo" />
           </div>
 
           <div className="ticket-header">

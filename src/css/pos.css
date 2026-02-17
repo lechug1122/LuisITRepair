@@ -1,0 +1,198 @@
+.pos-container {
+  display: flex;
+  min-height: calc(100vh - 64px);
+  background: #f4f6f9;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 220px;
+  background: #1e293b;
+  color: white;
+  padding: 20px;
+}
+
+.sidebar h2 {
+  margin-bottom: 30px;
+}
+
+.sidebar ul {
+  list-style: none;
+  padding: 0;
+}
+
+.sidebar li {
+  padding: 12px;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.sidebar li:hover,
+.sidebar .active {
+  background: #2563eb;
+}
+
+/* Main */
+.main {
+  flex: 1;
+  padding: 20px;
+}
+
+.pos-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.servicio-vinculado {
+  background: #e0f2fe;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #0369a1;
+}
+
+.buscador {
+  width: 100%;
+  padding: 12px;
+  margin: 15px 0;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
+
+.caja-cerrada-alert {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #9f1239;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 12px 0;
+  font-weight: 600;
+}
+
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.tabla th {
+  background: #e5e7eb;
+  padding: 12px;
+}
+
+.tabla td {
+  padding: 10px;
+  text-align: center;
+}
+
+.tabla td button {
+  margin: 0 4px;
+}
+
+.btn-comparar {
+  border: none;
+  border-radius: 8px;
+  background: #0ea5e9;
+  color: #fff;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.btn-comparar:hover {
+  background: #0284c7;
+}
+
+.total-grande {
+  margin-top: 20px;
+  font-size: 28px;
+  font-weight: bold;
+  text-align: right;
+}
+
+/* Panel Derecho */
+.panel-derecho {
+  width: 320px;
+  background: white;
+  padding: 20px;
+  border-left: 1px solid #ddd;
+}
+
+.input {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+}
+
+.cliente-info {
+  background: #fef9c3;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.btn-puntos {
+  width: 100%;
+  background: #facc15;
+  border: none;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.btn-venta {
+  width: 100%;
+  background: #16a34a;
+  color: white;
+  border: none;
+  padding: 12px;
+  margin-top: 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.btn-cancelar {
+  width: 100%;
+  background: #dc2626;
+  color: white;
+  border: none;
+  padding: 12px;
+  margin-top: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.btn-venta:disabled,
+.btn-cancelar:disabled,
+.btn-comparar:disabled,
+.buscador:disabled,
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal-pago-pro {
+  background: white;
+  padding: 30px;
+  width: 500px;
+  border-radius: 12px;
+}

@@ -1,0 +1,166 @@
+.comparador-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10001;
+}
+
+.comparador-modal {
+  width: 920px;
+  max-width: 96%;
+  max-height: 90vh;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.25);
+}
+
+.comparador-modal button {
+  grid-column: auto !important;
+}
+
+.comparador-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.comparador-header h3 {
+  margin: 0;
+}
+
+.comparador-header button {
+  border: none;
+  border-radius: 8px;
+  background: #e2e8f0;
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+}
+
+.comparador-producto {
+  margin-top: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.comparador-busqueda {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.comparador-busqueda input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 9px 10px;
+}
+
+.comparador-busqueda button {
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  padding: 0 14px;
+  cursor: pointer;
+}
+
+.comparador-error {
+  margin-top: 10px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.comparador-link-ml {
+  display: inline-block;
+  margin-top: 8px;
+  color: #7f1d1d;
+  font-weight: 700;
+}
+
+.comparador-metricas {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.comparador-kpi {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 4px;
+  background: #f8fafc;
+}
+
+.comparador-kpi.alto {
+  border-color: #fecaca;
+  background: #fff1f2;
+}
+
+.comparador-kpi.bajo {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.comparador-market {
+  margin-top: 14px;
+}
+
+.comparador-market h4 {
+  margin: 0 0 8px;
+}
+
+.comparador-muted {
+  color: #475569;
+  margin: 0 0 8px;
+}
+
+.comparador-lista {
+  display: grid;
+  gap: 8px;
+}
+
+.comparador-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px;
+  text-decoration: none;
+  color: inherit;
+  background: #f8fafc;
+}
+
+.comparador-item:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+.comparador-item .titulo {
+  font-weight: 700;
+}
+
+.comparador-item .meta {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: #334155;
+  font-size: 14px;
+}
+
+@media (max-width: 760px) {
+  .comparador-metricas {
+    grid-template-columns: 1fr;
+  }
+}

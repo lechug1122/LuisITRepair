@@ -13,6 +13,10 @@ import Clientes from "./pages/Clientes";
 import ClienteDetalle from "./pages/ClienteDetalle";
 import NotFound from "./pages/NotFound";
 import Home from "./pages/home";
+import POS from "./pages/POS";
+import Productos from "./pages/productos";
+import Reportes from "./pages/reportes";
+
 export default function App() {
   return (
     <Routes>
@@ -30,7 +34,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<HojaServicio />} />
+        <Route path="/" element={<Home />} />
         <Route path="/home" element={<Home />} />
         <Route path="/hoja_servicio" element={<HojaServicio />} />
         <Route path="/servicios" element={<Servicios />} />
@@ -38,6 +42,9 @@ export default function App() {
         <Route path="/ticket/:folio" element={<Ticket />} />
         <Route path="/clientes" element={<Clientes />} />
         <Route path="/clientes/:id" element={<ClienteDetalle />} />
+        <Route path="/POS" element={<POS />} />
+        <Route path="/productos" element={<Productos />} />
+        <Route path="/reportes" element={<Reportes />} />
       </Route>
 
       <Route

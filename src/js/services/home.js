@@ -21,6 +21,14 @@ function isFinalStatus(status) {
   return s === "entregado" || s === "cancelado" || s === "no_reparable";
 }
 
+function toDate(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") return value.toDate();
+  if (typeof value?.seconds === "number") return new Date(value.seconds * 1000);
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /* =========================
    KPIs Dashboard
 ========================= */
@@ -112,4 +120,116 @@ export async function obtenerTodosServicios() {
     id: doc.id,
     ...doc.data(),
   }));
+}
+
+/* =========================
+   Notificaciones Home
+========================= */
+export async function obtenerNotificacionesHome() {
+  const [serviciosSnap, productosSnap, ventasSnap] = await Promise.all([
+    getDocs(collection(db, "servicios")),
+    getDocs(collection(db, "productos")),
+    getDocs(collection(db, "ventas")),
+  ]);
+
+  const servicios = serviciosSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const productos = productosSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const ventas = ventasSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+
+  const activos = servicios.filter((s) => !isFinalStatus(s.status));
+
+  const atrasados = activos.filter((s) => {
+    if (!s.fechaAprox) return false;
+    const f = new Date(`${s.fechaAprox}T00:00:00`);
+    if (Number.isNaN(f.getTime())) return false;
+    return f < hoy;
+  });
+
+  const listos = activos.filter((s) => {
+    const st = normalizarStatus(s.status);
+    return st === "listo" || st === "finalizado";
+  });
+
+  const sinFechaAprox = activos.filter((s) => !s.fechaAprox);
+
+  const stockBajo = productos.filter((p) => {
+    const activo = p.activo !== false;
+    const stock = Number(p.stock || 0);
+    const minimo = Number(p.stockMinimo || 0);
+    return activo && minimo > 0 && stock <= minimo;
+  });
+
+  const tarjetasSinRef = ventas.filter((v) => {
+    const tipo = normalizarStatus(v.tipoPago);
+    const esTarjeta = tipo === "tarjeta";
+    const ref = String(v?.pagoDetalle?.referenciaTarjeta || "").trim();
+    if (!esTarjeta || ref) return false;
+    const f = toDate(v.fecha);
+    if (!f) return false;
+    const hace7dias = new Date();
+    hace7dias.setDate(hace7dias.getDate() - 7);
+    return f >= hace7dias;
+  });
+
+  const notificaciones = [];
+
+  if (atrasados.length > 0) {
+    notificaciones.push({
+      id: "servicios-atrasados",
+      nivel: "alta",
+      titulo: "Servicios atrasados",
+      detalle: `${atrasados.length} servicios pasaron su fecha aproximada de entrega.`,
+      accion: "/servicios",
+      accionTexto: "Revisar atrasados",
+    });
+  }
+
+  if (listos.length > 0) {
+    notificaciones.push({
+      id: "servicios-listos",
+      nivel: "media",
+      titulo: "Servicios listos para entregar",
+      detalle: `${listos.length} servicios estan listos/finalizados y pendientes de entrega.`,
+      accion: "/servicios",
+      accionTexto: "Ir a servicios",
+    });
+  }
+
+  if (sinFechaAprox.length > 0) {
+    notificaciones.push({
+      id: "sin-fecha-aprox",
+      nivel: "media",
+      titulo: "Servicios sin fecha aproximada",
+      detalle: `${sinFechaAprox.length} servicios activos no tienen fecha de entrega estimada.`,
+      accion: "/servicios",
+      accionTexto: "Completar fechas",
+    });
+  }
+
+  if (stockBajo.length > 0) {
+    notificaciones.push({
+      id: "stock-bajo",
+      nivel: "alta",
+      titulo: "Productos con stock bajo",
+      detalle: `${stockBajo.length} productos estan en minimo o por debajo del minimo.`,
+      accion: "/productos",
+      accionTexto: "Revisar inventario",
+    });
+  }
+
+  if (tarjetasSinRef.length > 0) {
+    notificaciones.push({
+      id: "tarjeta-sin-referencia",
+      nivel: "baja",
+      titulo: "Ventas con tarjeta sin referencia",
+      detalle: `${tarjetasSinRef.length} ventas de los ultimos 7 dias no tienen referencia de pago.`,
+      accion: "/reportes",
+      accionTexto: "Auditar ventas",
+    });
+  }
+
+  return notificaciones;
 }

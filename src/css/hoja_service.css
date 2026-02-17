@@ -1,14 +1,8 @@
-/* ✅ NO uses flex en body, eso centra y encajona todo */
-body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg, #3f87a6, #ebf8e1);
-  min-height: 100vh;
-  margin: 0;
-}
-
 /* ✅ Espacio general bajo el navbar fixed-top */
 .hoja-page {
   padding: 24px;
+  min-height: calc(100vh - 64px);
+  background: linear-gradient(135deg, #4f8fb8 0%, #8ab9b6 100%);
 }
 
 /* ✅ OJO: si usas Bootstrap, "container" es global.

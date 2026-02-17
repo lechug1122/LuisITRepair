@@ -1,4 +1,10 @@
 {
+  "functions": {
+    "source": "functions",
+    "predeploy": [
+      "npm --prefix \"$RESOURCE_DIR\" run build"
+    ]
+  },
   "hosting": {
     "public": "dist",
     "ignore": [
@@ -6,7 +12,42 @@
       "**/.*",
       "**/node_modules/**"
     ],
+    "headers": [
+      {
+        "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Pragma",
+            "value": "no-cache"
+          },
+          {
+            "key": "Expires",
+            "value": "0"
+          }
+        ]
+      },
+      {
+        "source": "/assets/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      }
+    ],
     "rewrites": [
+      {
+        "source": "/api/ml/search",
+        "function": {
+          "functionId": "mlSearch",
+          "region": "southamerica-east1"
+        }
+      },
       {
         "source": "**",
         "destination": "/index.html"

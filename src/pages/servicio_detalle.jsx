@@ -52,6 +52,18 @@ function isFinalStatus(status) {
   return s === "entregado" || s === "cancelado" || s === "no_reparable";
 }
 
+function requierePrecioFinal(status) {
+  const s = normalizarStatus(status);
+  const estadosTempranos = new Set([
+    "pendiente",
+    "en_revision",
+    "revision",
+    "en_reparacion",
+    "reparacion",
+  ]);
+  return !estadosTempranos.has(s);
+}
+
 function formatFecha(ts) {
   if (!ts?.seconds) return "-";
   return new Date(ts.seconds * 1000).toLocaleString("es-MX");
@@ -224,6 +236,45 @@ async function tryDeleteFromStorage(path) {
   }
 }
 
+function buildEquipoEdit(servicio) {
+  return {
+    procesador: servicio?.laptopPc?.procesador || "",
+    ram: servicio?.laptopPc?.ram || "",
+    disco: servicio?.laptopPc?.disco || "",
+    estadoPantalla: servicio?.laptopPc?.estadoPantalla || "Funciona bien",
+    estadoTeclado: servicio?.laptopPc?.estadoTeclado || "Funciona bien",
+    estadoMouse: servicio?.laptopPc?.estadoMouse || "Funciona bien",
+    funciona: servicio?.laptopPc?.funciona || "Sí",
+    enciendeEquipo: servicio?.laptopPc?.enciendeEquipo || "Sí",
+    contrasenaEquipo: servicio?.laptopPc?.contrasenaEquipo || "",
+    tipoImpresora: servicio?.impresora?.tipoImpresora || "Inyección de tinta",
+    imprime: servicio?.impresora?.imprime || "Sí",
+    condicionesImpresora: servicio?.impresora?.condicionesImpresora || "",
+    tamanoMonitor: servicio?.monitor?.tamanoMonitor || "",
+    colores: servicio?.monitor?.colores || "Sí",
+    condicionesMonitor: servicio?.monitor?.condicionesMonitor || "",
+  };
+}
+
+function tieneCaracteristicasPendientes(servicio) {
+  if (!servicio) return false;
+  if (servicio.caracteristicasPendientes) return true;
+
+  const tipo = normalizarStatus(servicio.tipoDispositivo);
+
+  if (tipo === "laptop" || tipo === "pc") {
+    return !servicio?.laptopPc?.procesador || !servicio?.laptopPc?.ram || !servicio?.laptopPc?.disco;
+  }
+  if (tipo === "impresora") {
+    return !servicio?.impresora?.condicionesImpresora;
+  }
+  if (tipo === "monitor") {
+    return !servicio?.monitor?.tamanoMonitor;
+  }
+
+  return false;
+}
+
 export default function ServicioDetalle() {
   const { folio } = useParams();
   const navigate = useNavigate();
@@ -250,8 +301,10 @@ export default function ServicioDetalle() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [uploadingObs, setUploadingObs] = useState(false);
+  const [mostrarModalCaracteristicas, setMostrarModalCaracteristicas] = useState(false);
+  const [equipoEdit, setEquipoEdit] = useState(buildEquipoEdit(null));
 
-  const locked = !!servicio?.locked;
+  const locked = !!servicio?.locked || isFinalStatus(servicio?.status);
 
   useEffect(() => {
     let alive = true;
@@ -263,6 +316,10 @@ export default function ServicioDetalle() {
         if (!alive) return;
 
         setServicio(data);
+        setEquipoEdit(buildEquipoEdit(data));
+        if (data && !isFinalStatus(data?.status) && tieneCaracteristicasPendientes(data)) {
+          setMostrarModalCaracteristicas(true);
+        }
 
         setStatus(data?.status || "pendiente");
         setObservaciones(data?.observaciones || "");
@@ -315,9 +372,8 @@ export default function ServicioDetalle() {
       alert("🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.");
       return;
     }
-    if (confirm("¿Quieres modificar la información de este servicio?")) {
-      navigate(`/servicios/${folio}/editar`);
-    }
+    setEquipoEdit(buildEquipoEdit(servicio));
+    setMostrarModalCaracteristicas(true);
   };
 
   const urlStatus = `${window.location.origin}/status/${folio}`;
@@ -411,9 +467,11 @@ export default function ServicioDetalle() {
 
     const costoSinBoleta = num(precioFinal);
     const costoConBoleta = totalBoleta;
+    const nextStatus = status || "pendiente";
+    const pidePrecio = requierePrecioFinal(nextStatus);
 
     if (!usarBoleta) {
-      if (!costoSinBoleta || costoSinBoleta <= 0) {
+      if (pidePrecio && (!costoSinBoleta || costoSinBoleta <= 0)) {
         if (!silent) alert("⚠️ Captura un Precio final válido (mayor a 0) o activa Boleta.");
         return false;
       }
@@ -428,7 +486,6 @@ export default function ServicioDetalle() {
       }
     }
 
-    const nextStatus = status || "pendiente";
     const willLock = isFinalStatus(nextStatus);
 
     if (willLock) {
@@ -438,6 +495,12 @@ export default function ServicioDetalle() {
       if (!ok) return false;
     }
 
+    const costoGuardar = usarBoleta
+      ? costoConBoleta
+      : costoSinBoleta > 0
+      ? costoSinBoleta
+      : servicio?.costo || "";
+
     const patch = {
       status: nextStatus,
       fechaAprox: fechaAprox || "",
@@ -445,7 +508,7 @@ export default function ServicioDetalle() {
 
       // costo
       precioDespues: false,
-      costo: usarBoleta ? costoConBoleta : costoSinBoleta,
+      costo: costoGuardar,
 
       // ✅ Fotos observaciones
       observacionesFotos: obsFotos || [],
@@ -489,6 +552,48 @@ export default function ServicioDetalle() {
 
   const handleGuardarTodo = async () => {
     await guardarTodo({ silent: false });
+  };
+
+  const guardarCaracteristicasEquipo = async () => {
+    if (!servicio?.id) return;
+    if (locked) {
+      alert("🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.");
+      return;
+    }
+
+    const tipo = normalizarStatus(servicio?.tipoDispositivo);
+    const patch = { caracteristicasPendientes: false };
+
+    if (tipo === "laptop" || tipo === "pc") {
+      patch.laptopPc = {
+        procesador: equipoEdit.procesador || "",
+        ram: equipoEdit.ram || "",
+        disco: equipoEdit.disco || "",
+        estadoPantalla: equipoEdit.estadoPantalla || "Funciona bien",
+        estadoTeclado: equipoEdit.estadoTeclado || "Funciona bien",
+        estadoMouse: equipoEdit.estadoMouse || "Funciona bien",
+        funciona: equipoEdit.funciona || "Sí",
+        enciendeEquipo: equipoEdit.enciendeEquipo || "Sí",
+        contrasenaEquipo: equipoEdit.contrasenaEquipo || "",
+      };
+    } else if (tipo === "impresora") {
+      patch.impresora = {
+        tipoImpresora: equipoEdit.tipoImpresora || "Inyección de tinta",
+        imprime: equipoEdit.imprime || "Sí",
+        condicionesImpresora: equipoEdit.condicionesImpresora || "",
+      };
+    } else if (tipo === "monitor") {
+      patch.monitor = {
+        tamanoMonitor: equipoEdit.tamanoMonitor || "",
+        colores: equipoEdit.colores || "Sí",
+        condicionesMonitor: equipoEdit.condicionesMonitor || "",
+      };
+    }
+
+    const actualizado = await actualizarServicioPorId(servicio.id, patch);
+    setServicio(actualizado);
+    setMostrarModalCaracteristicas(false);
+    alert("✅ Características actualizadas.");
   };
 
   // ✅ Generar PDF: primero guarda boleta y luego abre PDF
@@ -974,6 +1079,109 @@ export default function ServicioDetalle() {
           </small>
         </div>
       </div>
+
+      {mostrarModalCaracteristicas && (
+        <div className="equipo-modal-overlay">
+          <div className="equipo-modal">
+            <h3>Completar características del equipo</h3>
+            <p className="equipo-modal-alerta">
+              Este servicio se registró con la opción de rellenar después. Completa los datos técnicos.
+            </p>
+
+            {(normalizarStatus(servicio?.tipoDispositivo) === "laptop" ||
+              normalizarStatus(servicio?.tipoDispositivo) === "pc") && (
+              <div className="equipo-modal-grid">
+                <input
+                  placeholder="Procesador"
+                  value={equipoEdit.procesador}
+                  onChange={(e) => setEquipoEdit((p) => ({ ...p, procesador: e.target.value }))}
+                />
+                <input
+                  placeholder="RAM"
+                  value={equipoEdit.ram}
+                  onChange={(e) => setEquipoEdit((p) => ({ ...p, ram: e.target.value }))}
+                />
+                <input
+                  placeholder="Disco"
+                  value={equipoEdit.disco}
+                  onChange={(e) => setEquipoEdit((p) => ({ ...p, disco: e.target.value }))}
+                />
+                <input
+                  placeholder="Pantalla"
+                  value={equipoEdit.estadoPantalla}
+                  onChange={(e) => setEquipoEdit((p) => ({ ...p, estadoPantalla: e.target.value }))}
+                />
+                <input
+                  placeholder="Teclado"
+                  value={equipoEdit.estadoTeclado}
+                  onChange={(e) => setEquipoEdit((p) => ({ ...p, estadoTeclado: e.target.value }))}
+                />
+                <input
+                  placeholder="Mouse/Touchpad"
+                  value={equipoEdit.estadoMouse}
+                  onChange={(e) => setEquipoEdit((p) => ({ ...p, estadoMouse: e.target.value }))}
+                />
+              </div>
+            )}
+
+            {normalizarStatus(servicio?.tipoDispositivo) === "impresora" && (
+              <div className="equipo-modal-grid">
+                <input
+                  placeholder="Tipo de impresora"
+                  value={equipoEdit.tipoImpresora}
+                  onChange={(e) => setEquipoEdit((p) => ({ ...p, tipoImpresora: e.target.value }))}
+                />
+                <input
+                  placeholder="Imprime (Sí/No)"
+                  value={equipoEdit.imprime}
+                  onChange={(e) => setEquipoEdit((p) => ({ ...p, imprime: e.target.value }))}
+                />
+                <textarea
+                  placeholder="Condiciones físicas"
+                  value={equipoEdit.condicionesImpresora}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, condicionesImpresora: e.target.value }))
+                  }
+                />
+              </div>
+            )}
+
+            {normalizarStatus(servicio?.tipoDispositivo) === "monitor" && (
+              <div className="equipo-modal-grid">
+                <input
+                  placeholder="Tamaño del monitor"
+                  value={equipoEdit.tamanoMonitor}
+                  onChange={(e) => setEquipoEdit((p) => ({ ...p, tamanoMonitor: e.target.value }))}
+                />
+                <input
+                  placeholder="Colores (Sí/No)"
+                  value={equipoEdit.colores}
+                  onChange={(e) => setEquipoEdit((p) => ({ ...p, colores: e.target.value }))}
+                />
+                <textarea
+                  placeholder="Condiciones físicas"
+                  value={equipoEdit.condicionesMonitor}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, condicionesMonitor: e.target.value }))
+                  }
+                />
+              </div>
+            )}
+
+            <div className="equipo-modal-actions">
+              <button className="btn btn-ok" onClick={guardarCaracteristicasEquipo}>
+                Guardar características
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={() => setMostrarModalCaracteristicas(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

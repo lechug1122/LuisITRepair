@@ -1,0 +1,242 @@
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.modal-cobro-pro {
+  background: #ffffff;
+  width: 920px;
+  max-width: 96%;
+  padding: 26px;
+  border-radius: 14px;
+  animation: fadeIn 0.2s ease-in-out;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+  max-height: none;
+  overflow: visible;
+  height: auto;
+}
+
+.modal-cobro-pro.sin-teclado {
+  width: 700px;
+}
+
+@keyframes fadeIn {
+  from { transform: scale(0.96); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* HEADER */
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  font-size: 22px;
+  letter-spacing: 1px;
+}
+
+/* GRID PRINCIPAL */
+.contenido-cobro {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 28px;
+  margin-top: 12px;
+  align-items: start;
+  height: auto;
+}
+
+.contenido-cobro.sin-teclado {
+  grid-template-columns: 1fr;
+}
+
+.contenido-cobro.sin-teclado .lado-izquierdo {
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* LADO IZQUIERDO */
+.lado-izquierdo {
+  display: flex;
+  flex-direction: column;
+}
+
+.total-grande-pro {
+  font-size: 56px;
+  font-weight: bold;
+  color: #2c3e50;
+  text-align: center;
+  margin: 14px 0;
+}
+
+/* MÉTODOS */
+.metodos {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.metodos button {
+  padding: 10px 20px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  background: #eaeaea;
+  transition: 0.2s ease;
+}
+
+.metodos button:hover {
+  background: #d5d5d5;
+}
+
+.metodos .activo {
+  background: #2d6cdf;
+  color: white;
+}
+
+/* INPUT */
+.pago-input {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.pago-input input {
+  font-size: 20px;
+  padding: 8px 10px;
+  width: 260px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
+
+.referencia-input input {
+  font-size: 16px;
+}
+
+/* CAMBIO */
+.cambio-pro {
+  font-size: 24px;
+  text-align: center;
+  margin: 14px 0;
+  font-weight: bold;
+}
+
+.cambio-pro.ok {
+  color: #27ae60;
+}
+
+.cambio-pro.error {
+  color: #e74c3c;
+}
+
+/* LADO DERECHO */
+.lado-derecho {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  height: auto;
+  min-width: 300px;
+}
+
+/* TECLADO */
+.teclado {
+  display: grid !important;
+  grid-template-columns: repeat(3, 72px) !important;
+  gap: 8px !important;
+  justify-items: center !important;
+  align-content: start !important;
+  grid-auto-flow: row !important;
+}
+
+
+/* BOTONES */
+.teclado button {
+  grid-column: auto !important;
+  width: 72px !important;
+  height: 54px;
+  font-size: 20px;
+  border-radius: 10px;
+  border: none;
+  background: #3f7f99;
+  color: white;
+  cursor: pointer;
+  transition: 0.2s ease;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.teclado button:hover {
+  background: #2c5d73;
+  transform: scale(1.05);
+}
+
+/* ACCIONES */
+.acciones-pro {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+
+.btn-confirmar-pro {
+  background: #27ae60;
+  color: white;
+  padding: 12px 22px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+  transition: 0.2s;
+}
+
+.btn-confirmar-pro:hover {
+  background: #219150;
+}
+
+.btn-cancelar-pro {
+  background: #c0392b;
+  color: white;
+  padding: 12px 22px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+  transition: 0.2s;
+}
+
+.btn-cancelar-pro:hover {
+  background: #a93226;
+}
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+  .modal-cobro-pro {
+    width: 96%;
+    padding: 18px;
+  }
+
+  .contenido-cobro {
+    grid-template-columns: 1fr;
+  }
+
+  .lado-derecho {
+    margin-top: 16px;
+    justify-content: center;
+  }
+
+  .acciones-pro {
+    flex-direction: column;
+    gap: 15px;
+  }
+}
+/* end */

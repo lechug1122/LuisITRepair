@@ -1,5 +1,7 @@
 .clientes-page{
   padding: 18px;
+  min-height: calc(100vh - 64px);
+  background: linear-gradient(135deg, #4f8fb8 0%, #8ab9b6 100%);
 }
 
 .clientes-box{

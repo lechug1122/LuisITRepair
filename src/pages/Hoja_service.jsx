@@ -54,6 +54,7 @@ const initialForm = {
   trabajo: "",
   costo: "",
   precioDespues: false,
+  caracteristicasPendientes: false,
 };
 
 export default function HojaServicio() {
@@ -267,6 +268,15 @@ navigate(`/ticket/${res.folio}`);
     lastQueryRef.current = "";
   } catch (err) {
     console.error("Error guardando:", err);
+    if (err?.code === "DUPLICATE_SERVICE" && err?.duplicado?.folio) {
+      const abrir = confirm(
+        `${err.message}\n\n¿Quieres abrir ese servicio ahora?`
+      );
+      if (abrir) {
+        navigate(`/servicios/${err.duplicado.folio}`);
+      }
+      return;
+    }
     alert("❌ No se pudo guardar.");
   }
 }
@@ -690,6 +700,22 @@ navigate(`/ticket/${res.folio}`);
                         </div>
                       </div>
                     </fieldset>
+                  </div>
+                )}
+
+                {(showLaptopPC || showImpresora || showMonitor) && (
+                  <div className="full form-check ms-2">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="caracteristicasPendientes"
+                      name="caracteristicasPendientes"
+                      checked={!!form.caracteristicasPendientes}
+                      onChange={handleChange}
+                    />
+                    <label className="form-check-label" htmlFor="caracteristicasPendientes">
+                      Rellenar caracteristicas despues
+                    </label>
                   </div>
                 )}
 

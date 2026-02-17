@@ -34,6 +34,24 @@ function isFinalStatus(status) {
   return s === "entregado" || s === "cancelado" || s === "no_reparable";
 }
 
+function normText(raw) {
+  return String(raw || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildDedupeKey(data) {
+  const telefono = String(data?.telefono || "").replace(/\D/g, "").slice(-10);
+  const tipo = normalizarStatus(data?.tipoDispositivo);
+  const marca = normText(data?.marca);
+  const modelo = normText(data?.modelo);
+  return `${telefono}|${tipo}|${marca}|${modelo}`;
+}
+
 /* =========================
    ✅ Folio helpers (índice único)
 ========================= */
@@ -43,6 +61,15 @@ function folioToKey(folio) {
 
 function throwNice(msg) {
   throw new Error(msg);
+}
+
+function throwDuplicate(duplicado) {
+  const err = new Error(
+    `Ya existe un servicio activo similar con folio ${duplicado?.folio || "-"}.`
+  );
+  err.code = "DUPLICATE_SERVICE";
+  err.duplicado = duplicado;
+  throw err;
 }
 
 /* =========================
@@ -70,6 +97,9 @@ async function construirPayload(form) {
     trabajo: form.trabajo || "",
     precioDespues: !!form.precioDespues,
     costo: form.precioDespues ? "" : form.costo || "",
+    caracteristicasPendientes: !!form.caracteristicasPendientes,
+    trabajoNorm: normText(form.trabajo || ""),
+    dedupeKey: buildDedupeKey(form),
 
     entregado: false,
     fechaEntregado: null,
@@ -113,12 +143,60 @@ async function construirPayload(form) {
   return payload;
 }
 
+export async function buscarServicioDuplicadoActivo(formLike) {
+  const key = buildDedupeKey(formLike);
+  const telefono = String(formLike?.telefono || "").replace(/\D/g, "").slice(-10);
+  const trabajoNorm = normText(formLike?.trabajo || "");
+
+  if (!telefono || !normalizarStatus(formLike?.tipoDispositivo)) return null;
+
+  // 1) Registros nuevos (con dedupeKey)
+  const qKey = query(collection(db, "servicios"), where("dedupeKey", "==", key));
+  const snapKey = await getDocs(qKey);
+  const porKey = snapKey.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  // 2) Fallback para registros viejos sin dedupeKey
+  const qTel = query(collection(db, "servicios"), where("telefono", "==", telefono));
+  const snapTel = await getDocs(qTel);
+  const porTelefono = snapTel.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const candidatos = [...porKey, ...porTelefono].filter(
+    (s, i, arr) => arr.findIndex((x) => x.id === s.id) === i
+  );
+
+  const duplicado = candidatos.find((s) => {
+    if (isFinalStatus(s.status)) return false;
+
+    const mismoEquipo =
+      buildDedupeKey(s) === key ||
+      (
+        String(s?.telefono || "").replace(/\D/g, "").slice(-10) === telefono &&
+        normalizarStatus(s?.tipoDispositivo) === normalizarStatus(formLike?.tipoDispositivo) &&
+        normText(s?.marca) === normText(formLike?.marca) &&
+        normText(s?.modelo) === normText(formLike?.modelo)
+      );
+
+    if (!mismoEquipo) return false;
+
+    // Si no hay descripción en ninguno, ya lo consideramos duplicado.
+    if (!trabajoNorm || !normText(s?.trabajo)) return true;
+
+    // Misma descripción de falla => duplicado fuerte.
+    return normText(s?.trabajo) === trabajoNorm;
+  });
+
+  return duplicado || null;
+}
+
 /* =========================
    ✅ CREAR (BLOQUEA duplicado por folio)
 ========================= */
 export async function guardarServicio(form) {
   // 🔥 AQUÍ EL CAMBIO
   const payload = await construirPayload(form);
+
+  const duplicado = await buscarServicioDuplicadoActivo(payload);
+  if (duplicado) throwDuplicate(duplicado);
 
   const folio = (payload.folio || "").trim();
   if (!folio) throwNice("No se pudo generar folio.");
@@ -243,22 +321,10 @@ export async function listarServiciosPendientes() {
    ✅ Historial (finales)
 ========================= */
 export async function listarServiciosHistorial() {
-  const FINAL_LABELS = ["Entregado", "Cancelado", "No reparable"];
-
-  try {
-    const qy = query(
-      collection(db, "servicios"),
-      where("status", "in", FINAL_LABELS),
-      orderBy("createdAt", "desc")
-    );
-    const snap = await getDocs(qy);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  } catch (e) {
-    const qyAll = query(collection(db, "servicios"), orderBy("createdAt", "desc"));
-    const snapAll = await getDocs(qyAll);
-    const all = snapAll.docs.map((d) => ({ id: d.id, ...d.data() }));
-    return all.filter((s) => isFinalStatus(s.status));
-  }
+  const qyAll = query(collection(db, "servicios"), orderBy("createdAt", "desc"));
+  const snapAll = await getDocs(qyAll);
+  const all = snapAll.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return all.filter((s) => isFinalStatus(s.status));
 }
 
 /* =========================
@@ -278,18 +344,27 @@ export async function actualizarServicioPorId(id, data) {
   }
 
   const patch = { ...data, updatedAt: serverTimestamp() };
+  const nextStatus = data?.status ?? current?.status;
+  const nextStatusNorm = normalizarStatus(nextStatus);
+  const isFinal = isFinalStatus(nextStatusNorm);
 
   // 🔥 SI CAMBIA STATUS A ENTREGADO → GUARDA FECHA
-  if (normalizarStatus(data?.status) === "entregado") {
+  if (nextStatusNorm === "entregado") {
     patch.fechaEntregado = serverTimestamp();
   }
 
   // 🔥 SI DEJA DE SER ENTREGADO → BORRA FECHA
   if (
     data?.status &&
-    normalizarStatus(data.status) !== "entregado"
+    nextStatusNorm !== "entregado"
   ) {
     patch.fechaEntregado = null;
+  }
+
+  // 🔒 Cualquier estado final queda bloqueado
+  if (isFinal) {
+    patch.locked = true;
+    patch.lockedReason = nextStatusNorm;
   }
 
   await updateDoc(ref, patch);
