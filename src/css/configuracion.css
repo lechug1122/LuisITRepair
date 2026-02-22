@@ -1,0 +1,173 @@
+:root {
+  --navbar-height: 70px;
+}
+
+/* ===== LAYOUT GENERAL ===== */
+.cfg-layout {
+  display: grid;
+  grid-template-columns: 250px 1fr 300px;
+  height: calc(100vh - var(--navbar-height));
+  margin-top: var(--navbar-height);
+}
+
+/* ===== SIDEBAR ===== */
+.cfg-sidebar {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: linear-gradient(180deg, #0f1e35, #132a4d);
+  color: white;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.cfg-menu {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.cfg-footer {
+  padding-top: 20px;
+}
+
+.btn-logout {
+  width: 100%;
+  padding: 12px;
+  background: #e53935;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: 0.3s;
+}
+
+.btn-logout:hover {
+  background: #c62828;
+}
+
+.cfg-sidebar ul {
+  list-style: none;
+  padding: 0;
+}
+
+.cfg-sidebar li {
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.3s;
+  font-size: 14px;
+}
+
+.cfg-sidebar li:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.cfg-sidebar li.active {
+  background: #0f9bf0;
+  font-weight: bold;
+}
+
+/* ===== MAIN ===== */
+.cfg-main {
+  padding: 40px;
+  overflow-y: auto;
+}
+
+/* ===== PANEL DERECHO ===== */
+.cfg-right {
+  background: #ffffff;
+  border-left: 1px solid #e5e7eb;
+  padding: 30px 20px;
+  overflow-y: auto;
+}
+
+/* ===== GRID ===== */
+.cfg-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+
+/* ===== CARD ===== */
+.cfg-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+  transition: 0.3s;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.cfg-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.1);
+}
+
+/* ===== STATS ===== */
+.stats,
+.empleados-activos {
+  background: #f9fafc;
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+}
+
+.stat {
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.stat:last-child {
+  border-bottom: none;
+}
+
+.empleados-activos ul {
+  list-style: none;
+  padding: 0;
+}
+
+.empleados-activos li {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.online { color: #10a37f; }
+.offline { color: #9ca3af; }
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 1200px) {
+  .cfg-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .cfg-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .cfg-sidebar,
+  .cfg-right {
+    display: none;
+  }
+}.btn-logout-right {
+  width: 100%;
+  margin-top: 15px;
+  padding: 12px;
+  background: #e53935;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.btn-logout-right:hover {
+  background: #c62828;
+  transform: translateY(-2px);
+}

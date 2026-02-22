@@ -22,6 +22,10 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  border-radius: 10px 0 0 10px;
+  padding: 10px 8px;
+  font-weight: 700;
+  
 }
 
 .btn-home-notif {
@@ -68,6 +72,12 @@
   border-radius: 12px;
   padding: 12px;
 }
+.home-header-actions button {
+  font-weight: 800;
+  font-size: 16px;
+  padding: 10px 18px;
+}
+
 
 .home-info-block + .home-info-block {
   margin-top: 10px;
@@ -213,7 +223,7 @@
 /* ===== CALENDAR CONTAINER ===== */
 .calendar-box {
   background: #ffffff;
-  padding: 25px;
+  padding: 32px;
   border-radius: 18px;
   box-shadow: 0 15px 35px rgba(0, 0, 0, 0.06);
   width: 360px;
@@ -264,8 +274,8 @@
 /* ===== DAYS ===== */
 .react-calendar__tile {
   border-radius: 12px;
-  padding: 12px 0;
-  font-size: 15px;
+  padding: 16px 0;
+  font-size: 16px;
   font-weight: 500;
   color: #374151;
   transition: all 0.2s ease;

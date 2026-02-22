@@ -1,0 +1,88 @@
+.update-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 9999;
+}
+
+.update-modal {
+  background: #ffffff;
+  padding: 35px;
+  width: 500px;
+  max-width: 90%;
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.25);
+  animation: fadeIn 0.3s ease;
+}
+
+.update-modal h2 {
+  margin-bottom: 10px;
+  font-size: 24px;
+}
+
+.update-description {
+  color: #6b7280;
+  margin-bottom: 20px;
+}
+
+.update-section h4 {
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+
+.update-list {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 20px;
+}
+
+.update-list li {
+  padding-left: 22px;
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.update-list li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: #10a37f;
+  font-weight: bold;
+}
+
+.update-support {
+  background: #f9fafb;
+  padding: 15px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+
+.update-support strong {
+  display: block;
+  margin-top: 5px;
+}
+
+.update-btn {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(90deg,#0f9bf0,#2563eb);
+  border: none;
+  color: white;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.3s;
+}
+
+.update-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(37,99,235,0.3);
+}
+
+@keyframes fadeIn {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}

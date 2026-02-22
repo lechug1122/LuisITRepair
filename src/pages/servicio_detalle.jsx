@@ -12,6 +12,7 @@ import {
   buscarServicioPorFolio,
   actualizarServicioPorId,
 } from "../js/services/servicios_firestore";
+import { obtenerProductos } from "../js/services/POS_firebase";
 import { STATUS } from "../js/utils/status_map";
 
 import "../css/servicio_detalle.css";
@@ -70,7 +71,9 @@ function formatFecha(ts) {
 }
 
 function num(v) {
-  const s = String(v ?? "").replace(/,/g, "").replace(/[^\d.]/g, "");
+  const s = String(v ?? "")
+    .replace(/,/g, "")
+    .replace(/[^\d.]/g, "");
   const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 }
@@ -118,7 +121,7 @@ function abrirPDFGoogleSheets({
   };
 
   const url = `${GOOGLE_SHEETS_WEBAPP_URL}?payload=${encodeURIComponent(
-    JSON.stringify(payload)
+    JSON.stringify(payload),
   )}`;
   window.open(url, "_blank", "noopener,noreferrer");
 }
@@ -136,7 +139,11 @@ const PASOS_BASE = [
 const PROGRESO_POR_STATUS = {
   pendiente: { pct: 0, theme: "normal", finalLabel: "Finalizado" },
   revision: { pct: 30, theme: "normal", finalLabel: "Finalizado" },
-  en_espera_de_refaccion: { pct: 40, theme: "normal", finalLabel: "Finalizado" },
+  en_espera_de_refaccion: {
+    pct: 40,
+    theme: "normal",
+    finalLabel: "Finalizado",
+  },
   en_reparacion: { pct: 55, theme: "normal", finalLabel: "Finalizado" },
   trabajando: { pct: 60, theme: "normal", finalLabel: "Finalizado" },
   listo: { pct: 85, theme: "normal", finalLabel: "Finalizado" },
@@ -149,7 +156,11 @@ const PROGRESO_POR_STATUS = {
 function getCfg(status) {
   const s = normalizarStatus(status);
   return (
-    PROGRESO_POR_STATUS[s] || { pct: 0, theme: "normal", finalLabel: "Finalizado" }
+    PROGRESO_POR_STATUS[s] || {
+      pct: 0,
+      theme: "normal",
+      finalLabel: "Finalizado",
+    }
   );
 }
 
@@ -172,11 +183,14 @@ function WizardProgress({ status }) {
     cfg.theme === "danger"
       ? "wizard--danger"
       : cfg.theme === "muted"
-      ? "wizard--muted"
-      : "wizard--normal";
+        ? "wizard--muted"
+        : "wizard--normal";
 
   return (
-    <div className={`wizard-progress2 ${themeClass}`} style={{ ["--pct"]: `${cfg.pct}%` }}>
+    <div
+      className={`wizard-progress2 ${themeClass}`}
+      style={{ ["--pct"]: `${cfg.pct}%` }}
+    >
       <div className="wizard-track" />
       <div className="wizard-fill" />
 
@@ -201,7 +215,13 @@ function WizardProgress({ status }) {
 ========================= */
 function nuevoItem(i) {
   const idx = String(i + 1).padStart(3, "0");
-  return { id: uid(), item: `P-${idx}`, descripcion: "", pUnitario: "", cantidad: 1 };
+  return {
+    id: uid(),
+    item: `P-${idx}`,
+    descripcion: "",
+    pUnitario: "",
+    cantidad: 1,
+  };
 }
 
 function limpiarBoletaItems(items) {
@@ -263,7 +283,11 @@ function tieneCaracteristicasPendientes(servicio) {
   const tipo = normalizarStatus(servicio.tipoDispositivo);
 
   if (tipo === "laptop" || tipo === "pc") {
-    return !servicio?.laptopPc?.procesador || !servicio?.laptopPc?.ram || !servicio?.laptopPc?.disco;
+    return (
+      !servicio?.laptopPc?.procesador ||
+      !servicio?.laptopPc?.ram ||
+      !servicio?.laptopPc?.disco
+    );
   }
   if (tipo === "impresora") {
     return !servicio?.impresora?.condicionesImpresora;
@@ -293,7 +317,13 @@ export default function ServicioDetalle() {
   const [boletaFormaPago, setBoletaFormaPago] = useState("");
   const [boletaNotas, setBoletaNotas] = useState("");
 
-  const [items, setItems] = useState([nuevoItem(0), nuevoItem(1), nuevoItem(2)]);
+  const [items, setItems] = useState([
+    nuevoItem(0),
+    nuevoItem(1),
+    nuevoItem(2),
+  ]);
+  const [productosDB, setProductosDB] = useState([]);
+  const [scanCode, setScanCode] = useState("");
 
   // ✅ Fotos observaciones (varias)
   const [obsFotos, setObsFotos] = useState([]); // [{url,path,name}]
@@ -301,7 +331,8 @@ export default function ServicioDetalle() {
   const [exportingPdf, setExportingPdf] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [uploadingObs, setUploadingObs] = useState(false);
-  const [mostrarModalCaracteristicas, setMostrarModalCaracteristicas] = useState(false);
+  const [mostrarModalCaracteristicas, setMostrarModalCaracteristicas] =
+    useState(false);
   const [equipoEdit, setEquipoEdit] = useState(buildEquipoEdit(null));
 
   const locked = !!servicio?.locked || isFinalStatus(servicio?.status);
@@ -317,7 +348,11 @@ export default function ServicioDetalle() {
 
         setServicio(data);
         setEquipoEdit(buildEquipoEdit(data));
-        if (data && !isFinalStatus(data?.status) && tieneCaracteristicasPendientes(data)) {
+        if (
+          data &&
+          !isFinalStatus(data?.status) &&
+          tieneCaracteristicasPendientes(data)
+        ) {
           setMostrarModalCaracteristicas(true);
         }
 
@@ -325,11 +360,16 @@ export default function ServicioDetalle() {
         setObservaciones(data?.observaciones || "");
         setFechaAprox(data?.fechaAprox || "");
 
-        if (data?.costo !== undefined && data?.costo !== null && data?.costo !== "") {
+        if (
+          data?.costo !== undefined &&
+          data?.costo !== null &&
+          data?.costo !== ""
+        ) {
           setPrecioFinal(String(data.costo));
         }
 
-        if (Array.isArray(data?.observacionesFotos)) setObsFotos(data.observacionesFotos);
+        if (Array.isArray(data?.observacionesFotos))
+          setObsFotos(data.observacionesFotos);
 
         // boleta guardada
         if (data?.boleta) {
@@ -360,6 +400,16 @@ export default function ServicioDetalle() {
       }
     })();
 
+    // cargar productos para búsqueda por código
+    (async () => {
+      try {
+        const prods = await obtenerProductos();
+        if (alive) setProductosDB(Array.isArray(prods) ? prods : []);
+      } catch (e) {
+        console.error("Error cargando productos:", e);
+      }
+    })();
+
     return () => (alive = false);
   }, [folio]);
 
@@ -369,11 +419,34 @@ export default function ServicioDetalle() {
 
   const handleEdit = () => {
     if (locked) {
-      alert("🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.");
+      alert(
+        "🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.",
+      );
       return;
     }
     setEquipoEdit(buildEquipoEdit(servicio));
     setMostrarModalCaracteristicas(true);
+  };
+
+  const abrirWhatsAppAviso = (nextStatus) => {
+    try {
+      if (!servicio) return;
+      const nombre = servicio?.nombre || "cliente";
+      const fol = servicio?.folio || folio || "#";
+      const tipo = servicio?.tipoDispositivo || "equipo";
+      const marca = servicio?.marca || "";
+      const modelo = servicio?.modelo || "";
+
+      const texto = `Hola ${nombre},\n\nTe informamos que el servicio ${fol} (${tipo} ${marca} ${modelo}) ahora se encuentra en estado: *${nextStatus}*.\n\nGracias por confiar en nosotros — te avisaremos cuando haya novedades.`;
+
+      const tel = String(servicio?.telefono || "").replace(/\D/g, "");
+      if (!tel) return alert("No hay teléfono del cliente para WhatsApp.");
+
+      const wa = `https://wa.me/52${tel}?text=${encodeURIComponent(texto)}`;
+      window.open(wa, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      console.error("Error abriendo WhatsApp:", e);
+    }
   };
 
   const urlStatus = `${window.location.origin}/status/${folio}`;
@@ -382,13 +455,16 @@ export default function ServicioDetalle() {
     const tel = String(servicio?.telefono || "").replace(/\D/g, "");
     if (!tel) return "";
     const msg = encodeURIComponent(
-      `Hola ${servicio?.nombre || ""}, te escribimos sobre tu servicio ${servicio?.folio || folio}.`
+      `Hola ${servicio?.nombre || ""}, te escribimos sobre tu servicio ${servicio?.folio || folio}.`,
     );
     return `https://wa.me/52${tel}?text=${msg}`;
   }, [servicio?.telefono, servicio?.nombre, servicio?.folio, folio]);
 
   const totalBoleta = useMemo(() => {
-    return items.reduce((acc, r) => acc + num(r.pUnitario) * num(r.cantidad), 0);
+    return items.reduce(
+      (acc, r) => acc + num(r.pUnitario) * num(r.cantidad),
+      0,
+    );
   }, [items]);
 
   const itemsValidos = useMemo(() => {
@@ -454,101 +530,139 @@ export default function ServicioDetalle() {
   // =========================
   // Guardar TODO (con lock)
   // =========================
-  const guardarTodo = async ({ silent = false } = {}) => {
-    if (!servicio?.id) {
-      if (!silent) alert("❌ No se encontró el ID del servicio.");
+ // =========================
+// Guardar TODO (con lock)
+// =========================
+const guardarTodo = async ({ silent = false } = {}) => {
+  if (!servicio?.id) {
+    if (!silent) alert("❌ No se encontró el ID del servicio.");
+    return false;
+  }
+
+  if (locked) {
+    if (!silent)
+      alert("🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.");
+    return false;
+  }
+
+  const costoSinBoleta = num(precioFinal);
+  const costoConBoleta = totalBoleta;
+  const nextStatus = status || "pendiente";
+  const pidePrecio = requierePrecioFinal(nextStatus);
+
+  // ===============================
+  // VALIDACIONES NORMALES
+  // ===============================
+
+  if (!usarBoleta) {
+    if (pidePrecio && (!costoSinBoleta || costoSinBoleta <= 0)) {
+      if (!silent)
+        alert("⚠️ Captura un Precio final válido (mayor a 0) o activa Boleta.");
       return false;
     }
-
-    if (locked) {
-      if (!silent) alert("🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.");
+  } else {
+    if (!itemsValidos) {
+      if (!silent)
+        alert("⚠️ Agrega al menos 1 artículo con descripción para guardar la boleta.");
       return false;
     }
-
-    const costoSinBoleta = num(precioFinal);
-    const costoConBoleta = totalBoleta;
-    const nextStatus = status || "pendiente";
-    const pidePrecio = requierePrecioFinal(nextStatus);
-
-    if (!usarBoleta) {
-      if (pidePrecio && (!costoSinBoleta || costoSinBoleta <= 0)) {
-        if (!silent) alert("⚠️ Captura un Precio final válido (mayor a 0) o activa Boleta.");
-        return false;
-      }
-    } else {
-      if (!itemsValidos) {
-        if (!silent) alert("⚠️ Agrega al menos 1 artículo con descripción para guardar la boleta.");
-        return false;
-      }
-      if (!boletaFormaPago) {
-        if (!silent) alert("⚠️ Selecciona una Forma de pago.");
-        return false;
-      }
-    }
-
-    const willLock = isFinalStatus(nextStatus);
-
-    if (willLock) {
-      const ok = confirm(
-        `⚠️ Vas a marcar el servicio como "${nextStatus}".\n\nEsto lo CERRARÁ y YA NO se podrá modificar.\n\n¿Confirmas?`
-      );
-      if (!ok) return false;
-    }
-
-    const costoGuardar = usarBoleta
-      ? costoConBoleta
-      : costoSinBoleta > 0
-      ? costoSinBoleta
-      : servicio?.costo || "";
-
-    const patch = {
-      status: nextStatus,
-      fechaAprox: fechaAprox || "",
-      observaciones: observaciones || "",
-
-      // costo
-      precioDespues: false,
-      costo: costoGuardar,
-
-      // ✅ Fotos observaciones
-      observacionesFotos: obsFotos || [],
-
-      ...(usarBoleta
-        ? {
-            boleta: {
-              fecha: boletaFecha || "",
-              formaPago: boletaFormaPago || "",
-              notas: boletaNotas || "", // ✅ GUARDA NOTAS
-              items: limpiarBoletaItems(items),
-              total: costoConBoleta,
-            },
-          }
-        : { boleta: null }),
-
-      ...(willLock
-        ? {
-            locked: true,
-            lockedReason: normalizarStatus(nextStatus),
-          }
-        : {}),
-    };
-
-    try {
-      setSavingAll(true);
-      const actualizado = await actualizarServicioPorId(servicio.id, patch);
-      setServicio(actualizado);
-      setPrecioFinal(String(actualizado?.costo ?? (usarBoleta ? costoConBoleta : costoSinBoleta)));
-
-      if (!silent) alert("✅ Guardado completo (servicio + boleta + fotos).");
-      return true;
-    } catch (e) {
-      console.error(e);
-      if (!silent) alert(`❌ Error guardando: ${e?.message || e}`);
+    if (!boletaFormaPago) {
+      if (!silent) alert("⚠️ Selecciona una Forma de pago.");
       return false;
-    } finally {
-      setSavingAll(false);
     }
+  }
+
+  // ===============================
+  // 🚫 BLOQUEAR ENTREGADO SI NO ESTÁ COBRADO
+  // ===============================
+
+  if (normalizarStatus(nextStatus) === "entregado") {
+    const boletaGuardada = servicio?.boleta;
+
+    const estaCobrado =
+      boletaGuardada &&
+      boletaGuardada.formaPago &&
+      num(boletaGuardada.total) > 0;
+
+    if (!estaCobrado) {
+      if (!silent) {
+        alert("❌ No puedes marcar como ENTREGADO hasta que esté COBRADO desde el Punto de Venta.");
+      }
+      return false;
+    }
+  }
+
+  const willLock = isFinalStatus(nextStatus);
+
+  if (willLock) {
+    const ok = confirm(
+      `⚠️ Vas a marcar el servicio como "${nextStatus}".\n\nEsto lo CERRARÁ y YA NO se podrá modificar.\n\n¿Confirmas?`
+    );
+    if (!ok) return false;
+  }
+
+  const costoGuardar = usarBoleta
+    ? costoConBoleta
+    : costoSinBoleta > 0
+    ? costoSinBoleta
+    : servicio?.costo || "";
+
+  const patch = {
+    status: nextStatus,
+    fechaAprox: fechaAprox || "",
+    observaciones: observaciones || "",
+
+    precioDespues: false,
+    costo: costoGuardar,
+
+    observacionesFotos: obsFotos || [],
+
+    ...(usarBoleta
+      ? {
+          boleta: {
+            fecha: boletaFecha || "",
+            formaPago: boletaFormaPago || "",
+            notas: boletaNotas || "",
+            items: limpiarBoletaItems(items),
+            total: costoConBoleta,
+          },
+        }
+      : { boleta: null }),
+
+    ...(willLock
+      ? {
+          locked: true,
+          lockedReason: normalizarStatus(nextStatus),
+        }
+      : {}),
   };
+
+  try {
+    setSavingAll(true);
+
+    const actualizado = await actualizarServicioPorId(servicio.id, patch);
+
+    setServicio(actualizado);
+
+    setPrecioFinal(
+      String(
+        actualizado?.costo ??
+          (usarBoleta ? costoConBoleta : costoSinBoleta)
+      )
+    );
+
+    if (!silent)
+      alert("✅ Guardado completo (servicio + boleta + fotos).");
+
+    return true;
+  } catch (e) {
+    console.error(e);
+    if (!silent) alert(`❌ Error guardando: ${e?.message || e}`);
+    return false;
+  } finally {
+    setSavingAll(false);
+  }
+};
 
   const handleGuardarTodo = async () => {
     await guardarTodo({ silent: false });
@@ -557,7 +671,9 @@ export default function ServicioDetalle() {
   const guardarCaracteristicasEquipo = async () => {
     if (!servicio?.id) return;
     if (locked) {
-      alert("🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.");
+      alert(
+        "🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.",
+      );
       return;
     }
 
@@ -603,7 +719,9 @@ export default function ServicioDetalle() {
       return;
     }
     if (locked) {
-      alert("🔒 Servicio bloqueado. Puedes generar PDF si ya está guardada la boleta, pero no modificar.");
+      alert(
+        "🔒 Servicio bloqueado. Puedes generar PDF si ya está guardada la boleta, pero no modificar.",
+      );
     }
 
     try {
@@ -667,10 +785,16 @@ export default function ServicioDetalle() {
             <h2>Detalle del Servicio</h2>
             <small>
               Folio: <b>{servicio.folio}</b> · Estado:{" "}
-              <span className={`badge badge-${normalizarStatus(status || "pendiente")}`}>
+              <span
+                className={`badge badge-${normalizarStatus(status || "pendiente")}`}
+              >
                 {status || "pendiente"}
               </span>
-              {locked && <span style={{ marginLeft: 10, fontWeight: 900 }}>🔒 CERRADO</span>}
+              {locked && (
+                <span style={{ marginLeft: 10, fontWeight: 900 }}>
+                  🔒 CERRADO
+                </span>
+              )}
             </small>
           </div>
 
@@ -689,7 +813,11 @@ export default function ServicioDetalle() {
               <b>Actualizar estado</b>
             </label>
 
-            <select value={status} onChange={(e) => setStatus(e.target.value)} disabled={locked}>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              disabled={locked}
+            >
               {STATUS.map((s, idx) => (
                 <option key={`${s.key}-${s.label}-${idx}`} value={s.label}>
                   {s.label}
@@ -706,6 +834,16 @@ export default function ServicioDetalle() {
               onChange={(e) => setFechaAprox(e.target.value)}
               disabled={locked}
             />
+            <div style={{ marginTop: 8 }}>
+              <button
+                className="btn btn-wa"
+                onClick={() => abrirWhatsAppAviso(status)}
+                disabled={locked}
+                style={{ width: "100%", textAlign: "center" }}
+              >
+                Avisar cliente por WhatsApp
+              </button>
+            </div>
           </div>
         </div>
 
@@ -795,14 +933,17 @@ export default function ServicioDetalle() {
           />
 
           <div style={{ marginTop: 12 }}>
-      
-
-            <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-              
-            </div>
+            <div style={{ marginTop: 8, display: "grid", gap: 8 }}></div>
 
             {obsFotos?.length > 0 && (
-              <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10 }}>
+              <div
+                style={{
+                  marginTop: 12,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 10,
+                }}
+              >
                 {obsFotos.map((f, idx) => (
                   <div
                     key={`${f.path || f.url}-${idx}`}
@@ -818,10 +959,21 @@ export default function ServicioDetalle() {
                       <img
                         src={f.url}
                         alt="foto"
-                        style={{ width: "100%", height: 110, objectFit: "cover" }}
+                        style={{
+                          width: "100%",
+                          height: 110,
+                          objectFit: "cover",
+                        }}
                       />
                     </a>
-                    <div style={{ display: "flex", justifyContent: "space-between", padding: 8, gap: 8 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        padding: 8,
+                        gap: 8,
+                      }}
+                    >
                       <small
                         style={{
                           opacity: 0.8,
@@ -833,7 +985,11 @@ export default function ServicioDetalle() {
                         {f.name || "foto"}
                       </small>
                       {!locked && (
-                        <button className="btn btn-danger" onClick={() => removeObsFoto(idx)} title="Quitar">
+                        <button
+                          className="btn btn-danger"
+                          onClick={() => removeObsFoto(idx)}
+                          title="Quitar"
+                        >
                           ✕
                         </button>
                       )}
@@ -847,10 +1003,24 @@ export default function ServicioDetalle() {
 
         {/* Boleta */}
         <div className="box full">
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+            }}
+          >
             <h3 style={{ margin: 0 }}>Boleta de venta</h3>
 
-            <label style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 800 }}>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                fontWeight: 800,
+              }}
+            >
               <input
                 type="checkbox"
                 checked={usarBoleta}
@@ -880,7 +1050,14 @@ export default function ServicioDetalle() {
 
           {usarBoleta && (
             <div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginTop: 12 }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, 1fr)",
+                  gap: 12,
+                  marginTop: 12,
+                }}
+              >
                 <div>
                   <label>
                     <b>Fecha boleta</b>
@@ -914,21 +1091,92 @@ export default function ServicioDetalle() {
                   <label>
                     <b>Total</b>
                   </label>
-                  <div style={{ height: 44, display: "flex", alignItems: "center", fontWeight: 900 }}>
+                  <div
+                    style={{
+                      height: 44,
+                      display: "flex",
+                      alignItems: "center",
+                      fontWeight: 900,
+                    }}
+                  >
                     {money(totalBoleta)}
                   </div>
                 </div>
               </div>
 
               <div style={{ overflowX: "auto", marginTop: 12 }}>
+                <div
+                  style={{
+                    marginBottom: 8,
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                  }}
+                >
+                  <label style={{ margin: 0 }}>
+                    <b>Escanear producto para boleta</b>
+                  </label>
+                  <input
+                    placeholder="Escanea código y presiona Enter"
+                    value={scanCode}
+                    onChange={(e) => setScanCode(e.target.value)}
+                    onKeyDown={async (e) => {
+                      if (e.key !== "Enter") return;
+                      const termino = String(scanCode || "")
+                        .trim()
+                        .toLowerCase();
+                      if (!termino) return;
+
+                      const producto = productosDB.find(
+                        (p) =>
+                          String(p.codigo || "")
+                            .trim()
+                            .toLowerCase() === termino,
+                      );
+
+                      if (!producto) {
+                        alert("Producto no encontrado en la base del POS");
+                        return;
+                      }
+
+                      // Añadir como renglón a la boleta
+                      setItems((prev) => [
+                        ...prev,
+                        {
+                          id: uid(),
+                          item: `P-${String(prev.length + 1).padStart(3, "0")}`,
+                          descripcion:
+                            producto.nombre ||
+                            producto.nombreProducto ||
+                            producto.descripcion ||
+                            "",
+                          pUnitario:
+                            producto.precioVenta ?? producto.precio ?? 0,
+                          cantidad: 1,
+                        },
+                      ]);
+
+                      setScanCode("");
+                    }}
+                    style={{ height: 36, padding: "0 8px", borderRadius: 6 }}
+                  />
+                </div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ background: "#2563eb", color: "#fff" }}>
                       <th style={{ padding: 10, textAlign: "left" }}>ITEM</th>
-                      <th style={{ padding: 10, textAlign: "left" }}>DESCRIPCIÓN</th>
-                      <th style={{ padding: 10, textAlign: "right" }}>P. UNITARIO</th>
-                      <th style={{ padding: 10, textAlign: "right" }}>CANTIDAD</th>
-                      <th style={{ padding: 10, textAlign: "right" }}>IMPORTE</th>
+                      <th style={{ padding: 10, textAlign: "left" }}>
+                        DESCRIPCIÓN
+                      </th>
+                      <th style={{ padding: 10, textAlign: "right" }}>
+                        P. UNITARIO
+                      </th>
+                      <th style={{ padding: 10, textAlign: "right" }}>
+                        CANTIDAD
+                      </th>
+                      <th style={{ padding: 10, textAlign: "right" }}>
+                        IMPORTE
+                      </th>
                       <th style={{ padding: 10 }}></th>
                     </tr>
                   </thead>
@@ -937,11 +1185,16 @@ export default function ServicioDetalle() {
                     {items.map((r) => {
                       const importe = num(r.pUnitario) * num(r.cantidad);
                       return (
-                        <tr key={r.id} style={{ borderBottom: "1px solid rgba(0,0,0,.08)" }}>
+                        <tr
+                          key={r.id}
+                          style={{ borderBottom: "1px solid rgba(0,0,0,.08)" }}
+                        >
                           <td style={{ padding: 8, width: 90 }}>
                             <input
                               value={r.item}
-                              onChange={(e) => updateRow(r.id, { item: e.target.value })}
+                              onChange={(e) =>
+                                updateRow(r.id, { item: e.target.value })
+                              }
                               disabled={locked}
                               style={{
                                 width: "100%",
@@ -956,7 +1209,9 @@ export default function ServicioDetalle() {
                           <td style={{ padding: 8, minWidth: 260 }}>
                             <input
                               value={r.descripcion}
-                              onChange={(e) => updateRow(r.id, { descripcion: e.target.value })}
+                              onChange={(e) =>
+                                updateRow(r.id, { descripcion: e.target.value })
+                              }
                               disabled={locked}
                               placeholder="Ej: Memoria DDR3 8GB..."
                               style={{
@@ -972,7 +1227,9 @@ export default function ServicioDetalle() {
                           <td style={{ padding: 8, width: 140 }}>
                             <input
                               value={r.pUnitario}
-                              onChange={(e) => updateRow(r.id, { pUnitario: e.target.value })}
+                              onChange={(e) =>
+                                updateRow(r.id, { pUnitario: e.target.value })
+                              }
                               disabled={locked}
                               placeholder="0.00"
                               style={{
@@ -989,7 +1246,9 @@ export default function ServicioDetalle() {
                           <td style={{ padding: 8, width: 120 }}>
                             <input
                               value={r.cantidad}
-                              onChange={(e) => updateRow(r.id, { cantidad: e.target.value })}
+                              onChange={(e) =>
+                                updateRow(r.id, { cantidad: e.target.value })
+                              }
                               disabled={locked}
                               style={{
                                 width: "100%",
@@ -1002,13 +1261,30 @@ export default function ServicioDetalle() {
                             />
                           </td>
 
-                          <td style={{ padding: 8, width: 160, textAlign: "right", fontWeight: 900 }}>
+                          <td
+                            style={{
+                              padding: 8,
+                              width: 160,
+                              textAlign: "right",
+                              fontWeight: 900,
+                            }}
+                          >
                             {money(importe)}
                           </td>
 
-                          <td style={{ padding: 8, width: 60, textAlign: "center" }}>
+                          <td
+                            style={{
+                              padding: 8,
+                              width: 60,
+                              textAlign: "center",
+                            }}
+                          >
                             {!locked && (
-                              <button className="btn btn-danger" onClick={() => removeRow(r.id)} title="Quitar">
+                              <button
+                                className="btn btn-danger"
+                                onClick={() => removeRow(r.id)}
+                                title="Quitar"
+                              >
                                 ✕
                               </button>
                             )}
@@ -1020,10 +1296,23 @@ export default function ServicioDetalle() {
 
                   <tfoot>
                     <tr>
-                      <td colSpan={4} style={{ padding: 10, textAlign: "right", fontWeight: 900 }}>
+                      <td
+                        colSpan={4}
+                        style={{
+                          padding: 10,
+                          textAlign: "right",
+                          fontWeight: 900,
+                        }}
+                      >
                         TOTAL:
                       </td>
-                      <td style={{ padding: 10, textAlign: "right", fontWeight: 900 }}>
+                      <td
+                        style={{
+                          padding: 10,
+                          textAlign: "right",
+                          fontWeight: 900,
+                        }}
+                      >
                         {money(totalBoleta)}
                       </td>
                       <td />
@@ -1044,7 +1333,14 @@ export default function ServicioDetalle() {
                 />
               </div>
 
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginTop: 12,
+                }}
+              >
                 {!locked && (
                   <button className="btn" onClick={addRow}>
                     Agregar renglón
@@ -1056,7 +1352,9 @@ export default function ServicioDetalle() {
                   onClick={handleExportPdf}
                   disabled={!puedeExportarBoleta || exportingPdf}
                 >
-                  {exportingPdf ? "Generando PDF..." : "Generar PDF (Plantilla)"}
+                  {exportingPdf
+                    ? "Generando PDF..."
+                    : "Generar PDF (Plantilla)"}
                 </button>
               </div>
             </div>
@@ -1071,11 +1369,16 @@ export default function ServicioDetalle() {
             disabled={savingAll || locked}
             style={{ width: "100%", padding: "12px 16px", fontWeight: 900 }}
           >
-            {locked ? "Servicio cerrado (no editable)" : savingAll ? "Guardando todo..." : "Guardar cambios (Todo)"}
+            {locked
+              ? "Servicio cerrado (no editable)"
+              : savingAll
+                ? "Guardando todo..."
+                : "Guardar cambios (Todo)"}
           </button>
 
           <small style={{ opacity: 0.75, display: "block", marginTop: 8 }}>
-            Guarda: estado, fecha aprox, observaciones, fotos y boleta (si aplica).
+            Guarda: estado, fecha aprox, observaciones, fotos y boleta (si
+            aplica).
           </small>
         </div>
       </div>
@@ -1085,7 +1388,8 @@ export default function ServicioDetalle() {
           <div className="equipo-modal">
             <h3>Completar características del equipo</h3>
             <p className="equipo-modal-alerta">
-              Este servicio se registró con la opción de rellenar después. Completa los datos técnicos.
+              Este servicio se registró con la opción de rellenar después.
+              Completa los datos técnicos.
             </p>
 
             {(normalizarStatus(servicio?.tipoDispositivo) === "laptop" ||
@@ -1094,32 +1398,53 @@ export default function ServicioDetalle() {
                 <input
                   placeholder="Procesador"
                   value={equipoEdit.procesador}
-                  onChange={(e) => setEquipoEdit((p) => ({ ...p, procesador: e.target.value }))}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, procesador: e.target.value }))
+                  }
                 />
                 <input
                   placeholder="RAM"
                   value={equipoEdit.ram}
-                  onChange={(e) => setEquipoEdit((p) => ({ ...p, ram: e.target.value }))}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, ram: e.target.value }))
+                  }
                 />
                 <input
                   placeholder="Disco"
                   value={equipoEdit.disco}
-                  onChange={(e) => setEquipoEdit((p) => ({ ...p, disco: e.target.value }))}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, disco: e.target.value }))
+                  }
                 />
                 <input
                   placeholder="Pantalla"
                   value={equipoEdit.estadoPantalla}
-                  onChange={(e) => setEquipoEdit((p) => ({ ...p, estadoPantalla: e.target.value }))}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      estadoPantalla: e.target.value,
+                    }))
+                  }
                 />
                 <input
                   placeholder="Teclado"
                   value={equipoEdit.estadoTeclado}
-                  onChange={(e) => setEquipoEdit((p) => ({ ...p, estadoTeclado: e.target.value }))}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      estadoTeclado: e.target.value,
+                    }))
+                  }
                 />
                 <input
                   placeholder="Mouse/Touchpad"
                   value={equipoEdit.estadoMouse}
-                  onChange={(e) => setEquipoEdit((p) => ({ ...p, estadoMouse: e.target.value }))}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      estadoMouse: e.target.value,
+                    }))
+                  }
                 />
               </div>
             )}
@@ -1129,18 +1454,28 @@ export default function ServicioDetalle() {
                 <input
                   placeholder="Tipo de impresora"
                   value={equipoEdit.tipoImpresora}
-                  onChange={(e) => setEquipoEdit((p) => ({ ...p, tipoImpresora: e.target.value }))}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      tipoImpresora: e.target.value,
+                    }))
+                  }
                 />
                 <input
                   placeholder="Imprime (Sí/No)"
                   value={equipoEdit.imprime}
-                  onChange={(e) => setEquipoEdit((p) => ({ ...p, imprime: e.target.value }))}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, imprime: e.target.value }))
+                  }
                 />
                 <textarea
                   placeholder="Condiciones físicas"
                   value={equipoEdit.condicionesImpresora}
                   onChange={(e) =>
-                    setEquipoEdit((p) => ({ ...p, condicionesImpresora: e.target.value }))
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      condicionesImpresora: e.target.value,
+                    }))
                   }
                 />
               </div>
@@ -1151,25 +1486,38 @@ export default function ServicioDetalle() {
                 <input
                   placeholder="Tamaño del monitor"
                   value={equipoEdit.tamanoMonitor}
-                  onChange={(e) => setEquipoEdit((p) => ({ ...p, tamanoMonitor: e.target.value }))}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      tamanoMonitor: e.target.value,
+                    }))
+                  }
                 />
                 <input
                   placeholder="Colores (Sí/No)"
                   value={equipoEdit.colores}
-                  onChange={(e) => setEquipoEdit((p) => ({ ...p, colores: e.target.value }))}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, colores: e.target.value }))
+                  }
                 />
                 <textarea
                   placeholder="Condiciones físicas"
                   value={equipoEdit.condicionesMonitor}
                   onChange={(e) =>
-                    setEquipoEdit((p) => ({ ...p, condicionesMonitor: e.target.value }))
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      condicionesMonitor: e.target.value,
+                    }))
                   }
                 />
               </div>
             )}
 
             <div className="equipo-modal-actions">
-              <button className="btn btn-ok" onClick={guardarCaracteristicasEquipo}>
+              <button
+                className="btn btn-ok"
+                onClick={guardarCaracteristicasEquipo}
+              >
                 Guardar características
               </button>
               <button

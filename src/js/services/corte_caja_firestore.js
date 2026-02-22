@@ -91,6 +91,23 @@ export async function obtenerCorteCajaDia(fechaKey = getDateKeyLocal()) {
   return { id: snap.id, ...snap.data() };
 }
 
+export async function registrarAperturaCaja(fondoInicialCaja = 0, cajero = {}) {
+  const fechaKey = getDateKeyLocal();
+  const payload = {
+    fechaKey,
+    fondoInicialCaja: Number.isFinite(Number(fondoInicialCaja)) ? Number(Number(fondoInicialCaja).toFixed(2)) : 0,
+    cajero: {
+      uid: String(cajero?.uid || "").trim() || null,
+      email: String(cajero?.email || "").trim() || null,
+      nombre: String(cajero?.nombre || "").trim() || null,
+    },
+    aperturaEn: serverTimestamp(),
+  };
+
+  await setDoc(doc(db, "cortes_caja", fechaKey), payload, { merge: true });
+  return obtenerCorteCajaDia(fechaKey);
+}
+
 export async function estaCajaCerradaHoy() {
   const corte = await obtenerCorteCajaDia(getDateKeyLocal());
   return !!(corte && corte.cerrado === true);

@@ -14,6 +14,8 @@ import {
   YAxis,
   Cell,
 } from "recharts";
+import Calendar from "react-calendar";
+import "react-calendar/dist/Calendar.css";
 import Layout from "../components/Layout";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../initializer/firebase";
@@ -24,6 +26,13 @@ import {
   obtenerCorteCajaDia,
   listarCortesCaja,
 } from "../js/services/corte_caja_firestore";
+import {
+  guardarEgreso,
+  obtenerEgresosDia,
+  eliminarEgreso,
+  actualizarEgreso,
+} from "../js/services/egresos_firestore";
+import ModalEgresos from "../components/modal_egresos";
 import "../css/reportes.css";
 
 const money = (value) =>
@@ -86,12 +95,49 @@ export default function Reportes() {
     return ymd(d);
   });
   const [fechaHasta, setFechaHasta] = useState(() => ymd(new Date()));
+  const [mostrarModalEgresos, setMostrarModalEgresos] = useState(false);
+  const [egresos, setEgresos] = useState([]);
+  const [cargandoEgresos, setCargandoEgresos] = useState(false);
 
+  // Estados para calendario y filtros visuales
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [mostrarCalendario, setMostrarCalendario] = useState(false);
+  const [fijarCalendario, setFijarCalendario] = useState(() => {
+    try {
+      return localStorage.getItem("reportes_calendar_pinned") === "1";
+    } catch {
+      return false;
+    }
+  });
   useEffect(() => {
     obtenerVentas();
     cargarEstadoCorteHoy();
     cargarHistorialCortes();
+    cargarEgresosDia();
   }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("reportes_calendar_pinned", fijarCalendario ? "1" : "0");
+    } catch (e) {
+      console.error("Error saving calendar state:", e);
+    }
+  }, [fijarCalendario]);
+
+  const cambiarFecchaAlSeleccionarDia = (fecha) => {
+    const f = ymd(fecha);
+    setFechaDesde(f);
+    setFechaHasta(f);
+    setSelectedDate(fecha);
+  };
+
+  const toggleFijarCalendario = () => {
+    setFijarCalendario((prev) => {
+      const next = !prev;
+      if (next) setMostrarCalendario(true);
+      return next;
+    });
+  };
 
   const cargarEstadoCorteHoy = async () => {
     const corte = await obtenerCorteCajaDia();
@@ -126,6 +172,52 @@ export default function Reportes() {
     setCortesHistorial(Array.isArray(data) ? data : []);
   };
 
+  const cargarEgresosDia = async () => {
+    try {
+      setCargandoEgresos(true);
+      const datos = await obtenerEgresosDia();
+      setEgresos(Array.isArray(datos?.egresos) ? datos.egresos : []);
+    } catch (err) {
+      console.error("Error cargando egresos:", err);
+    } finally {
+      setCargandoEgresos(false);
+    }
+  };
+
+  const handleAgregarEgreso = async (egreso) => {
+    try {
+      await guardarEgreso({
+        ...egreso,
+        usuario: auth.currentUser?.email || "sin_usuario",
+      });
+      await cargarEgresosDia();
+    } catch (err) {
+      console.error("Error agregando egreso:", err);
+      alert("No se pudo agregar el egreso");
+    }
+  };
+
+  const handleEliminarEgreso = async (egresoId) => {
+    if (!confirm("¿Confirmas que quieres eliminar este egreso?")) return;
+    try {
+      await eliminarEgreso(egresoId);
+      await cargarEgresosDia();
+    } catch (err) {
+      console.error("Error eliminando egreso:", err);
+      alert("No se pudo eliminar el egreso");
+    }
+  };
+
+  const handleEditarEgreso = async (egresoId, actualizacion) => {
+    try {
+      await actualizarEgreso(egresoId, actualizacion);
+      await cargarEgresosDia();
+    } catch (err) {
+      console.error("Error editando egreso:", err);
+      alert("No se pudo editar el egreso");
+    }
+  };
+
   const obtenerVentas = async () => {
     setLoading(true);
     const querySnapshot = await getDocs(collection(db, "ventas"));
@@ -136,6 +228,10 @@ export default function Reportes() {
     setVentas(lista);
     setLoading(false);
   };
+
+  const totalEgresos = useMemo(() => {
+    return egresos.reduce((acc, e) => acc + Number(e.monto || 0), 0);
+  }, [egresos]);
 
   const updateDenominacion = (valor, cantidad) => {
     const key = String(valor);
@@ -300,7 +396,13 @@ export default function Reportes() {
     const map = new Map();
     ventasFiltradas.forEach((v) => {
       (v.productos || []).forEach((p) => {
-        const nombre = p?.nombre || "Sin nombre";
+        // Detectar si es un servicio
+        const esServicio = p?.tipo?.toLowerCase() === "servicio" || 
+                          ["lap", "laptop", "computadora", "impresora", "reparación", "servicio"].some(
+                            (s) => String(p?.nombre || "").toLowerCase().includes(s)
+                          );
+        
+        const nombre = esServicio ? `🔧 Servicios` : (p?.nombre || "Sin nombre");
         const cantidad = Number(p?.cantidad || 0);
         const importe = Number(p?.precioVenta || 0) * cantidad;
         const curr = map.get(nombre) || { cantidad: 0, importe: 0 };
@@ -427,18 +529,28 @@ export default function Reportes() {
 
   return (
     <Layout>
-      <div className="reportes-page">
+      <div className={`reportes-page ${fijarCalendario ? "calendar-layout-pinned" : ""}`}>
+      
         <div className="reportes-header">
           <h1>Reportes</h1>
           <div className="reportes-header-actions">
+
             <button
               className="btn-refresh"
               onClick={async () => {
-                await Promise.all([obtenerVentas(), cargarEstadoCorteHoy(), cargarHistorialCortes()]);
+                await Promise.all([obtenerVentas(), cargarEstadoCorteHoy(), cargarHistorialCortes(), cargarEgresosDia()]);
               }}
               type="button"
             >
               Actualizar
+            </button>
+            <button
+              className="btn-egresos"
+              type="button"
+              onClick={() => setMostrarModalEgresos(true)}
+              title="Registrar egresos"
+            >
+              📊 Egresos
             </button>
             <button
               className="btn-corte"
@@ -456,7 +568,6 @@ export default function Reportes() {
             Fondo de caja apertura pendiente. Capturalo antes de cerrar la caja de hoy.
           </div>
         )}
-
      
 
         <div className="reportes-kpis">
@@ -606,15 +717,8 @@ export default function Reportes() {
             </table>
           )}
         </div>
-  <div className="reportes-filtros">
-          <div>
-            <label>Desde</label>
-            <input type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} />
-          </div>
-          <div>
-            <label>Hasta</label>
-            <input type="date" value={fechaHasta} onChange={(e) => setFechaHasta(e.target.value)} />
-          </div>
+  <div className="reportes-buscador">
+      
           <div className="filtro-texto-wrap">
             <label>Buscar</label>
             <input
@@ -812,6 +916,77 @@ export default function Reportes() {
               </div>
             </div>
           </div>
+        )}
+
+        <ModalEgresos
+          mostrar={mostrarModalEgresos}
+          onClose={() => setMostrarModalEgresos(false)}
+          egresos={egresos}
+          onAgregarEgreso={handleAgregarEgreso}
+          onEliminarEgreso={handleEliminarEgreso}
+          onEditarEgreso={handleEditarEgreso}
+          totalEgresos={totalEgresos}
+        />
+
+        <button
+          className={`calendar-side-tab ${mostrarCalendario || fijarCalendario ? "open" : ""}`}
+          onClick={() => setMostrarCalendario((v) => !v)}
+        >
+          {"\u{1F4C5}"} Calendario
+        </button>
+
+        {(mostrarCalendario || fijarCalendario) && (
+          <aside className={`calendar-side-drawer ${fijarCalendario ? "pinned" : ""}`}>
+            <div className="calendar-side-actions">
+              <button className="btn-light" onClick={() => setMostrarCalendario(false)}>
+                {"\u{1F441}"} Ocultar
+              </button>
+              <button className="btn-light" onClick={toggleFijarCalendario}>
+                {fijarCalendario ? "\u{1F4CD} Desfijar" : "\u{1F4CC} Fijar"}
+              </button>
+            </div>
+
+            <div className="calendar-box side">
+              <h4>Selecciona un día</h4>
+              <Calendar
+                onChange={cambiarFecchaAlSeleccionarDia}
+                value={selectedDate}
+              />
+            </div>
+
+            <div className="panel-card side">
+              <div className="panel-header">
+                <h4>
+                  Reportes para{" "}
+                  {selectedDate.toLocaleDateString("es-MX", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </h4>
+              </div>
+              {ventasFiltradas.length === 0 ? (
+                <p className="sin-resultados">No hay ventas para esta fecha.</p>
+              ) : (
+                <div className="ventas-resumen-calendario">
+                  <div className="resumen-dia">
+                    <span className="label">Total ventas:</span>
+                    <span className="valor">{money(ventasFiltradas.reduce((acc, v) => acc + Number(v.total || 0), 0))}</span>
+                  </div>
+                  <div className="resumen-dia">
+                    <span className="label">Tickets:</span>
+                    <span className="valor">{ventasFiltradas.length}</span>
+                  </div>
+                  <div className="resumen-dia">
+                    <span className="label">Ticket promedio:</span>
+                    <span className="valor">
+                      {money(ventasFiltradas.length > 0 ? ventasFiltradas.reduce((acc, v) => acc + Number(v.total || 0), 0) / ventasFiltradas.length : 0)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </aside>
         )}
       </div>
     </Layout>

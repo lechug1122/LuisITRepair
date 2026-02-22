@@ -4,6 +4,7 @@ import Layout from "../components/Layout";
 import ModalPago from "../components/modal_pago";
 import ModalSelectorProducto from "../components/modal_selector_producto";
 import ModalComparadorPrecios from "../components/modal_comparador_precios";
+import ModalAperturaCaja from "../components/modal_apertura_caja";
 import { imprimirTicketVenta } from "../components/print_ticket_venta";
 import {
   buscarServicioPorFolio,
@@ -17,7 +18,8 @@ import {
   registrarVenta,
   descontarStock
 } from "../js/services/POS_firebase";
-import { estaCajaCerradaHoy, obtenerCorteCajaDia } from "../js/services/corte_caja_firestore";
+import { estaCajaCerradaHoy, obtenerCorteCajaDia, registrarAperturaCaja } from "../js/services/corte_caja_firestore";
+import { auth } from "../initializer/firebase";
 
 export default function POS() {
 
@@ -48,6 +50,9 @@ export default function POS() {
   const [usarPuntos, setUsarPuntos] = useState(false);
   const [cajaCerradaHoy, setCajaCerradaHoy] = useState(false);
   const [corteHoy, setCorteHoy] = useState(null);
+  const [mostrarAperturaModal, setMostrarAperturaModal] = useState(false);
+  const [fondoInicialApertura, setFondoInicialApertura] = useState("");
+  const [faltaFondoInicial, setFaltaFondoInicial] = useState(false);
 
   const ESTADOS_PERMITIDOS_SERVICIO = new Set(["listo", "cancelado", "no_reparable"]);
 
@@ -85,6 +90,13 @@ export default function POS() {
     ]);
     setCajaCerradaHoy(cerrada);
     setCorteHoy(corte);
+    const falta = !cerrada && !(corte && corte.fondoInicialCaja !== undefined && corte.fondoInicialCaja !== null && Number(corte.fondoInicialCaja) > 0);
+    setFaltaFondoInicial(falta);
+    if (falta) {
+      setMostrarAperturaModal(true);
+    } else {
+      setMostrarAperturaModal(false);
+    }
   };
 
   useEffect(() => {
@@ -101,7 +113,7 @@ export default function POS() {
 
   useEffect(() => {
     const termino = busqueda.trim();
-    if (cajaCerradaHoy) return;
+    if (cajaCerradaHoy || faltaFondoInicial) return;
     if (!termino) return;
 
     const terminoNormalizado = termino.toLowerCase();
@@ -119,7 +131,7 @@ export default function POS() {
     }, 120);
 
     return () => clearTimeout(timer);
-  }, [busqueda, productosDB, cajaCerradaHoy]);
+  }, [busqueda, productosDB, cajaCerradaHoy, faltaFondoInicial]);
 
   useEffect(() => {
     if (!cajaCerradaHoy) return;
@@ -149,8 +161,13 @@ export default function POS() {
   /* ================= PRODUCTOS ================= */
 
   const buscarYAgregarProducto = async () => {
-    if (cajaCerradaHoy) {
-      alert("La caja de hoy ya esta cerrada. Las ventas se habilitan de nuevo manana.");
+    if (cajaCerradaHoy || faltaFondoInicial) {
+      if (cajaCerradaHoy) {
+        alert("La caja de hoy ya esta cerrada. Las ventas se habilitan de nuevo manana.");
+      } else {
+        alert("Captura el fondo inicial de caja para comenzar ventas del día.");
+        setMostrarAperturaModal(true);
+      }
       return;
     }
 
@@ -237,7 +254,7 @@ export default function POS() {
   };
 
   const agregarAlCarrito = (producto) => {
-    if (cajaCerradaHoy) return;
+    if (cajaCerradaHoy || faltaFondoInicial) return;
 
     if (producto.esServicio) {
       const yaExiste = carrito.some((p) => p.id === producto.id);
@@ -275,7 +292,7 @@ export default function POS() {
   };
 
   const eliminarDelCarrito = (id) => {
-    if (cajaCerradaHoy) return;
+    if (cajaCerradaHoy || faltaFondoInicial) return;
 
     const item = carrito.find((p) => p.id === id);
 
@@ -426,6 +443,29 @@ export default function POS() {
     inputRef.current?.focus();
   };
 
+  const confirmarApertura = async () => {
+    const valor = Number(String(fondoInicialApertura || "").replace(/,/g, "").trim()) || 0;
+    if (valor <= 0) {
+      alert("Captura el fondo inicial de caja antes de continuar.");
+      return;
+    }
+
+    try {
+      await registrarAperturaCaja(valor, {
+        uid: auth.currentUser?.uid || "",
+        email: auth.currentUser?.email || "",
+        nombre: auth.currentUser?.displayName || "",
+      });
+
+      await refrescarEstadoCaja();
+      setMostrarAperturaModal(false);
+      alert("Fondo inicial guardado. Puedes continuar con ventas.");
+    } catch (err) {
+      console.error("Error guardando apertura:", err);
+      alert("No se pudo guardar el fondo inicial.");
+    }
+  };
+
   return (
     <Layout>
       <div className="pos-container">
@@ -446,10 +486,10 @@ export default function POS() {
             className="buscador"
             placeholder="Escanea código o escribe nombre..."
             value={busqueda}
-            disabled={cajaCerradaHoy}
+            disabled={cajaCerradaHoy || faltaFondoInicial}
             onChange={(e) => setBusqueda(e.target.value)}
             onKeyDown={(e) => {
-              if (cajaCerradaHoy) return;
+              if (cajaCerradaHoy || faltaFondoInicial) return;
               if (e.key === "Enter") buscarYAgregarProducto();
             }}
           />
@@ -475,12 +515,12 @@ export default function POS() {
                     <button
                       type="button"
                       className="btn-comparar"
-                      disabled={cajaCerradaHoy}
+                      disabled={cajaCerradaHoy || faltaFondoInicial}
                       onClick={() => abrirComparador(p)}
                     >
                       Comparar
                     </button>
-                    <button disabled={cajaCerradaHoy} onClick={() => eliminarDelCarrito(p.id)}>X</button>
+                    <button disabled={cajaCerradaHoy || faltaFondoInicial} onClick={() => eliminarDelCarrito(p.id)}>X</button>
                   </td>
                 </tr>
               ))}
@@ -496,7 +536,7 @@ export default function POS() {
 
           <input
             value={clienteTelefono}
-            disabled={cajaCerradaHoy}
+            disabled={cajaCerradaHoy || faltaFondoInicial}
             onChange={(e) => setClienteTelefono(e.target.value)}
             onBlur={verificarCliente}
             placeholder="Teléfono cliente"
@@ -521,7 +561,7 @@ export default function POS() {
 
           <button
             className="btn-venta"
-            disabled={cajaCerradaHoy}
+            disabled={cajaCerradaHoy || faltaFondoInicial}
             onClick={() => setMostrarPago(true)}
           >
             Realizar Venta
@@ -529,7 +569,7 @@ export default function POS() {
 
           <button
             className="btn-cancelar"
-            disabled={cajaCerradaHoy}
+            disabled={cajaCerradaHoy || faltaFondoInicial}
             onClick={() => {
               setCarrito([]);
               setServiciosPorEntregar([]);
@@ -544,7 +584,7 @@ export default function POS() {
 
       {/* 🔹 MODAL SEPARADO */}
       <ModalPago
-        mostrar={mostrarPago && !cajaCerradaHoy}
+        mostrar={mostrarPago && !cajaCerradaHoy && !faltaFondoInicial}
         onClose={() => setMostrarPago(false)}
         total={total}
         clienteData={clienteData}
@@ -565,6 +605,14 @@ export default function POS() {
         totalPagado={totalPagado}
         cambio={cambio}
         confirmarVenta={realizarVentaPro}
+      />
+
+      <ModalAperturaCaja
+        mostrar={mostrarAperturaModal}
+        onClose={() => setMostrarAperturaModal(false)}
+        fondoInicial={fondoInicialApertura}
+        setFondoInicial={setFondoInicialApertura}
+        confirmarApertura={confirmarApertura}
       />
 
       <ModalSelectorProducto

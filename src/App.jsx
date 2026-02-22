@@ -16,6 +16,9 @@ import Home from "./pages/home";
 import POS from "./pages/POS";
 import Productos from "./pages/productos";
 import Reportes from "./pages/reportes";
+import Configuracion from "./pages/Configuracion";
+import Empleados from "./pages/empleados";
+import PanelGeneral from "./pages/panelgeneralCon";
 
 export default function App() {
   return (
@@ -45,12 +48,13 @@ export default function App() {
         <Route path="/POS" element={<POS />} />
         <Route path="/productos" element={<Productos />} />
         <Route path="/reportes" element={<Reportes />} />
+        <Route path="/configuracion" element={<Configuracion />}>
+          <Route index element={<PanelGeneral />} />
+          <Route path="empleados" element={<Empleados />} />
+        </Route>
       </Route>
 
-      <Route
-        path="*"
-        element={<NotFound />}
-      />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
