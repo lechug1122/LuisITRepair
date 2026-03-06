@@ -1,5 +1,6 @@
-import { jsPDF } from "jspdf";
+﻿import { jsPDF } from "jspdf";
 import logoUrl from "../../assets/logo.png";
+import { getPdfFontFamily } from "./apariencia_config";
 
 const BUSINESS_NAME = import.meta.env.VITE_NEGOCIO_NOMBRE || "LuisITRepair";
 const BUSINESS_SUBTITLE =
@@ -48,11 +49,6 @@ const timeShort = (date) =>
     hour12: false,
   }).format(date);
 
-const clip = (value, max = 26) => {
-  const text = String(value || "");
-  return text.length > max ? `${text.slice(0, max - 1)}.` : text;
-};
-
 async function imageToPngDataUrl(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Logo no disponible (${res.status})`);
@@ -82,11 +78,15 @@ function drawPageFrame(doc) {
   doc.rect(8, 8, 194, 281);
 }
 
+function setPdfFont(doc, style = "normal") {
+  doc.setFont(getPdfFontFamily(), style);
+}
+
 function drawTitleBar(doc, x, y, w, h, text) {
   doc.setFillColor(8, 56, 134);
   doc.rect(x, y, w, h, "F");
   doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
+  setPdfFont(doc, "bold");
   doc.setFontSize(10);
   doc.text(text, x + w / 2, y + h / 2 + 1.5, { align: "center" });
   doc.setTextColor(20, 20, 20);
@@ -96,11 +96,11 @@ function drawKeyValueRow(doc, x, y, w1, w2, h, key, value) {
   doc.setDrawColor(50, 50, 50);
   doc.rect(x, y, w1, h);
   doc.rect(x + w1, y, w2, h);
-  doc.setFont("helvetica", "bold");
+  setPdfFont(doc, "bold");
   doc.setFontSize(8.5);
   const keyText = fitTextByWidth(doc, key, Math.max(1, w1 - 4));
   doc.text(keyText, x + 2, y + h / 2 + 1.5);
-  doc.setFont("helvetica", "normal");
+  setPdfFont(doc, "normal");
   const valueText = fitTextByWidth(doc, String(value || "-"), Math.max(1, w2 - 4));
   doc.text(valueText, x + w1 + 2, y + h / 2 + 1.5);
 }
@@ -126,7 +126,7 @@ function drawTable(doc, { x, y, widths, headers, rows, rowHeight = 6, fontSize =
   doc.rect(x, cursorY, totalW, rowHeight);
 
   let cx = x;
-  doc.setFont("helvetica", "bold");
+  setPdfFont(doc, "bold");
   doc.setFontSize(fontSize);
   headers.forEach((h, i) => {
     doc.rect(cx, cursorY, widths[i], rowHeight);
@@ -135,7 +135,7 @@ function drawTable(doc, { x, y, widths, headers, rows, rowHeight = 6, fontSize =
   });
 
   cursorY += rowHeight;
-  doc.setFont("helvetica", "normal");
+  setPdfFont(doc, "normal");
   rows.forEach((row) => {
     cx = x;
     headers.forEach((_, i) => {
@@ -272,22 +272,22 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   if (logoPng) {
     doc.addImage(logoPng, "PNG", 12, y, 18, 18);
   }
-  doc.setFont("helvetica", "bold");
+  setPdfFont(doc, "bold");
   doc.setFontSize(14);
   doc.text(negocioNombre, 35, y + 6);
-  doc.setFont("helvetica", "normal");
+  setPdfFont(doc, "normal");
   doc.setFontSize(9);
   doc.text(negocioSubtitulo, 35, y + 11);
   doc.text(`Corte generado: ${dateShort(now)}`, 170, y + 6, { align: "right" });
   doc.text(`Hora: ${timeShort(now)}`, 170, y + 11, { align: "right" });
 
   y = 34;
-  doc.setFont("helvetica", "bold");
+  setPdfFont(doc, "bold");
   doc.setFontSize(16);
   doc.text("Corte de caja", 105, y, { align: "center" });
 
   y += 5;
-  doc.setFont("helvetica", "normal");
+  setPdfFont(doc, "normal");
   doc.setFontSize(8.5);
   const usuario = corte?.cajero?.email || corte?.cajero?.nombre || "Todos";
   doc.text(`Periodo de corte: ${hoyStr} - ${hoyStr} | Usuario: ${usuario}`, 12, y);
@@ -310,7 +310,7 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   doc.setDrawColor(30, 30, 30);
   doc.line(128, y, 198, y);
   y += 4;
-  doc.setFont("helvetica", "bold");
+  setPdfFont(doc, "bold");
   doc.setFontSize(10.5);
   doc.text(`Total cargos: ${money(totalCargos)}`, 198, y, { align: "right" });
   y += 5;
@@ -356,10 +356,10 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   drawKeyValueRow(doc, 72, y2, 30, 30, 6, "HORA TERMINO", timeShort(now));
   y2 += 9;
 
-  doc.setFont("helvetica", "bold");
+  setPdfFont(doc, "bold");
   doc.setFontSize(8.5);
   doc.text("Responsable de caja general:", 12, y2);
-  doc.setFont("helvetica", "normal");
+  setPdfFont(doc, "normal");
   doc.text(corte?.cajero?.email || corte?.cajero?.nombre || "-", 58, y2);
   doc.line(57, y2 + 1, 145, y2 + 1);
   y2 += 8;
@@ -472,6 +472,25 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
 
   drawTitleBar(doc, 12, y2, 186, 6, "4.- DOCUMENTOS");
   y2 += 7;
+  const egresosDocumento = Array.isArray(corte?.egresos) ? corte.egresos : [];
+  const totalEgresoPorTipo = (tipo) =>
+    egresosDocumento
+      .filter((e) => String(e?.tipo || "").toLowerCase() === tipo)
+      .reduce((acc, e) => acc + Number(e?.monto || 0), 0);
+  const egresosFacturas = totalEgresoPorTipo("factura");
+  const egresosBoletas = totalEgresoPorTipo("boleta_venta");
+  const egresosNotaCredito = totalEgresoPorTipo("nota_credito");
+  const egresosNotaDebito = totalEgresoPorTipo("nota_debito");
+  const egresosOtros = Math.max(
+    0,
+    Number(
+      (
+        totalRetiros -
+        (egresosFacturas + egresosBoletas + egresosNotaCredito + egresosNotaDebito)
+      ).toFixed(2)
+    )
+  );
+
   const rowsIngresos = [
     ["Facturas", money(0)],
     ["Boletas de venta", money(resumen.total)],
@@ -481,11 +500,11 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
     ["Total ventas", money(resumen.total)],
   ];
   const rowsEgresos = [
-    ["Facturas", money(0)],
-    ["Boletas de venta", money(0)],
-    ["Nota de credito", money(0)],
-    ["Nota de debito", money(0)],
-    ["Otros", money(totalRetiros)],
+    ["Facturas", money(egresosFacturas)],
+    ["Boletas de venta", money(egresosBoletas)],
+    ["Nota de credito", money(egresosNotaCredito)],
+    ["Nota de debito", money(egresosNotaDebito)],
+    ["Otros", money(egresosOtros)],
     ["Total compras", money(totalRetiros)],
   ];
 
@@ -540,7 +559,7 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   const obsH = 48;
   doc.setDrawColor(45, 45, 45);
   doc.rect(110, y2, 88, obsH);
-  doc.setFont("helvetica", "normal");
+  setPdfFont(doc, "normal");
   doc.setFontSize(8);
   const notas = String(corte?.notasCorte || "Sin observaciones.");
   const notasLines = doc.splitTextToSize(notas, 84);
@@ -548,3 +567,5 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
 
   doc.save(`corte-caja-${fechaKeyObjetivo}.pdf`);
 }
+
+

@@ -1,0 +1,173 @@
+.posm-page {
+  min-height: 100dvh;
+  padding: 14px;
+  background:
+    radial-gradient(circle at 15% 10%, rgba(59, 130, 246, 0.25), transparent 35%),
+    radial-gradient(circle at 85% 0%, rgba(14, 165, 233, 0.2), transparent 30%),
+    linear-gradient(180deg, #0f172a, #111827);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.posm-card {
+  width: min(680px, 100%);
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 14px 40px rgba(2, 6, 23, 0.35);
+  padding: 14px;
+}
+
+.posm-title {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 1.55rem;
+}
+
+.posm-subtitle {
+  margin: 6px 0 0;
+  color: #cbd5e1;
+  font-size: 0.95rem;
+}
+
+.posm-reader-wrap {
+  margin-top: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  padding: 8px;
+  background: rgba(15, 23, 42, 0.7);
+}
+
+.posm-reader {
+  min-height: 280px;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(34, 197, 94, 0.12), transparent 45%),
+    radial-gradient(circle at 80% 10%, rgba(56, 189, 248, 0.2), transparent 40%),
+    #020617;
+}
+
+.posm-reader-host {
+  min-height: 280px;
+}
+
+.posm-reader-host > div {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.posm-reader-host video {
+  width: 100% !important;
+  height: 280px !important;
+  object-fit: cover !important;
+  border-radius: 12px !important;
+}
+
+.posm-reader-overlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10px;
+}
+
+.posm-reader-overlay span {
+  color: #e2e8f0;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.65);
+  padding: 4px 10px;
+}
+
+.posm-msg {
+  margin-top: 10px;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #bfdbfe;
+  background: rgba(30, 64, 175, 0.35);
+}
+
+.posm-msg-error {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.45);
+}
+
+.posm-manual {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.posm-manual input {
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(15, 23, 42, 0.55);
+  color: #f8fafc;
+  padding: 11px;
+  font-size: 16px;
+}
+
+.posm-manual input::placeholder {
+  color: #94a3b8;
+}
+
+.posm-manual button {
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #2563eb, #0284c7);
+  color: #ffffff;
+  padding: 0 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.posm-manual button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.posm-summary {
+  margin-top: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  background: rgba(6, 78, 59, 0.35);
+  color: #d1fae5;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 560px) {
+  .posm-page {
+    padding: 8px;
+  }
+
+  .posm-card {
+    padding: 10px;
+  }
+
+  .posm-reader,
+  .posm-reader-host {
+    min-height: 230px;
+  }
+
+  .posm-reader-host video {
+    height: 230px !important;
+  }
+
+  .posm-manual {
+    grid-template-columns: 1fr;
+  }
+}

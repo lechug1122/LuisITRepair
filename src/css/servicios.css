@@ -1,274 +1,242 @@
-/* =========================
-   BASE: TU CSS (mejorado)
-========================= */
+/* Servicios: responsive for any screen size */
 
-.servicios-page{
+.servicios-page {
   padding: 24px;
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - var(--navbar-height, 64px));
   background: linear-gradient(135deg, #4f8fb8 0%, #8ab9b6 100%);
 }
 
-/* Para centrar y que no se estire infinito en pantallas grandes */
-.servicios-box{
+.servicios-box {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
   background: #fff;
   border-radius: 16px;
   padding: 18px;
-  box-shadow: 0 4px 14px rgba(0,0,0,.06);
-  border: 1px solid rgba(0,0,0,.08);
-  max-width: 1100px;
-  margin: 0 auto;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);
 }
 
-/* ✅ fila superior */
-.servicios-title-row{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
+.servicios-msg {
+  margin: 12px 0 4px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.servicios-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
 }
 
-/* ✅ título visible */
-.servicios-title{
+.servicios-title {
   margin: 0;
-  font-size: 28px;
-  font-weight: 800;
   color: #111;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 800;
 }
 
-.tipo-col{
+.servicios-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0 20px;
+}
+
+.tab-btn,
+.tab-bn {
+  border: 1px solid #d1d5db;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 999px;
+  padding: 10px 18px;
+  min-height: 40px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover,
+.tab-bn:hover {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}
+
+.tab-btn.active,
+.tab-bn.active {
+  background: rgba(225, 29, 72, 0.08);
+  border-color: rgba(225, 29, 72, 0.36);
+  color: #e11d48;
+}
+
+.tipo-col {
   text-transform: capitalize;
-  opacity: .9;
+  opacity: 0.95;
 }
-
-/* =========================
-   TABLA (tu estilo)
-========================= */
 
 .tabla-wrapper {
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
-/* 🔲 RECTÁNGULO BLANCO */
 .tabla-box {
-  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 14px;
-  padding: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,.08);
-  border: 1px solid rgba(0,0,0,.08);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-/* TABLA */
 .tabla-servicios {
   width: 100%;
+  min-width: 900px;
   border-collapse: collapse;
+  table-layout: auto;
   font-size: 14px;
-  min-width: 900px; /* ✅ para que en tablets haya scroll horizontal (mejor UX) */
 }
 
 .tabla-servicios th {
-  background: #f5f7fa;
   padding: 10px;
   text-align: left;
-  border-bottom: 1px solid #e5e7eb;
-  position: sticky;   /* ✅ header fijo cuando scrolleas */
+  font-weight: 800;
+  color: #0f172a;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  position: sticky;
   top: 0;
   z-index: 1;
 }
 
 .tabla-servicios td {
   padding: 10px;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid #f1f5f9;
   vertical-align: top;
+  color: #0f172a;
 }
 
 .tabla-servicios tr:last-child td {
-  border-bottom: none;
+  border-bottom: 0;
 }
 
-/* Opcional: cortar descripción para que no reviente */
-.desc-col{
+.desc-col {
   max-width: 360px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* =========================
-   BADGES de estado (limpio, sin duplicados)
-========================= */
+.btn-ver {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: #045cae;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
 
-.estado-badge{
+.btn-ver:hover {
+  background: #044b8d;
+  border-color: #0f4e90;
+  color: #fff;
+}
+
+.btn-ver.full {
+  width: 100%;
+}
+
+.estado-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: capitalize;
   border: 1px solid transparent;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+  line-height: 1.2;
 }
 
-/* Pendiente (naranja suave) */
-.estado-pendiente{
+.estado-pendiente {
   color: #f59e0b;
   background: rgba(245, 158, 11, 0.14);
   border-color: rgba(245, 158, 11, 0.28);
 }
 
-/* En revisión (azul) */
-.estado-revision{
-  color: #3b82f6;
-  background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(59, 130, 246, 0.22);
-}
-
-/* En espera de refacción (azul) */
+.estado-revision,
 .estado-en_espera_de_refaccion,
-.estado-espera_refaccion{
+.estado-espera_refaccion {
   color: #3b82f6;
   background: rgba(59, 130, 246, 0.12);
   border-color: rgba(59, 130, 246, 0.22);
 }
 
-/* En reparación (morado) */
 .estado-en_reparacion,
-.estado-reparacion{
+.estado-reparacion {
   color: #8b5cf6;
   background: rgba(139, 92, 246, 0.14);
   border-color: rgba(139, 92, 246, 0.22);
 }
 
-/* Listo (verde) */
-.estado-listo{
-  color: #22c55e;
-  background: rgba(34, 197, 94, 0.14);
-  border-color: rgba(34, 197, 94, 0.22);
-}
-
-/* Finalizado / completado (verde fuerte) */
+.estado-listo,
 .estado-finalizado,
-.estado-completado{
+.estado-completado,
+.estado-entregado {
   color: #16a34a;
   background: rgba(22, 163, 74, 0.14);
-  border-color: rgba(22, 163, 74, 0.22);
+  border-color: rgba(22, 163, 74, 0.24);
 }
 
-/* Entregado (verde oscuro) */
-.estado-entregado{
-  color: #15803d;
-  background: rgba(21, 128, 61, 0.14);
-  border-color: rgba(21, 128, 61, 0.22);
-}
-
-/* Cancelado (rojo) */
-.estado-cancelado{
+.estado-cancelado {
   color: #ef4444;
   background: rgba(239, 68, 68, 0.14);
-  border-color: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.24);
 }
 
-/* No reparable (gris) */
-.estado-no_reparable{
+.estado-no_reparable {
   color: #6b7280;
   background: rgba(107, 114, 128, 0.14);
   border-color: rgba(107, 114, 128, 0.22);
 }
 
-/* =========================
-   TABS (soporta tab-btn y tab-bn)
-========================= */
-
-/* Contenedor de tabs */
-.servicios-tabs{
-  display: flex;
-  gap: 12px;
-  margin: 16px 0 20px;
-  flex-wrap: wrap;
+.only-desktop {
+  display: none;
 }
 
-/* Botón base (tu .tab-btn) */
-.tab-btn,
-.tab-bn{
-  padding: 10px 18px;
-  border-radius: 999px;
-  border: 1px solid #d1d5db;
-  background: #f9fafb;
-  color: #374151;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all .25s ease;
+.only-mobile {
+  display: block;
 }
 
-.tab-btn:hover,
-.tab-bn:hover{
-  background: #eef2ff;
-  border-color: #c7d2fe;
-}
-
-/* Activo */
-.tab-btn.active,
-.tab-bn.active{
-  background: rgba(225, 29, 72, 0.08);
-  border-color: rgba(225, 29, 72, 0.35);
-  color: #e11d48;
-}
-
-/* =========================
-   BOTÓN VER (si lo usas)
-========================= */
-.btn-ver{
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid #d1d5db;
-  background: #045cae;
-  cursor: pointer;
-  font-weight: 700;
-  transition: all .2s ease;
-}
-
-.btn-ver:hover{
-  border-color: rgba(225, 29, 72, 0.45);
-  color: #e11d48;
-}
-
-/* =========================
-   ✅ RESPONSIVE REAL: Desktop tabla / Mobile cards
-   (estas clases las usa el JSX que te pasé)
-========================= */
-
-/* Por defecto: móvil -> cards */
-.only-desktop{ display: none; }
-.only-mobile{ display: block; }
-
-/* Contenedor cards */
-.cards-wrapper{
+.cards-wrapper {
+  margin-top: 12px;
   display: grid;
   grid-template-columns: 1fr;
   gap: 12px;
-  margin-top: 14px;
 }
 
-/* Card */
-.serv-card{
+.serv-card {
   background: #fff;
-  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.09);
+  border-radius: 12px;
   padding: 12px;
-  border: 1px solid rgba(0,0,0,.08);
-  box-shadow: 0 4px 12px rgba(0,0,0,.06);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
   cursor: pointer;
-  outline: none;
+  min-width: 0;
 }
 
-.serv-card:active{
-  transform: scale(0.995);
+.serv-card:active {
+  transform: scale(0.996);
 }
 
-.serv-card-top{
+.serv-card-top {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -276,102 +244,103 @@
   margin-bottom: 10px;
 }
 
-.serv-card-folio .muted{
+.serv-card-folio .muted {
   display: block;
-  font-size: 12px;
-  color: #6b7280;
   margin-bottom: 2px;
 }
 
-.serv-card-folio .folio{
-  font-size: 16px;
-  font-weight: 800;
-  color: #111;
+.serv-card-folio .folio {
+  font-size: 1rem;
+  color: #0f172a;
 }
 
-.serv-card-body{
+.serv-card-body {
   display: grid;
   gap: 8px;
 }
 
-.serv-row{
+.serv-row {
   display: grid;
-  grid-template-columns: 92px 1fr;
-  gap: 10px;
+  grid-template-columns: 92px minmax(0, 1fr);
   align-items: start;
+  gap: 10px;
 }
 
-.muted{
+.muted {
   font-size: 12px;
-  color: #6b7280;
+  color: #64748b;
 }
 
-.value{
-  font-weight: 600;
-  color: #111;
+.value {
+  font-weight: 700;
+  color: #0f172a;
+  overflow-wrap: anywhere;
 }
 
-.serv-desc .value{
+.serv-desc .value {
   display: -webkit-box;
-  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   overflow: hidden;
 }
 
-.serv-card-actions{
+.serv-card-actions {
   margin-top: 12px;
 }
 
-.btn-ver.full{
-  width: 100%;
-}
-
-/* =========================
-   BREAKPOINTS
-========================= */
-
-/* >=900px: tabla visible, cards ocultas */
-@media (min-width: 900px){
-  .only-desktop{ display: block; }
-  .only-mobile{ display: none; }
-
-  .tabla-servicios{
-    min-width: 0; /* en desktop ya no necesitamos forzar scroll */
+@media (min-width: 640px) and (max-width: 919px) {
+  .cards-wrapper {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   }
 }
 
-/* Teléfonos: header apilado + tabs full width */
-@media (max-width: 520px){
-  .servicios-page{
+@media (min-width: 920px) {
+  .only-desktop {
+    display: block;
+  }
+
+  .only-mobile {
+    display: none;
+  }
+
+  .tabla-servicios {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .servicios-page {
     padding: 14px;
   }
 
-  .servicios-title-row{
+  .servicios-title-row {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .servicios-title{
+  .servicios-title {
     font-size: 22px;
   }
 
-  .servicios-tabs{
+  .servicios-tabs {
     width: 100%;
     margin: 10px 0 12px;
   }
 
   .tab-btn,
-  .tab-bn{
+  .tab-bn {
     width: 100%;
-    justify-content: center;
+    flex: 1 1 100%;
+    min-width: 0;
     padding: 12px 14px;
   }
 
-  .serv-row{
-    grid-template-columns: 80px 1fr;
+  .serv-row {
+    grid-template-columns: 80px minmax(0, 1fr);
   }
 }
-@media (max-width: 520px) {
+
+@media (max-width: 420px) {
   .servicios-page {
     padding: 10px;
   }
@@ -383,38 +352,21 @@
   .servicios-title {
     font-size: 20px;
   }
-}
-/* ===== Responsive tipo Facebook ===== */
 
-/* Tablets */
-@media (max-width: 1024px) {
-  .tabla-servicios {
-    font-size: 13px;
-  }
-
-  .tabla-servicios th,
-  .tabla-servicios td {
-    padding: 8px;
-  }
-
-  .servicios-title {
-    font-size: 24px;
-  }
-}
-
-/* Teléfonos grandes */
-@media (max-width: 768px) {
-  .tabla-servicios {
-    font-size: 12px;
-  }
-
-  .tabla-servicios th,
-  .tabla-servicios td {
-    padding: 6px;
-  }
-
-  .estado-badge {
+  .muted {
     font-size: 11px;
-    padding: 4px 8px;
+  }
+
+  .tab-btn,
+  .tab-bn {
+    min-height: 38px;
+    padding: 9px 12px;
+  }
+}
+
+@media (max-width: 360px) {
+  .tab-btn,
+  .tab-bn {
+    flex-basis: 100%;
   }
 }

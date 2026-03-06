@@ -32,6 +32,7 @@ import {
   eliminarEgreso,
   actualizarEgreso,
 } from "../js/services/egresos_firestore";
+import { APARIENCIA_EVENT, readAparienciaConfigStorage } from "../js/services/apariencia_config";
 import ModalEgresos from "../components/modal_egresos";
 import "../css/reportes.css";
 
@@ -73,6 +74,14 @@ const DENOMINACIONES = [
   1000, 500, 200, 100, 50, 20, 10, 5, 2, 1, 0.5,
 ];
 
+const TIPO_EGRESO_META = {
+  factura: { label: "Factura", emoji: "\u{1F9FE}" },
+  boleta_venta: { label: "Boleta de venta", emoji: "\u{1F6D2}" },
+  nota_credito: { label: "Nota de credito", emoji: "\u{2795}" },
+  nota_debito: { label: "Nota de debito", emoji: "\u{2796}" },
+  otro: { label: "Otro", emoji: "\u{1F4DD}" },
+};
+
 export default function Reportes() {
   const [ventas, setVentas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -97,7 +106,12 @@ export default function Reportes() {
   const [fechaHasta, setFechaHasta] = useState(() => ymd(new Date()));
   const [mostrarModalEgresos, setMostrarModalEgresos] = useState(false);
   const [egresos, setEgresos] = useState([]);
-  const [cargandoEgresos, setCargandoEgresos] = useState(false);
+  const [animationsEnabled, setAnimationsEnabled] = useState(
+    () => readAparienciaConfigStorage().animations !== false,
+  );
+  const [isDarkMode, setIsDarkMode] = useState(
+    () => readAparienciaConfigStorage().themeMode === "oscuro",
+  );
 
   // Estados para calendario y filtros visuales
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -123,6 +137,17 @@ export default function Reportes() {
       console.error("Error saving calendar state:", e);
     }
   }, [fijarCalendario]);
+
+  useEffect(() => {
+    const onAparienciaChange = (event) => {
+      const next = event?.detail || readAparienciaConfigStorage();
+      setAnimationsEnabled(next?.animations !== false);
+      setIsDarkMode(next?.themeMode === "oscuro");
+    };
+
+    window.addEventListener(APARIENCIA_EVENT, onAparienciaChange);
+    return () => window.removeEventListener(APARIENCIA_EVENT, onAparienciaChange);
+  }, []);
 
   const cambiarFecchaAlSeleccionarDia = (fecha) => {
     const f = ymd(fecha);
@@ -174,17 +199,18 @@ export default function Reportes() {
 
   const cargarEgresosDia = async () => {
     try {
-      setCargandoEgresos(true);
       const datos = await obtenerEgresosDia();
       setEgresos(Array.isArray(datos?.egresos) ? datos.egresos : []);
     } catch (err) {
       console.error("Error cargando egresos:", err);
-    } finally {
-      setCargandoEgresos(false);
     }
   };
 
   const handleAgregarEgreso = async (egreso) => {
+    if (cajaCerradaHoy) {
+      alert("La caja de hoy ya esta cerrada. No se pueden registrar egresos.");
+      return;
+    }
     try {
       await guardarEgreso({
         ...egreso,
@@ -198,6 +224,10 @@ export default function Reportes() {
   };
 
   const handleEliminarEgreso = async (egresoId) => {
+    if (cajaCerradaHoy) {
+      alert("La caja de hoy ya esta cerrada. No se pueden modificar egresos.");
+      return;
+    }
     if (!confirm("¿Confirmas que quieres eliminar este egreso?")) return;
     try {
       await eliminarEgreso(egresoId);
@@ -209,6 +239,10 @@ export default function Reportes() {
   };
 
   const handleEditarEgreso = async (egresoId, actualizacion) => {
+    if (cajaCerradaHoy) {
+      alert("La caja de hoy ya esta cerrada. No se pueden modificar egresos.");
+      return;
+    }
     try {
       await actualizarEgreso(egresoId, actualizacion);
       await cargarEgresosDia();
@@ -264,8 +298,8 @@ export default function Reportes() {
 
   const handleCorteCaja = async () => {
     if (cerrandoCaja) return;
-    if (fondoInicialNum <= 0) {
-      alert("Captura el fondo de caja de apertura antes de cerrar.");
+    if (!fondoInicialValido) {
+      alert("Captura un fondo inicial valido (0 o mayor) antes de cerrar.");
       return;
     }
 
@@ -279,6 +313,7 @@ export default function Reportes() {
           cantidad: Number(denominaciones[String(valor)] || 0),
         })),
         retiros: retirosValidos,
+        egresos: egresosValidos,
         cajero: {
           uid: auth.currentUser?.uid || "",
           email: auth.currentUser?.email || "",
@@ -317,6 +352,8 @@ export default function Reportes() {
       });
       return;
     }
+    // Sincroniza egresos del dia antes de abrir el modal de cierre.
+    await cargarEgresosDia();
     setMostrarModalCierre(true);
   };
 
@@ -466,6 +503,14 @@ export default function Reportes() {
   }, [ventasFiltradas]);
 
   const coloresPie = ["#16a34a", "#2563eb", "#9333ea", "#f59e0b"];
+  const chartTextColor = isDarkMode ? "#cbd5e1" : "#475569";
+  const chartGridColor = isDarkMode ? "#334155" : "#dbe3ef";
+  const chartTooltipStyle = {
+    background: isDarkMode ? "#111827" : "#ffffff",
+    border: `1px solid ${chartGridColor}`,
+    color: isDarkMode ? "#e5e7eb" : "#0f172a",
+    borderRadius: 10,
+  };
   const ventasHoy = useMemo(() => {
     const ini = startOfToday();
     const fin = endOfToday();
@@ -484,7 +529,9 @@ export default function Reportes() {
     }, 0);
   }, [ventasHoy]);
 
-  const fondoInicialNum = Number(String(fondoInicialCaja || "").replace(/,/g, "").trim()) || 0;
+  const fondoInicialRaw = String(fondoInicialCaja ?? "").replace(/,/g, "").trim();
+  const fondoInicialNum = fondoInicialRaw === "" ? 0 : Number(fondoInicialRaw);
+  const fondoInicialValido = Number.isFinite(fondoInicialNum) && fondoInicialNum >= 0;
 
   const totalDenominaciones = useMemo(() => {
     return DENOMINACIONES.reduce((acc, valor) => {
@@ -504,13 +551,31 @@ export default function Reportes() {
       .filter((r) => Number.isFinite(r.monto) && r.monto > 0);
   }, [retiros]);
 
+  // Egresos capturados en "Registrar Egresos" (coleccion diaria).
+  const egresosValidos = useMemo(() => {
+    return egresos
+      .map((e) => ({
+        id: String(e?.id || ""),
+        tipo: String(e?.tipo || "otro"),
+        monto: Number(String(e?.monto || "").replace(/,/g, "")),
+        descripcion: String(e?.descripcion || "").trim(),
+        usuario: String(e?.usuario || "").trim() || auth.currentUser?.email || "sin_usuario",
+      }))
+      .filter((e) => Number.isFinite(e.monto) && e.monto > 0);
+  }, [egresos]);
+
   const totalRetiros = useMemo(() => {
     return retirosValidos.reduce((acc, r) => acc + Number(r.monto || 0), 0);
   }, [retirosValidos]);
 
-  const cajaFinalEsperada = fondoInicialNum + efectivoEsperadoHoy - totalRetiros;
+  const totalEgresosDia = useMemo(() => {
+    return egresosValidos.reduce((acc, e) => acc + Number(e.monto || 0), 0);
+  }, [egresosValidos]);
+
+  const totalSalidasCaja = totalRetiros + totalEgresosDia;
+  const cajaFinalEsperada = fondoInicialNum + efectivoEsperadoHoy - totalSalidasCaja;
   const diferenciaContado = totalDenominaciones - efectivoEsperadoHoy;
-  const aperturaPendiente = !cajaCerradaHoy && fondoInicialNum <= 0;
+  const aperturaPendiente = !cajaCerradaHoy && !fondoInicialValido;
 
   const cortesHistorialFiltrado = useMemo(() => {
     const cajeroQ = filtroCajero.trim().toLowerCase();
@@ -548,7 +613,12 @@ export default function Reportes() {
               className="btn-egresos"
               type="button"
               onClick={() => setMostrarModalEgresos(true)}
-              title="Registrar egresos"
+              title={
+                cajaCerradaHoy
+                  ? "Caja cerrada: no se pueden registrar egresos hoy"
+                  : "Registrar egresos"
+              }
+              disabled={cajaCerradaHoy || cerrandoCaja}
             >
               📊 Egresos
             </button>
@@ -602,12 +672,23 @@ export default function Reportes() {
             <h3>Ventas por dia (ultimos 30 dias)</h3>
             <ResponsiveContainer width="100%" height={260}>
               <LineChart data={ventasPorDia}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="fecha" />
-                <YAxis />
-                <Tooltip formatter={(v) => money(v)} />
-                <Legend />
-                <Line type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2} name="Total" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
+                <XAxis dataKey="fecha" tick={{ fill: chartTextColor }} axisLine={{ stroke: chartGridColor }} />
+                <YAxis tick={{ fill: chartTextColor }} axisLine={{ stroke: chartGridColor }} />
+                <Tooltip
+                  formatter={(v) => money(v)}
+                  isAnimationActive={animationsEnabled}
+                  contentStyle={chartTooltipStyle}
+                />
+                <Legend wrapperStyle={{ color: chartTextColor }} />
+                <Line
+                  type="monotone"
+                  dataKey="total"
+                  stroke="#2563eb"
+                  strokeWidth={2}
+                  name="Total"
+                  isAnimationActive={animationsEnabled}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -616,12 +697,12 @@ export default function Reportes() {
             <h3>Top productos (unidades)</h3>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={topProductos}>
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
                 <XAxis dataKey="nombre" hide />
-                <YAxis />
-                <Tooltip formatter={(v) => v} />
-                <Legend />
-                <Bar dataKey="cantidad" fill="#16a34a" name="Unidades" />
+                <YAxis tick={{ fill: chartTextColor }} axisLine={{ stroke: chartGridColor }} />
+                <Tooltip formatter={(v) => v} isAnimationActive={animationsEnabled} contentStyle={chartTooltipStyle} />
+                <Legend wrapperStyle={{ color: chartTextColor }} />
+                <Bar dataKey="cantidad" fill="#16a34a" name="Unidades" isAnimationActive={animationsEnabled} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -630,13 +711,24 @@ export default function Reportes() {
             <h3>Metodo de pago</h3>
             <ResponsiveContainer width="100%" height={260}>
               <PieChart>
-                <Pie data={metodosPago} dataKey="value" nameKey="name" outerRadius={95} label>
+                <Pie
+                  data={metodosPago}
+                  dataKey="value"
+                  nameKey="name"
+                  outerRadius={95}
+                  label
+                  isAnimationActive={animationsEnabled}
+                >
                   {metodosPago.map((entry, idx) => (
                     <Cell key={entry.name} fill={coloresPie[idx % coloresPie.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v) => money(v)} />
-                <Legend />
+                <Tooltip
+                  formatter={(v) => money(v)}
+                  isAnimationActive={animationsEnabled}
+                  contentStyle={chartTooltipStyle}
+                />
+                <Legend wrapperStyle={{ color: chartTextColor }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -645,12 +737,16 @@ export default function Reportes() {
             <h3>Utilidad estimada por producto</h3>
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={utilidadPorProducto}>
-                <CartesianGrid strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
                 <XAxis dataKey="nombre" hide />
-                <YAxis />
-                <Tooltip formatter={(v) => money(v)} />
-                <Legend />
-                <Bar dataKey="utilidad" fill="#9333ea" name="Utilidad" />
+                <YAxis tick={{ fill: chartTextColor }} axisLine={{ stroke: chartGridColor }} />
+                <Tooltip
+                  formatter={(v) => money(v)}
+                  isAnimationActive={animationsEnabled}
+                  contentStyle={chartTooltipStyle}
+                />
+                <Legend wrapperStyle={{ color: chartTextColor }} />
+                <Bar dataKey="utilidad" fill="#9333ea" name="Utilidad" isAnimationActive={animationsEnabled} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -826,14 +922,14 @@ export default function Reportes() {
                   </div>
                 </div>
                 <div>
-                  <label>Total retiros/gastos</label>
-                  <div className="conteo-caja-value">{money(totalRetiros)}</div>
+                  <label>Total salidas (retiros + egresos)</label>
+                  <div className="conteo-caja-value">{money(totalSalidasCaja)}</div>
                 </div>
               </div>
 
               <div className="retiros-wrap">
                 <div className="retiros-head">
-                  <h4>Retiros / Gastos</h4>
+                  <h4>Retiros / Gastos manuales</h4>
                   <div className="reportes-header-actions">
                     <button
                       className="btn-refresh"
@@ -858,37 +954,78 @@ export default function Reportes() {
                     </button>
                   </div>
                 </div>
-                {retiros.length === 0 && <p className="conteo-caja-hint">Sin retiros registrados.</p>}
+                {retiros.length === 0 && (
+                  <p className="conteo-caja-hint">Sin retiros manuales registrados.</p>
+                )}
                 {retiros.map((r) => (
-                  <div key={`modal-${r.id}`} className="retiro-row">
-                    <select value={r.tipo} onChange={(e) => updateRetiro(r.id, { tipo: e.target.value })}>
-                      <option value="retiro">Retiro</option>
-                      <option value="gasto">Gasto</option>
-                      <option value="vale">Vale</option>
-                    </select>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Monto"
-                      value={r.monto}
-                      onChange={(e) => updateRetiro(r.id, { monto: e.target.value })}
-                    />
-                    <input
-                      placeholder="Motivo"
-                      value={r.motivo}
-                      onChange={(e) => updateRetiro(r.id, { motivo: e.target.value })}
-                    />
-                    <input
-                      placeholder="Usuario"
-                      value={r.usuario}
-                      onChange={(e) => updateRetiro(r.id, { usuario: e.target.value })}
-                    />
-                    <button className="btn-corte" type="button" onClick={() => eliminarRetiro(r.id)}>
-                      Quitar
-                    </button>
+                  <div key={`modal-${r.id}`} className="retiro-card">
+                    <div className="retiro-row">
+                      <select value={r.tipo} onChange={(e) => updateRetiro(r.id, { tipo: e.target.value })}>
+                        <option value="retiro">Retiro</option>
+                        <option value="gasto">Gasto</option>
+                        <option value="vale">Vale</option>
+                      </select>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Monto"
+                        value={r.monto}
+                        onChange={(e) => updateRetiro(r.id, { monto: e.target.value })}
+                      />
+                      <input
+                        placeholder="Motivo"
+                        value={r.motivo}
+                        onChange={(e) => updateRetiro(r.id, { motivo: e.target.value })}
+                      />
+                      <input
+                        placeholder="Usuario"
+                        value={r.usuario}
+                        onChange={(e) => updateRetiro(r.id, { usuario: e.target.value })}
+                      />
+                    </div>
+                    <div className="retiro-row-actions">
+                      <button className="btn-corte" type="button" onClick={() => eliminarRetiro(r.id)}>
+                        Quitar
+                      </button>
+                    </div>
                   </div>
                 ))}
+
+                <div className="egresos-corte-wrap">
+                  <div className="egresos-corte-head">
+                    <h5>Egresos del modal diario</h5>
+                    <span>{money(totalEgresosDia)}</span>
+                  </div>
+
+                  {egresosValidos.length === 0 && (
+                    <p className="conteo-caja-hint">Sin egresos registrados.</p>
+                  )}
+
+                  {egresosValidos.length > 0 && (
+                    <div className="egresos-corte-list">
+                      {egresosValidos.map((e) => {
+                        const tipoMeta = TIPO_EGRESO_META[e.tipo] || TIPO_EGRESO_META.otro;
+                        return (
+                          <div
+                            key={`egreso-corte-${e.id || `${e.tipo}-${e.descripcion}`}`}
+                            className="egreso-corte-card"
+                          >
+                            <div className="egreso-corte-header">
+                              <div className="egreso-corte-tipo">
+                                <span className="egreso-corte-emoji">{tipoMeta.emoji}</span>
+                                <span>{tipoMeta.label}</span>
+                              </div>
+                              <div className="egreso-corte-monto">{money(e.monto || 0)}</div>
+                            </div>
+                            <div className="egreso-corte-desc">{e.descripcion || "-"}</div>
+                            <div className="egreso-corte-user">{e.usuario || "-"}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="conteo-caja-notas">
@@ -992,3 +1129,5 @@ export default function Reportes() {
     </Layout>
   );
 }
+
+

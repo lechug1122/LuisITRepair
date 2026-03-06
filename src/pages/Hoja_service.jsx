@@ -3,7 +3,7 @@ import "../css/hoja_service.css";
 import doneCsv from "../csv/mindfactory_done.csv?raw";
 import updatedCsv from "../csv/mindfactory_updated.csv?raw";
 import { guardarServicio } from "../js/services/servicios_firestore";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 import {
   cargarCatalogoEquiposDesdeTextos,
@@ -28,6 +28,8 @@ const initialForm = {
   tipoDispositivo: "",
   marca: "",
   modelo: "",
+  numeroSerie: "",
+  omitirNumeroSerie: false,
 
   // Laptop/PC
   procesador: "",
@@ -59,6 +61,7 @@ const initialForm = {
 
 export default function HojaServicio() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [form, setForm] = useState(initialForm);
 
   // ✅ catálogo desde CSV
@@ -108,6 +111,34 @@ export default function HojaServicio() {
   const modelos = useMemo(() => {
     return marcasModelos[form.marca] || [];
   }, [marcasModelos, form.marca]);
+
+  // ✅ prefill desde detalle de cliente
+  useEffect(() => {
+    const cli = location.state?.prefillCliente;
+    if (!cli?.id) return;
+
+    const normalized = {
+      id: cli.id,
+      nombre: cli.nombre || "",
+      telefono: cli.telefono || "",
+      direccion: cli.direccion || "",
+      numeroSeriePreferido: cli.numeroSeriePreferido || "",
+      omitirNumeroSerie: !!cli.omitirNumeroSerie,
+    };
+
+    setSelectedCliente(normalized);
+    setForm((prev) => ({
+      ...prev,
+      nombre: normalized.nombre,
+      telefono: normalized.telefono,
+      direccion: normalized.direccion,
+      numeroSerie: normalized.numeroSeriePreferido,
+      omitirNumeroSerie: normalized.omitirNumeroSerie,
+    }));
+    setSugerencias([]);
+    setShowSug(false);
+    lastQueryRef.current = "";
+  }, [location.state]);
 
   const cpuOpciones = useMemo(
     () => [
@@ -176,8 +207,21 @@ export default function HojaServicio() {
       nombre: cli.nombre || prev.nombre,
       telefono: cli.telefono || "",
       direccion: cli.direccion || "",
+      numeroSerie: cli.numeroSeriePreferido || "",
+      omitirNumeroSerie: !!cli.omitirNumeroSerie,
     }));
     setShowSug(false);
+  }
+
+  function autoGrowTextarea(el) {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }
+
+  function handleTextareaChange(e) {
+    handleChange(e);
+    autoGrowTextarea(e.target);
   }
 
   function handleChange(e) {
@@ -185,6 +229,10 @@ export default function HojaServicio() {
 
     setForm((prev) => {
       const next = { ...prev, [name]: type === "checkbox" ? checked : value };
+
+      if (name === "omitirNumeroSerie" && checked) {
+        next.numeroSerie = "";
+      }
 
       // si cambia marca, limpia modelo + specs
       if (name === "marca") {
@@ -220,10 +268,20 @@ export default function HojaServicio() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
+  useEffect(() => {
+    const areas = document.querySelectorAll(".hoja-page textarea");
+    areas.forEach((el) => autoGrowTextarea(el));
+  }, [form.condicionesImpresora, form.condicionesMonitor, form.trabajo]);
+
   async function handleSubmit(e) {
   e.preventDefault();
 
   try {
+    if (!form.omitirNumeroSerie && !String(form.numeroSerie || "").trim()) {
+      alert("Captura el numero de serie o activa 'No quiero poner el numero de serie'.");
+      return;
+    }
+
     let clienteIdFinal = selectedCliente?.id;
 
     // ✅ 1) Cliente
@@ -232,12 +290,20 @@ export default function HojaServicio() {
         nombre: form.nombre,
         telefono: form.telefono,
         direccion: form.direccion,
+        numeroSeriePreferido: form.omitirNumeroSerie
+          ? ""
+          : String(form.numeroSerie || "").trim(),
+        omitirNumeroSerie: !!form.omitirNumeroSerie,
       });
     } else {
       const nuevo = await crearCliente({
         nombre: form.nombre,
         telefono: form.telefono,
         direccion: form.direccion,
+        numeroSeriePreferido: form.omitirNumeroSerie
+          ? ""
+          : String(form.numeroSerie || "").trim(),
+        omitirNumeroSerie: !!form.omitirNumeroSerie,
       });
 
       clienteIdFinal = nuevo.id; // 🔥 ESTE ERA EL FALTANTE
@@ -259,7 +325,7 @@ await generarPdfHojaServicio(
   res.folio    // ✅ folio real de Firestore
 );
 
-navigate(`/ticket/${res.folio}`);
+navigate(`/ticket/${encodeURIComponent(String(res.folio || "").trim())}`);
     // reset
     setForm(initialForm);
     setSelectedCliente(null);
@@ -273,7 +339,9 @@ navigate(`/ticket/${res.folio}`);
         `${err.message}\n\n¿Quieres abrir ese servicio ahora?`
       );
       if (abrir) {
-        navigate(`/servicios/${err.duplicado.folio}`);
+        navigate(
+          `/servicios/${encodeURIComponent(String(err.duplicado.folio || "").trim())}`,
+        );
       }
       return;
     }
@@ -282,12 +350,10 @@ navigate(`/ticket/${res.folio}`);
 }
 
   return (
-    <div className="container- hoja-page">
-      <div className="row justify-content-center">
-        {/* 🔥 AQUI ESTA EL ANCHO DEL RECTANGULO BLANCO */}
-        <div className="col-8">
+    <div className="hoja-page">
+      <div className="hoja-form-shell">
           <div className="card shadow-lg border-0">
-            <div className="card-body p-4 p-md-5">
+            <div className="card-body">
               <h2 className="text-center mb-4">Registro de Servicio Técnico</h2>
 
               <form id="formRegistro" onSubmit={handleSubmit}>
@@ -346,6 +412,8 @@ navigate(`/ticket/${res.folio}`);
                             nombre: "",
                             telefono: "",
                             direccion: "",
+                            numeroSerie: "",
+                            omitirNumeroSerie: false,
                           }));
                         }}
                       >
@@ -438,6 +506,33 @@ navigate(`/ticket/${res.folio}`);
                       <option key={m} value={m} />
                     ))}
                   </datalist>
+                </div>
+
+                <div className="full">
+                  <label>Numero de serie:</label>
+                  <input
+                    type="text"
+                    name="numeroSerie"
+                    placeholder="Ej: SN12345ABC"
+                    value={form.numeroSerie}
+                    onChange={handleChange}
+                    disabled={form.omitirNumeroSerie}
+                    required={!form.omitirNumeroSerie}
+                  />
+
+                  <div className="form-check ms-2">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id="omitirNumeroSerie"
+                      name="omitirNumeroSerie"
+                      checked={!!form.omitirNumeroSerie}
+                      onChange={handleChange}
+                    />
+                    <label className="form-check-label" htmlFor="omitirNumeroSerie">
+                      No quiero poner el numero de serie
+                    </label>
+                  </div>
                 </div>
 
                 {/* Campos específicos Laptop/PC */}
@@ -639,7 +734,7 @@ navigate(`/ticket/${res.folio}`);
                           <textarea
                             name="condicionesImpresora"
                             value={form.condicionesImpresora}
-                            onChange={handleChange}
+                            onChange={handleTextareaChange}
                           />
                         </div>
                       </div>
@@ -695,7 +790,7 @@ navigate(`/ticket/${res.folio}`);
                           <textarea
                             name="condicionesMonitor"
                             value={form.condicionesMonitor}
-                            onChange={handleChange}
+                            onChange={handleTextareaChange}
                           />
                         </div>
                       </div>
@@ -725,7 +820,7 @@ navigate(`/ticket/${res.folio}`);
                   <textarea
                     name="trabajo"
                     value={form.trabajo}
-                    onChange={handleChange}
+                    onChange={handleTextareaChange}
                   />
                 </div>
 
@@ -766,7 +861,6 @@ navigate(`/ticket/${res.folio}`);
               </form>
             </div>
           </div>
-        </div>
       </div>
     </div>
   );

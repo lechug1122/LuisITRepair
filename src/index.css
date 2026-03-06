@@ -2,10 +2,25 @@
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  --app-accent: #2563eb;
+  --app-accent-strong: #1d4ed8;
+  --app-accent-deep: #1e3a8a;
+  --app-accent-rgb: 37, 99, 235;
+  --app-accent-soft: rgba(37, 99, 235, 0.18);
+  --app-accent-soft-2: rgba(37, 99, 235, 0.28);
+  --app-navbar-start: #1d4ed8;
+  --app-navbar-end: #1e3a8a;
+  --app-radius: 12px;
+  --app-font-scale: 1;
+  --app-ticket-font: "Courier New", "Liberation Mono", monospace;
+  --app-bg: #f3f6fb;
+  --app-surface: #ffffff;
+  --app-text: #0f172a;
+  --app-muted: #64748b;
+  --app-border: #d6e4ff;
+  color-scheme: light;
+  color: var(--app-text);
+  background-color: var(--app-bg);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -15,11 +30,11 @@
 
 a {
   font-weight: 500;
-  color: #646cff;
+  color: var(--app-accent);
   text-decoration: inherit;
 }
 a:hover {
-  color: #535bf2;
+  color: var(--app-accent-strong);
 }
 
 body {
@@ -28,6 +43,9 @@ body {
   min-width: 320px;
   min-height: 100vh;
   overflow-x: hidden;
+  font-size: calc(16px * var(--app-font-scale, 1));
+  background: var(--app-bg);
+  color: var(--app-text);
 }
 
 html,
@@ -38,6 +56,302 @@ body,
 
 #root {
   min-height: 100vh;
+}
+
+body button,
+body input,
+body select,
+body textarea {
+  border-radius: var(--app-radius, 10px);
+}
+
+body.ui-theme-dark {
+  --app-bg: #243b53;
+  --app-surface: #2f455d;
+  --app-text: #e8eef5;
+  --app-muted: #c4d0dc;
+  --app-border: #4f6579;
+  --app-dark-page-start: #2f5878;
+  --app-dark-page-mid: #4f7a97;
+  --app-dark-page-end: #6e95a8;
+  --app-surface-elevated: #2d4258;
+  --app-surface-soft: #36516a;
+  color-scheme: dark;
+}
+
+body.ui-theme-light {
+  --app-bg: #f3f6fb;
+  --app-surface: #ffffff;
+  --app-text: #0f172a;
+  --app-muted: #64748b;
+  --app-border: #d6e4ff;
+  color-scheme: light;
+}
+
+body.ui-theme-dark .cfg-card,
+body.ui-theme-dark .cfg-pos-card,
+body.ui-theme-dark .cfg-header,
+body.ui-theme-dark .stats,
+body.ui-theme-dark .empleados-activos,
+body.ui-theme-dark .cfg-version-card,
+body.ui-theme-dark .emp-form-card,
+body.ui-theme-dark .emp-table-card,
+body.ui-theme-dark .chart-card,
+body.ui-theme-dark .kpi-card,
+body.ui-theme-dark .tabla-reportes-wrap,
+body.ui-theme-dark .conteo-caja-card,
+body.ui-theme-dark .corte-modal,
+body.ui-theme-dark .modal-center,
+body.ui-theme-dark .modal-cobro-pro,
+body.ui-theme-dark .modal-egresos-container,
+body.ui-theme-dark .ticket-right,
+body.ui-theme-dark .clientes-card,
+body.ui-theme-dark .clientes-panel,
+body.ui-theme-dark .servicios-page .card,
+body.ui-theme-dark .servicios-list,
+body.ui-theme-dark .status-box,
+body.ui-theme-dark .status-card,
+body.ui-theme-dark .scan-box {
+  background: var(--app-surface-elevated) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+}
+
+body.ui-theme-dark .cfg-card-info p,
+body.ui-theme-dark .cfg-pos-help,
+body.ui-theme-dark .emp-subtitle,
+body.ui-theme-dark .corte-modal-sub,
+body.ui-theme-dark .ticket-sub,
+body.ui-theme-dark .ticket-footer {
+  color: var(--app-muted) !important;
+}
+
+body.ui-theme-dark .reportes-page,
+body.ui-theme-dark .clientes-page,
+body.ui-theme-dark .detalle-page,
+body.ui-theme-dark .servicios-page,
+body.ui-theme-dark .hoja-page,
+body.ui-theme-dark .pos-container,
+body.ui-theme-dark .layout,
+body.ui-theme-dark .main-wrapper,
+body.ui-theme-dark .cfg-main,
+body.ui-theme-dark .ticket-page,
+body.ui-theme-dark .page-container,
+body.ui-theme-dark .scan-page,
+body.ui-theme-dark .notfound-page,
+body.ui-theme-dark .posm-page {
+  background: linear-gradient(
+    135deg,
+    var(--app-dark-page-start) 0%,
+    var(--app-dark-page-mid) 52%,
+    var(--app-dark-page-end) 100%
+  ) !important;
+  color: var(--app-text) !important;
+}
+
+body.ui-theme-dark .servicios-box,
+body.ui-theme-dark .tabla-box,
+body.ui-theme-dark .serv-card,
+body.ui-theme-dark .cliente-card,
+body.ui-theme-dark .cliente-metricas,
+body.ui-theme-dark .servicio-card-modern,
+body.ui-theme-dark .detalle-card,
+body.ui-theme-dark .box,
+body.ui-theme-dark .main,
+body.ui-theme-dark .panel-derecho,
+body.ui-theme-dark .tabla,
+body.ui-theme-dark .pos-mobile-scanner,
+body.ui-theme-dark .pos-mobile-reader-card,
+body.ui-theme-dark .cliente-info,
+body.ui-theme-dark .servicio-vinculado,
+body.ui-theme-dark .tabla-productos,
+body.ui-theme-dark .prod-modal-center,
+body.ui-theme-dark .prod-modal-codigo,
+body.ui-theme-dark .hoja-page .card-body,
+body.ui-theme-dark .hoja-page fieldset,
+body.ui-theme-dark .hoja-page .cliente-sugerencias,
+body.ui-theme-dark .hoja-page .cliente-selected-hint,
+body.ui-theme-dark .cfg-right,
+body.ui-theme-dark .cfg-pos-page-head,
+body.ui-theme-dark .cfg-collapse-head,
+body.ui-theme-dark .cfg-billing-block,
+body.ui-theme-dark .cfg-ticket-block,
+body.ui-theme-dark .cfg-ticket-preview-wrap,
+body.ui-theme-dark .cfg-ticket-preview-frame,
+body.ui-theme-dark .cfg-appearance-preview,
+body.ui-theme-dark .cfg-appearance-preview-card,
+body.ui-theme-dark .cfg-grid-empty,
+body.ui-theme-dark .reportes-filtros,
+body.ui-theme-dark .reportes-fechas,
+body.ui-theme-dark .reportes-buscador,
+body.ui-theme-dark .den-item,
+body.ui-theme-dark .retiro-card,
+body.ui-theme-dark .egreso-corte-card,
+body.ui-theme-dark .calendar-side-drawer,
+body.ui-theme-dark .calendar-box.side,
+body.ui-theme-dark .panel-card.side,
+body.ui-theme-dark .status-section,
+body.ui-theme-dark .status-kpi,
+body.ui-theme-dark .statusd-textarea,
+body.ui-theme-dark .ticket-paper,
+body.ui-theme-dark .admin-card,
+body.ui-theme-dark .equipo-modal,
+body.ui-theme-dark .boleta-scanner-modal,
+body.ui-theme-dark .obs-foto-item {
+  background: var(--app-surface-elevated) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+}
+
+body.ui-theme-dark .tabla-productos-wrap,
+body.ui-theme-dark .boleta-table-wrap,
+body.ui-theme-dark .tabla-wrapper,
+body.ui-theme-dark .reportes-grid,
+body.ui-theme-dark .reportes-kpis,
+body.ui-theme-dark .detalle-grid {
+  background: transparent !important;
+}
+
+body.ui-theme-dark .servicios-title,
+body.ui-theme-dark .servicios-msg,
+body.ui-theme-dark .value,
+body.ui-theme-dark .serv-card-folio .folio,
+body.ui-theme-dark .cliente-name,
+body.ui-theme-dark .servicio-folio,
+body.ui-theme-dark .servicio-device,
+body.ui-theme-dark .detalle-main,
+body.ui-theme-dark .cfg-card-info h4,
+body.ui-theme-dark .cfg-pos-page-head h2,
+body.ui-theme-dark .cfg-pos-card h2,
+body.ui-theme-dark .cfg-pos-card h3,
+body.ui-theme-dark .cfg-pos-card h4,
+body.ui-theme-dark .reportes-header h1,
+body.ui-theme-dark .egresos-corte-head h5,
+body.ui-theme-dark .conteo-caja-value,
+body.ui-theme-dark .status-box h2,
+body.ui-theme-dark .status-section h3,
+body.ui-theme-dark .ticket-title,
+body.ui-theme-dark .admin-title,
+body.ui-theme-dark .admin-subtitle {
+  color: var(--app-text) !important;
+}
+
+body.ui-theme-dark .muted,
+body.ui-theme-dark .cliente-address,
+body.ui-theme-dark .servicio-date,
+body.ui-theme-dark .detalle-muted,
+body.ui-theme-dark .hero-text p,
+body.ui-theme-dark .hero-metricas div span,
+body.ui-theme-dark .cfg-card-info p,
+body.ui-theme-dark .cfg-pos-page-head p,
+body.ui-theme-dark .cfg-collapse-subtitle,
+body.ui-theme-dark .cfg-billing-block label,
+body.ui-theme-dark .cfg-ticket-block label,
+body.ui-theme-dark .reportes-buscador label,
+body.ui-theme-dark .statusd-muted,
+body.ui-theme-dark .ticket-sub,
+body.ui-theme-dark .ticket-footer,
+body.ui-theme-dark .step-title {
+  color: var(--app-muted) !important;
+}
+
+body.ui-theme-dark .table,
+body.ui-theme-dark .table-responsive,
+body.ui-theme-dark table {
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+}
+
+body.ui-theme-dark .tabla-servicios th,
+body.ui-theme-dark .tabla-productos th,
+body.ui-theme-dark .tabla th,
+body.ui-theme-dark .boleta-table th,
+body.ui-theme-dark .statusd-table th,
+body.ui-theme-dark .tabla-reportes th,
+body.ui-theme-dark .emp-table thead th {
+  background: var(--app-surface-soft) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+}
+
+body.ui-theme-dark .tabla-servicios td,
+body.ui-theme-dark .tabla-productos td,
+body.ui-theme-dark .tabla td,
+body.ui-theme-dark .boleta-table td,
+body.ui-theme-dark .statusd-table td,
+body.ui-theme-dark .tabla-reportes td,
+body.ui-theme-dark .emp-table tbody td {
+  border-color: var(--app-border) !important;
+  color: var(--app-text) !important;
+}
+
+body.ui-theme-dark input,
+body.ui-theme-dark select,
+body.ui-theme-dark textarea {
+  background: #1f3346 !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+}
+
+body.ui-theme-dark .btn-light {
+  background: #1f2937 !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+}
+
+.bg-primary {
+  background-color: var(--app-accent) !important;
+  border-color: var(--app-accent-strong) !important;
+}
+
+.text-primary {
+  color: var(--app-accent) !important;
+}
+
+.btn-primary,
+.btn-primary:focus,
+.btn-primary:active {
+  background-color: var(--app-accent) !important;
+  border-color: var(--app-accent-strong) !important;
+}
+
+.btn-primary:hover {
+  background-color: var(--app-accent-strong) !important;
+  border-color: var(--app-accent-deep) !important;
+}
+
+.btn-outline-primary {
+  color: var(--app-accent) !important;
+  border-color: var(--app-accent) !important;
+}
+
+.btn-outline-primary:hover {
+  background: var(--app-accent) !important;
+  color: #fff !important;
+}
+
+body.ui-density-compact .cfg-main,
+body.ui-density-compact .main-wrapper {
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+body.ui-density-compact .cfg-card,
+body.ui-density-compact .cfg-pos-card,
+body.ui-density-compact .chart-card,
+body.ui-density-compact .kpi-card {
+  padding: 10px !important;
+}
+
+body.ui-high-contrast {
+  filter: contrast(1.06);
+}
+
+body.ui-no-motion *,
+body.ui-no-motion *::before,
+body.ui-no-motion *::after {
+  transition: none !important;
+  animation: none !important;
 }
 
 h1 {
@@ -52,29 +366,16 @@ button {
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: var(--app-surface);
   cursor: pointer;
   transition: border-color 0.25s;
 }
 button:hover {
-  border-color: #646cff;
+  border-color: var(--app-accent);
 }
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
 }
 /* ============ CUSTOM NAVBAR ============ */
 nav.navbar-custom {
@@ -83,7 +384,7 @@ nav.navbar-custom {
   left: 0 !important;
   right: 0 !important;
   z-index: 9999 !important;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+  background: linear-gradient(135deg, var(--app-navbar-start) 0%, var(--app-navbar-end) 100%) !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
   height: 64px !important;
   display: flex !important;
@@ -116,7 +417,7 @@ nav.navbar-custom {
 }
 
 .navbar-brand:hover {
-  color: #bfdbfe;
+  color: #e0ecff;
   transform: translateY(-2px);
 }
 
@@ -200,9 +501,9 @@ nav.navbar-custom {
 }
 
 .nav-item-custom.active {
-  background: rgba(255, 255, 255, 0.25);
-  color: #bfdbfe !important;
-  box-shadow: 0 0 10px rgba(191, 219, 254, 0.3);
+  background: var(--app-accent-soft-2);
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(var(--app-accent-rgb), 0.35);
 }
 
 .nav-emoji {
@@ -298,7 +599,7 @@ nav.navbar-custom {
   justify-content: space-between;
   align-items: center;
   padding: 14px 16px;
-  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  background: linear-gradient(135deg, var(--app-navbar-start) 0%, var(--app-navbar-end) 100%);
   color: white;
   font-weight: 600;
   border-bottom: 1px solid rgba(0, 0, 0, 0.1);
@@ -366,7 +667,7 @@ nav.navbar-custom {
     right: 0;
     flex-direction: column;
     gap: 0;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    background: linear-gradient(135deg, var(--app-navbar-start) 0%, var(--app-navbar-end) 100%);
     padding: 16px;
     max-height: calc(100vh - 64px);
     overflow-y: auto;

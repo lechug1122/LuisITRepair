@@ -13,6 +13,7 @@
   border-radius: 12px;
   border: 1px solid rgba(0, 0, 0, 0.08);
   padding: 14px;
+  font-family: var(--app-ticket-font);
 }
 
 .ticket-logo {
@@ -130,6 +131,7 @@
     padding: 0 !important;
     background: #fff !important;
     overflow: hidden;
+    font-family: var(--app-ticket-font) !important;
   }
 
   .no-print {

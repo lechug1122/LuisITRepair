@@ -1,28 +1,25 @@
-// ✅ Archivo: src/js/pdf_hoja_servicio.js
-// Ruta Windows (solo referencia):
-// C:\Users\luisc.WINDOWS_LUIS\Documents\hoja de servicios\hoja_service-app\src\js\pdf_hoja_servicio.js
+﻿// Archivo: src/js/services/pdf_hoja_servicio.js
 
 import { jsPDF } from "jspdf";
-import logoUrl from "../../assets/logo.png"; // ✅ viene de src/assets/logo.png (Vite lo sirve bien)
+import logoUrl from "../../assets/logo.png";
+import { getPdfFontFamily } from "./apariencia_config";
 
-// ===============================
-// Utilidades: imagen -> PNG real
-// ===============================
+const BOX_X = 15;
+const BOX_W = 180;
+const PAGE_BOTTOM_LIMIT = 290;
+
 async function detectarTipoImagen(blob) {
   const buf = await blob.arrayBuffer();
   const bytes = new Uint8Array(buf.slice(0, 16));
 
-  // PNG: 89 50 4E 47 0D 0A 1A 0A
   const isPng =
     bytes[0] === 0x89 &&
     bytes[1] === 0x50 &&
     bytes[2] === 0x4e &&
     bytes[3] === 0x47;
 
-  // JPG: FF D8 FF
   const isJpg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
 
-  // WEBP: "RIFF" .... "WEBP"
   const isWebp =
     bytes[0] === 0x52 &&
     bytes[1] === 0x49 &&
@@ -55,7 +52,6 @@ async function fetchAsDataURL(url) {
   return { dataUrl, tipo };
 }
 
-// Convierte cualquier imagen (png/jpg/webp) a PNG REAL usando canvas
 async function convertirADataURLPNG(dataUrl) {
   const img = new Image();
   img.crossOrigin = "anonymous";
@@ -75,218 +71,361 @@ async function convertirADataURLPNG(dataUrl) {
 
   return canvas.toDataURL("image/png");
 }
-// ===============================
-// ✅ PDF Principal
-// ===============================
+
+function drawPageBorder(doc) {
+  doc.setLineWidth(0.7);
+  doc.rect(10, 10, 190, 285);
+}
+
+function sanitize(value) {
+  const text = String(value ?? "").trim();
+  return text || "-";
+}
+
+function labeledLines(doc, label, value, width) {
+  return doc.splitTextToSize(`${label}: ${sanitize(value)}`, width);
+}
+
+function getLinesHeight(doc, lines) {
+  return doc.getTextDimensions(lines).h;
+}
+
+function ensureSpace(doc, y, neededHeight) {
+  if (y + neededHeight <= PAGE_BOTTOM_LIMIT) return y;
+  doc.addPage();
+  drawPageBorder(doc);
+  return 15;
+}
+
+function drawSectionHeader(doc, title, y) {
+  doc.setFillColor(28, 69, 135);
+  doc.rect(BOX_X, y, BOX_W, 8, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(10);
+  doc.text(title, BOX_X + 5, y + 6);
+}
+
+function drawClientSection(doc, y, form) {
+  const lines = [
+    labeledLines(doc, "Nombre", form.nombre, 172),
+    labeledLines(doc, "Direccion", form.direccion, 172),
+    labeledLines(doc, "Telefono", form.telefono, 172),
+  ];
+
+  const contentHeight = lines.reduce((acc, arr) => acc + getLinesHeight(doc, arr), 0) + 6;
+  const sectionHeight = Math.max(30, 8 + 4 + contentHeight);
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(BOX_X, y, BOX_W, sectionHeight);
+  drawSectionHeader(doc, "DATOS DEL CLIENTE", y);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10);
+  let ty = y + 12;
+  lines.forEach((arr) => {
+    doc.text(arr, BOX_X + 5, ty);
+    ty += getLinesHeight(doc, arr) + 2;
+  });
+
+  return y + sectionHeight + 5;
+}
+
+function drawEquipmentSection(doc, y, form, folio, serieTexto) {
+  const colWidth = 53;
+  const typeLines = labeledLines(doc, "Tipo", form.tipoDispositivo, colWidth);
+  const brandLines = labeledLines(doc, "Marca", form.marca, colWidth);
+  const modelLines = labeledLines(doc, "Modelo", form.modelo, colWidth);
+  const row1Height = Math.max(
+    getLinesHeight(doc, typeLines),
+    getLinesHeight(doc, brandLines),
+    getLinesHeight(doc, modelLines),
+  );
+
+  const serieLines = labeledLines(doc, "No. Serie", serieTexto, 172);
+  const folioLines = labeledLines(doc, "Folio", folio, 172);
+  const row2Height = getLinesHeight(doc, serieLines);
+  const row3Height = getLinesHeight(doc, folioLines);
+
+  const contentHeight = row1Height + row2Height + row3Height + 4;
+  const sectionHeight = Math.max(26, 8 + 4 + contentHeight);
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(BOX_X, y, BOX_W, sectionHeight);
+  drawSectionHeader(doc, "DATOS DEL EQUIPO", y);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10);
+
+  let ty = y + 12;
+  doc.text(typeLines, 20, ty);
+  doc.text(brandLines, 80, ty);
+  doc.text(modelLines, 140, ty);
+  ty += row1Height + 1.5;
+
+  doc.text(serieLines, 20, ty);
+  ty += row2Height + 1.5;
+
+  doc.text(folioLines, 20, ty);
+
+  return y + sectionHeight + 5;
+}
+
+function drawLaptopPcSection(doc, y, form) {
+  const colWidth = 53;
+  const rows = [
+    [
+      labeledLines(doc, "Procesador", form.procesador, colWidth),
+      labeledLines(doc, "RAM", form.ram, colWidth),
+      labeledLines(doc, "Disco", form.disco, colWidth),
+    ],
+    [
+      labeledLines(doc, "Estado de pantalla", form.estadoPantalla, colWidth),
+      labeledLines(doc, "Estado de teclado", form.estadoTeclado, colWidth),
+      labeledLines(doc, "Estado de mouse", form.estadoMouse, colWidth),
+    ],
+    [
+      labeledLines(doc, "Enciende", form.enciendeEquipo, colWidth),
+      labeledLines(doc, "Funciona", form.funciona, colWidth),
+      labeledLines(doc, "Contrasena del equipo", form.contrasenaEquipo, colWidth),
+    ],
+  ];
+
+  const rowHeights = rows.map((row) =>
+    Math.max(getLinesHeight(doc, row[0]), getLinesHeight(doc, row[1]), getLinesHeight(doc, row[2])),
+  );
+
+  const contentHeight = rowHeights.reduce((acc, h) => acc + h, 0) + 4;
+  const sectionHeight = Math.max(32, 8 + 4 + contentHeight);
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(BOX_X, y, BOX_W, sectionHeight);
+  drawSectionHeader(doc, "CARACTERISTICAS", y);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10);
+  let ty = y + 12;
+
+  rows.forEach((row, i) => {
+    doc.text(row[0], 20, ty);
+    doc.text(row[1], 80, ty);
+    doc.text(row[2], 140, ty);
+    ty += rowHeights[i] + 1.5;
+  });
+
+  return y + sectionHeight + 5;
+}
+
+function drawSimpleDeviceSection(doc, y, title, formLines) {
+  const allLines = formLines.flatMap((item) => labeledLines(doc, item.label, item.value, 172));
+  const textHeight = allLines.reduce((acc, ln) => acc + getLinesHeight(doc, ln), 0) + 4;
+  const sectionHeight = Math.max(20, 8 + 4 + textHeight);
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(BOX_X, y, BOX_W, sectionHeight);
+  drawSectionHeader(doc, title, y);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10);
+  let ty = y + 12;
+  formLines.forEach((item) => {
+    const arr = labeledLines(doc, item.label, item.value, 172);
+    doc.text(arr, 20, ty);
+    ty += getLinesHeight(doc, arr) + 1.5;
+  });
+
+  return y + sectionHeight + 5;
+}
+
+function drawTrabajoCostoSection(doc, y, form) {
+  const trabajoLines = labeledLines(doc, "Trabajo", form.trabajo, 95);
+  const costoTexto = form.precioDespues
+    ? "El precio se define despues del mantenimiento"
+    : `$${sanitize(form.costo)}`;
+  const costoLines = labeledLines(doc, "Costo estimado", costoTexto, 72);
+
+  const trabajoHeight = getLinesHeight(doc, trabajoLines);
+  const costoHeight = getLinesHeight(doc, costoLines);
+  const sectionHeight = Math.max(16, 8 + 4 + Math.max(trabajoHeight, costoHeight) + 2);
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(BOX_X, y, BOX_W, sectionHeight);
+  drawSectionHeader(doc, "TRABAJO Y COSTO", y);
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(10);
+  doc.text(trabajoLines, 20, y + 12);
+  doc.text(costoLines, 120, y + 12);
+
+  return y + sectionHeight + 5;
+}
+
+function drawTerminosSection(doc, y) {
+  const texto = [
+    "Copia de seguridad de datos: El proveedor recomienda al cliente realizar copias de seguridad antes de la intervencion. El proveedor no se hace responsable de perdida de datos, programas o configuraciones.",
+    "Garantia de reparacion: El proveedor se compromete a realizar su mejor esfuerzo para resolver el problema. La garantia se limita a los trabajos efectuados.",
+    "Limitacion de responsabilidad: El proveedor no sera responsable por fallas derivadas de virus, uso indebido, modificaciones del cliente o causas ajenas a su control.",
+    "Presupuesto y autorizacion: Ningun trabajo sera realizado sin la autorizacion del cliente.",
+    "Tiempo de entrega: El tiempo estimado puede variar segun la complejidad de la reparacion.",
+    "Revision posterior: El cliente se compromete a revisar el equipo al momento de la entrega.",
+    "Garantia de los trabajos: No cubre danos por manipulacion indebida, virus, golpes, caidas, liquidos u otros eventos externos.",
+    "Despues de 30 dias de abandono, el proveedor no se hace responsable del uso del equipo.",
+  ];
+
+  doc.setFontSize(8.5);
+  const blocks = texto.map((t) => doc.splitTextToSize(t, 172));
+  const lineGap = 2.5;
+  const headerHeight = 12;
+  const topPadding = 4;
+  const bottomPadding = 4;
+  const sectionGap = 8;
+  const minUsableHeight = headerHeight + topPadding + bottomPadding + 8;
+
+  let index = 0;
+  let firstChunk = true;
+
+  while (index < blocks.length) {
+    let available = PAGE_BOTTOM_LIMIT - y;
+
+    if (available < minUsableHeight) {
+      doc.addPage();
+      drawPageBorder(doc);
+      y = 15;
+      available = PAGE_BOTTOM_LIMIT - y;
+    }
+
+    let used = headerHeight + topPadding;
+    let end = index;
+
+    while (end < blocks.length) {
+      const nextHeight = getLinesHeight(doc, blocks[end]) + lineGap;
+      if (used + nextHeight + bottomPadding > available) break;
+      used += nextHeight;
+      end += 1;
+    }
+
+    if (end === index) {
+      end = index + 1;
+      used += getLinesHeight(doc, blocks[index]) + lineGap;
+    }
+
+    const sectionHeight = Math.min(available, used + bottomPadding);
+
+    doc.setDrawColor(63, 135, 166);
+    doc.setLineWidth(0.5);
+    doc.rect(BOX_X, y, BOX_W, sectionHeight);
+
+    doc.setFillColor(63, 135, 166);
+    doc.rect(BOX_X, y, BOX_W, headerHeight, "F");
+
+    doc.setTextColor(255, 255, 255);
+    doc.text(
+      firstChunk ? "Terminos y Condiciones" : "Terminos y Condiciones (continuacion)",
+      BOX_X + 5,
+      y + 9,
+    );
+
+    doc.setTextColor(0, 0, 0);
+    let ty = y + 16;
+    for (let i = index; i < end; i += 1) {
+      doc.text(blocks[i], BOX_X + 3, ty);
+      ty += getLinesHeight(doc, blocks[i]) + lineGap;
+    }
+
+    y += sectionHeight + sectionGap;
+    index = end;
+    firstChunk = false;
+
+    if (index < blocks.length) {
+      doc.addPage();
+      drawPageBorder(doc);
+      y = 15;
+    }
+  }
+
+  return y;
+}
+
+function drawFirmas(doc, y) {
+  y = ensureSpace(doc, y, 17);
+  doc.setFontSize(10);
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+
+  doc.rect(15, y, 85, 15);
+  doc.rect(110, y, 85, 15);
+
+  doc.text("NOMBRE Y FIRMA DEL TECNICO:", 20, y + 6);
+  doc.text("NOMBRE Y FIRMA DEL CLIENTE:", 115, y + 6);
+}
+
 export async function generarPdfHojaServicio(form, folio) {
   try {
     const doc = new jsPDF();
+    const pdfFont = getPdfFontFamily();
+    const setPdfFont = (style = "normal") => doc.setFont(pdfFont, style);
+    const serieTexto = form.omitirNumeroSerie ? "No proporcionado" : sanitize(form.numeroSerie);
 
-    // ===== Logo =====
+    drawPageBorder(doc);
+
     let logoDataUrlPng = null;
     try {
       const { dataUrl } = await fetchAsDataURL(logoUrl);
       logoDataUrlPng = await convertirADataURLPNG(dataUrl);
     } catch (e) {
-      console.warn("⚠️ Logo no cargado:", e.message);
+      console.warn("Logo no cargado:", e.message);
     }
-
-    // ===== Borde =====
-    doc.setLineWidth(0.7);
-    doc.rect(10, 10, 190, 285);
 
     if (logoDataUrlPng) {
       doc.addImage(logoDataUrlPng, "PNG", 15, 12, 32, 32);
     }
 
-    doc.setFont("helvetica", "bold");
+    setPdfFont("bold");
     doc.setFontSize(30);
+    doc.setTextColor(0, 0, 0);
     doc.text("Hoja De Servicio", 60, 30);
 
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
     const ahora = new Date();
+    setPdfFont("normal");
+    doc.setFontSize(10);
     doc.text(
       `Fecha: ${ahora.toLocaleDateString()} ${ahora.toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
       })}`,
       150,
-      24
+      24,
     );
 
-    let yInicio = 45;
+    let y = 45;
 
-    // ===============================
-    // DATOS DEL CLIENTE
-    // ===============================
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.5);
+    y = drawClientSection(doc, y, form);
+    y = drawEquipmentSection(doc, y, form, folio, serieTexto);
 
-    doc.rect(15, yInicio, 180, 30);
-
-    doc.setFillColor(28, 69, 135);
-    doc.rect(15, yInicio, 180, 8, "F");
-
-    doc.setTextColor(255, 255, 255);
-    doc.text("DATOS DEL CLIENTE", 20, yInicio + 6);
-
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(10);
-
-    let yTexto = yInicio + 14;
-    doc.text(`Nombre: ${form.nombre || "-"}`, 20, yTexto);
-    doc.text(`Dirección: ${form.direccion || "-"}`, 20, yTexto + 6);
-    doc.text(`Teléfono: ${form.telefono || "-"}`, 20, yTexto + 12);
-
-    // ===============================
-    // DATOS DEL EQUIPO
-    // ===============================
-    let y = yInicio + 35;
-
-    doc.rect(15, y, 180, 20);
-
-    doc.setFillColor(28, 69, 135);
-    doc.rect(15, y, 180, 8, "F");
-
-    doc.setTextColor(255, 255, 255);
-    doc.text("DATOS DEL EQUIPO", 20, y + 6);
-
-    doc.setTextColor(0, 0, 0);
-    doc.text(`Tipo: ${form.tipoDispositivo || "-"}`, 20, y + 12);
-    doc.text(`Marca: ${form.marca || "-"}`, 80, y + 12);
-    doc.text(`Modelo: ${form.modelo || "-"}`, 140, y + 12);
-    doc.text(`Folio: ${folio || "-"}`, 20, y + 18);
-
-    y += 25;
-
-    // ===============================
-    // CAMPOS ESPECÍFICOS SEGÚN TIPO
-    // ===============================
     if (form.tipoDispositivo === "laptop" || form.tipoDispositivo === "pc") {
-      doc.rect(15, y, 180, 32);
-
-      doc.setFillColor(28, 69, 135);
-      doc.rect(15, y, 180, 8, "F");
-
-      doc.setTextColor(255, 255, 255);
-      doc.text("CARACTERÍSTICAS", 20, y + 6);
-
-      doc.setTextColor(0, 0, 0);
-      doc.text(`Procesador: ${form.procesador || "-"}`, 20, y + 12);
-      doc.text(`RAM: ${form.ram || "-"}`, 80, y + 12);
-      doc.text(`Disco: ${form.disco || "-"}`, 140, y + 12);
-
-      doc.text(`Estado de pantalla: ${form.estadoPantalla || "-"}`, 20, y + 18);
-      doc.text(`Estado de Teclado: ${form.estadoTeclado || "-"}`, 80, y + 18);
-      doc.text(`Estado de Mouse: ${form.estadoMouse || "-"}`, 140, y + 18);
-
-      doc.text(`¿Enciende?: ${form.enciendeEquipo || "-"}`, 20, y + 24);
-      doc.text(`¿Funciona?: ${form.funciona || "-"}`, 80, y + 24);
-      doc.text(`Contraseña del equipo: ${form.contrasenaEquipo || "-"}`, 140, y + 24);
-
-      y += 37;
+      y = drawLaptopPcSection(doc, y, form);
     } else if (form.tipoDispositivo === "impresora") {
-      doc.rect(15, y, 180, 20);
-
-      doc.setFillColor(28, 69, 135);
-      doc.rect(15, y, 180, 8, "F");
-
-      doc.setTextColor(255, 255, 255);
-      doc.text("IMPRESORA", 20, y + 6);
-
-      doc.setTextColor(0, 0, 0);
-      doc.text(`Tipo: ${form.tipoImpresora || "-"}`, 20, y + 12);
-      doc.text(`¿Imprime?: ${form.imprime || "-"}`, 80, y + 12);
-      doc.text(`Condiciones: ${form.condicionesImpresora || "-"}`, 20, y + 18);
-
-      y += 25;
+      y = drawSimpleDeviceSection(doc, y, "IMPRESORA", [
+        { label: "Tipo", value: form.tipoImpresora },
+        { label: "Imprime", value: form.imprime },
+        { label: "Condiciones", value: form.condicionesImpresora },
+      ]);
     } else if (form.tipoDispositivo === "monitor") {
-      doc.rect(15, y, 180, 20);
-
-      doc.setFillColor(28, 69, 135);
-      doc.rect(15, y, 180, 8, "F");
-
-      doc.setTextColor(255, 255, 255);
-      doc.text("MONITOR", 20, y + 6);
-
-      doc.setTextColor(0, 0, 0);
-      doc.text(`Tamaño: ${form.tamanoMonitor || "-"}`, 20, y + 12);
-      doc.text(`¿Colores correctos?: ${form.colores || "-"}`, 80, y + 12);
-      doc.text(`Condiciones: ${form.condicionesMonitor || "-"}`, 20, y + 18);
-
-      y += 25;
+      y = drawSimpleDeviceSection(doc, y, "MONITOR", [
+        { label: "Tamano", value: form.tamanoMonitor },
+        { label: "Colores correctos", value: form.colores },
+        { label: "Condiciones", value: form.condicionesMonitor },
+      ]);
     }
 
-    // ===============================
-    // TRABAJO Y COSTO
-    // ===============================
-    doc.rect(15, y, 180, 16);
+    y = drawTrabajoCostoSection(doc, y, form);
+    y = drawTerminosSection(doc, y);
+    drawFirmas(doc, y);
 
-    doc.setFillColor(28, 69, 135);
-    doc.rect(15, y, 180, 8, "F");
-
-    doc.setTextColor(255, 255, 255);
-    doc.text("TRABAJO Y COSTO", 20, y + 6);
-
-    doc.setTextColor(0, 0, 0);
-    doc.text(`Trabajo: ${form.trabajo || "-"}`, 20, y + 12);
-
-    if (form.precioDespues) {
-      doc.text("Costo Estimado: El precio se da después del mantenimiento", 120, y + 12);
-    } else {
-      doc.text(`Costo Estimado: $${form.costo || "-"}`, 120, y + 12);
-    }
-
-    // ===============================
-    // TÉRMINOS Y CONDICIONES
-    // ===============================
-    y += 20;
-    doc.setFontSize(10);
-    doc.setDrawColor(63, 135, 166);
-    doc.setLineWidth(0.5);
-
-    doc.rect(15, y, 180, 110);
-
-    doc.setFillColor(63, 135, 166);
-    doc.rect(15, y, 180, 12, "F");
-
-    doc.setTextColor(255, 255, 255);
-    doc.text("Términos y Condiciones", 20, y + 9);
-
-    doc.setTextColor(0, 0, 0);
-
-    const texto = [
-      "Copia de seguridad de datos: El proveedor recomienda al Cliente realizar copias de seguridad de todos los datos almacenados en sus equipos antes de la intervención. El proveedor no se hace responsable de la pérdida de datos, programas o configuraciones.",
-      "Garantía de reparación: El proveedor se compromete a realizar su mejor esfuerzo para la resolución de los problemas, dependiendo de su naturaleza. La garantía de reparación se limita a los trabajos efectuados.",
-      "Limitación de responsabilidad: El proveedor no será responsable por fallas en el equipo o software derivadas de factores externos como virus, uso indebido, uso por parte del cliente, modificaciones realizadas por el cliente o causas ajenas a su control.",
-      "Presupuesto y autorización: El presupuesto presentado al cliente será válido por un tiempo determinado. Ningún trabajo será realizado sin la autorización del cliente.",
-      "Tiempo de entrega: El tiempo de entrega estimado será informado al cliente, pudiendo variar según la complejidad de la reparación.",
-      "Revisión posterior: El cliente se compromete a revisar el equipo en el momento de la entrega para verificar el correcto funcionamiento.",
-      "Garantía de los trabajos: Los trabajos de reparación realizados tendrán una garantía limitada que será especificada en el comprobante de servicio. Esta garantía no cubre daños ocasionados por manipulación indebida, virus, golpes, caídas, líquidos u otros eventos externos que afecten al equipo.",
-    ];
-
-    let ty = y + 16;
-    texto.forEach((t) => {
-      const lines = doc.splitTextToSize(t, 172);
-      doc.text(lines, 18, ty);
-      ty += doc.getTextDimensions(lines).h + 4;
-    });
-
-    // ===============================
-    // FIRMAS
-    // ===============================
-    y += 115;
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.5);
-
-    doc.rect(15, y, 85, 15);
-    doc.rect(110, y, 85, 15);
-
-    doc.text("NOMBRE Y FIRMA DEL TÉCNICO:", 20, y + 6);
-    doc.text("NOMBRE Y FIRMA DEL CLIENTE:", 115, y + 6);
-
-    // ✅ Guardar PDF
     doc.save(`comprobante_${folio}.pdf`);
   } catch (err) {
     console.error("Error generando PDF:", err);

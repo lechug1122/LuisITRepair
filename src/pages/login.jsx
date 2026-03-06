@@ -91,6 +91,9 @@ export default function Login() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder=" "
+              autoComplete="email"
+              required
             />
             <label>Correo:</label>
           </div>
@@ -100,6 +103,9 @@ export default function Login() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder=" "
+              autoComplete="current-password"
+              required
             />
             <label>Contraseña:</label>
           </div>

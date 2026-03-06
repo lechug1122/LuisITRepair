@@ -93,6 +93,8 @@ async function construirPayload(form) {
     tipoDispositivo: tipo || "",
     marca: form.marca || "",
     modelo: form.modelo || "",
+    numeroSerie: form.omitirNumeroSerie ? "" : String(form.numeroSerie || "").trim(),
+    omitirNumeroSerie: !!form.omitirNumeroSerie,
 
     trabajo: form.trabajo || "",
     precioDespues: !!form.precioDespues,

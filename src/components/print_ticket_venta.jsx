@@ -1,3 +1,10 @@
+﻿import {
+  buildTicketConfig,
+  readTicketConfigStorage,
+  splitTicketLines,
+} from "../js/services/ticket_config";
+import { getTicketFontFamily } from "../js/services/apariencia_config";
+
 const escapeHtml = (value) => {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -10,7 +17,7 @@ const escapeHtml = (value) => {
 const formatMoney = (value) => {
   return new Intl.NumberFormat("es-MX", {
     style: "currency",
-    currency: "MXN"
+    currency: "MXN",
   }).format(Number(value || 0));
 };
 
@@ -22,17 +29,33 @@ const formatDate = (value) => {
 
 const LOGO_URL = new URL("../assets/logo.png", import.meta.url).href;
 
+function shortenText(value, max = 42) {
+  const text = String(value || "").trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 3))}...`;
+}
+
+function renderLines(lines = [], className = "") {
+  return lines
+    .map((line) => `<div class="${className}">${escapeHtml(line)}</div>`)
+    .join("");
+}
+
 export function imprimirTicketVenta({
   ventaId,
   fecha,
+  atendio,
   cliente,
   tipoPago,
   referenciaTarjeta,
   productos,
   estado,
   subtotal,
+  aplicaIVA = true,
+  ivaPorcentaje = 0.16,
   iva,
-  total
+  total,
+  ticketConfig,
 }) {
   const popup = window.open("", "_blank", "width=420,height=760");
 
@@ -41,19 +64,37 @@ export function imprimirTicketVenta({
     return;
   }
 
+  const cfg = buildTicketConfig(ticketConfig || readTicketConfigStorage());
+  const atendioTexto = String(atendio || "").trim() || "-";
+  const ticketFontFamily = getTicketFontFamily();
+
   const filas = (productos || [])
     .map((p) => {
       const cantidad = Number(p.cantidad || 0);
       const precio = Number(p.precioVenta || 0);
       const totalLinea = cantidad * precio;
-      const etiqueta = p.esServicio ? `Servicio ${escapeHtml(p.servicioFolio || "")}` : "Producto";
+      const etiqueta = p.esServicio
+        ? `Servicio ${escapeHtml(p.servicioFolio || "")}`
+        : "Producto";
+
+      const nombre = cfg.fullDescription
+        ? escapeHtml(p.nombre || "-")
+        : escapeHtml(shortenText(p.nombre || "-"));
+
+      const metaHtml = cfg.showProductMeta
+        ? `<div class="ticket-item-meta">${etiqueta}</div>`
+        : "";
+
+      const cantidadPrecio = cfg.showUnitPrice
+        ? `${cantidad} x ${formatMoney(precio)}`
+        : `${cantidad} pza`;
 
       return `
         <div class="ticket-item">
-          <div class="ticket-item-name">${escapeHtml(p.nombre || "-")}</div>
-          <div class="ticket-item-meta">${etiqueta}</div>
+          <div class="ticket-item-name ${cfg.fullDescription ? "" : "single-line"}">${nombre}</div>
+          ${metaHtml}
           <div class="ticket-item-row">
-            <span>${cantidad} x ${formatMoney(precio)}</span>
+            <span>${cantidadPrecio}</span>
             <b>${formatMoney(totalLinea)}</b>
           </div>
         </div>
@@ -61,9 +102,82 @@ export function imprimirTicketVenta({
     })
     .join("");
 
-  const pagoLabel = tipoPago === "tarjeta" ? "Tarjeta" : "Efectivo";
-  const refTarjeta = tipoPago === "tarjeta" && referenciaTarjeta
-    ? `<div><b>Referencia:</b> ${escapeHtml(referenciaTarjeta)}</div>`
+  const pagoLabel =
+    tipoPago === "tarjeta"
+      ? "Tarjeta"
+      : tipoPago === "transferencia"
+        ? "Transferencia"
+        : "Efectivo";
+
+  const refTarjeta =
+    tipoPago === "tarjeta" && referenciaTarjeta
+      ? `<div><b>Referencia:</b> ${escapeHtml(referenciaTarjeta)}</div>`
+      : "";
+
+  const ivaPctLabel = `${Math.round(Number(ivaPorcentaje || 0) * 100)}%`;
+  const ivaRow = aplicaIVA
+    ? `<div class="ticket-total-row"><span>IVA (${ivaPctLabel})</span><span>${formatMoney(iva)}</span></div>`
+    : "";
+
+  const topLines = splitTicketLines(cfg.extraTopLines);
+  const bottomLines = splitTicketLines(cfg.extraBottomLines);
+
+  const businessLines = [];
+  if (cfg.showBusinessData) {
+    if (cfg.businessName.trim()) businessLines.push(cfg.businessName.trim());
+    if (cfg.businessAddress.trim()) businessLines.push(cfg.businessAddress.trim());
+    if (cfg.businessPhone.trim()) businessLines.push(cfg.businessPhone.trim());
+  }
+
+  const businessHtml = renderLines(businessLines, "ticket-sub");
+  const topLinesHtml = renderLines(topLines, "ticket-extra-line");
+  const bottomLinesHtml = renderLines(bottomLines, "ticket-extra-line");
+
+  const clientRows = [];
+  if (cfg.showClientSection && cfg.showClientName) {
+    clientRows.push(`<div>${escapeHtml(cliente?.nombre || "Publico general")}</div>`);
+  }
+  if (cfg.showClientSection && cfg.showClientPhone) {
+    clientRows.push(`<div>Tel: ${escapeHtml(cliente?.telefono || "-")}</div>`);
+  }
+  const clientSectionHtml =
+    cfg.showClientSection && clientRows.length > 0
+      ? `
+        <div class="ticket-section">
+          <div class="ticket-section-title">Cliente</div>
+          ${clientRows.join("")}
+        </div>
+      `
+      : "";
+
+  const paymentSectionHtml = cfg.showPaymentSection
+    ? `
+      <div class="ticket-section">
+        <div class="ticket-section-title">Pago</div>
+        <div><b>Metodo:</b> ${escapeHtml(pagoLabel)}</div>
+        ${refTarjeta}
+      </div>
+    `
+    : "";
+
+  const statusSectionHtml = cfg.showStatusSection
+    ? `
+      <div class="ticket-section">
+        <div class="ticket-section-title">Estado actual</div>
+        <div class="ticket-status-row">
+          <span class="ticket-dot"></span>
+          <span class="ticket-status-pill">${escapeHtml(estado || "Pagado")}</span>
+        </div>
+      </div>
+    `
+    : "";
+
+  const legendHtml = cfg.showLegend && cfg.legendText.trim()
+    ? `<div class="ticket-legend">${escapeHtml(cfg.legendText)}</div>`
+    : "";
+
+  const footerHtml = cfg.footerText.trim()
+    ? `<div class="ticket-footer">${escapeHtml(cfg.footerText)}</div>`
     : "";
 
   popup.document.write(`
@@ -79,7 +193,7 @@ export function imprimirTicketVenta({
             padding: 0;
             width: 58mm;
             background: #fff;
-            font-family: "Courier New", monospace;
+            font-family: ${ticketFontFamily};
             font-size: 12px;
           }
           .ticket-paper {
@@ -112,6 +226,13 @@ export function imprimirTicketVenta({
             font-size: 12px;
             opacity: 0.85;
             margin-top: 2px;
+            word-break: break-word;
+          }
+          .ticket-extra-line {
+            font-size: 11px;
+            text-align: center;
+            margin-top: 2px;
+            word-break: break-word;
           }
           .ticket-section {
             margin-top: 10px;
@@ -131,6 +252,11 @@ export function imprimirTicketVenta({
           .ticket-item-name {
             font-weight: 700;
             word-break: break-word;
+          }
+          .ticket-item-name.single-line {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
           .ticket-item-meta {
             color: #334155;
@@ -191,53 +317,36 @@ export function imprimirTicketVenta({
       <body>
         <div class="ticket-paper">
           <div class="ticket-header">
-            <div class="ticket-logo">
-              <img src="${LOGO_URL}" alt="Logo negocio" />
-            </div>
-            <div class="ticket-title">LuisITRepair</div>
-            <div class="ticket-sub">Ticket de venta</div>
+            ${cfg.showLogo ? `<div class="ticket-logo"><img src="${LOGO_URL}" alt="Logo negocio" /></div>` : ""}
+            <div class="ticket-title">Ticket de venta</div>
+            ${businessHtml}
             <div class="ticket-sub">Folio: <b>${escapeHtml(ventaId || "-")}</b></div>
             <div class="ticket-sub">Fecha: ${escapeHtml(formatDate(fecha))}</div>
+            <div class="ticket-sub">Atendio: ${escapeHtml(atendioTexto)}</div>
+            ${topLinesHtml}
           </div>
 
-          <div class="ticket-section">
-            <div class="ticket-section-title">Cliente</div>
-            <div>${escapeHtml(cliente?.nombre || "Publico general")}</div>
-            <div>Tel: ${escapeHtml(cliente?.telefono || "-")}</div>
-          </div>
+          ${clientSectionHtml}
 
           <div class="ticket-section">
             <div class="ticket-section-title">Conceptos y precio</div>
             ${filas || "<div>-</div>"}
           </div>
 
-          <div class="ticket-section">
-            <div class="ticket-section-title">Pago</div>
-            <div><b>Metodo:</b> ${escapeHtml(pagoLabel)}</div>
-            ${refTarjeta}
-          </div>
-
-          <div class="ticket-section">
-            <div class="ticket-section-title">Estado actual</div>
-            <div class="ticket-status-row">
-              <span class="ticket-dot"></span>
-              <span class="ticket-status-pill">${escapeHtml(estado || "Pagado")}</span>
-            </div>
-          </div>
+          ${paymentSectionHtml}
+          ${statusSectionHtml}
 
           <div class="ticket-divider"></div>
 
           <div class="ticket-section">
             <div class="ticket-total-row"><span>Subtotal</span><span>${formatMoney(subtotal)}</span></div>
-            <div class="ticket-total-row"><span>IVA</span><span>${formatMoney(iva)}</span></div>
+            ${ivaRow}
             <div class="ticket-total-row ticket-total-final"><span>Total</span><span>${formatMoney(total)}</span></div>
           </div>
 
-          <div class="ticket-legend">
-            Se aceptan cambios con ticket en producto en buen estado.
-          </div>
-
-          <div class="ticket-footer">Gracias por tu preferencia.</div>
+          ${bottomLinesHtml}
+          ${legendHtml}
+          ${footerHtml}
         </div>
         <script>
           window.onload = () => {
@@ -251,3 +360,7 @@ export function imprimirTicketVenta({
 
   popup.document.close();
 }
+
+
+
+

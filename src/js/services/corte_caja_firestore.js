@@ -152,12 +152,38 @@ export async function cerrarCajaHoy(ventasFuente = null, meta = {}) {
           monto: Number(r?.monto || 0),
           motivo: String(r?.motivo || "").trim(),
           usuario: String(r?.usuario || "").trim(),
+          origen: "arqueo",
         }))
         .filter((r) => r.monto > 0)
     : [];
 
+  // Egresos capturados desde el modal diario de egresos.
+  const egresos = Array.isArray(meta?.egresos)
+    ? meta.egresos
+        .map((e) => ({
+          id: String(e?.id || ""),
+          tipo: String(e?.tipo || "otro"),
+          monto: Number(e?.monto || 0),
+          descripcion: String(e?.descripcion || "").trim(),
+          usuario: String(e?.usuario || "").trim(),
+          origen: "egresos_diarios",
+        }))
+        .filter((e) => e.monto > 0)
+    : [];
+
+  const salidasCaja = [
+    ...retiros,
+    ...egresos.map((e) => ({
+      tipo: e.tipo || "otro",
+      monto: e.monto,
+      motivo: e.descripcion || "",
+      usuario: e.usuario || "",
+      origen: e.origen,
+    })),
+  ];
+
   const totalRetiros = Number(
-    retiros.reduce((acc, r) => acc + Number(r.monto || 0), 0).toFixed(2)
+    salidasCaja.reduce((acc, r) => acc + Number(r.monto || 0), 0).toFixed(2)
   );
 
   const contadoRaw = Number(meta?.efectivoContado);
@@ -186,7 +212,8 @@ export async function cerrarCajaHoy(ventasFuente = null, meta = {}) {
     fondoInicialCaja,
     cajaFinalEsperada,
     denominaciones,
-    retiros,
+    retiros: salidasCaja,
+    egresos,
     totalRetiros,
     conteoEfectivo: {
       esperado: Number(resumen.efectivo || 0),

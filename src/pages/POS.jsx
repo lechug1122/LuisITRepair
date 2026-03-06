@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useRef } from "react";
 import "../css/pos.css";
 import Layout from "../components/Layout";
+import POSMobileScanner from "../components/POSMobileScanner";
 import ModalPago from "../components/modal_pago";
 import ModalSelectorProducto from "../components/modal_selector_producto";
+import ModalSelectorServicio from "../components/modal_selector_servicio";
 import ModalComparadorPrecios from "../components/modal_comparador_precios";
 import ModalAperturaCaja from "../components/modal_apertura_caja";
 import { imprimirTicketVenta } from "../components/print_ticket_venta";
 import {
   buscarServicioPorFolio,
-  actualizarServicioPorId
+  actualizarServicioPorId,
+  listarServiciosPendientes,
 } from "../js/services/servicios_firestore";
+import { obtenerClientePorId } from "../js/services/clientes_firestore";
 
 import {
   obtenerProductos,
@@ -19,11 +23,31 @@ import {
   descontarStock
 } from "../js/services/POS_firebase";
 import { estaCajaCerradaHoy, obtenerCorteCajaDia, registrarAperturaCaja } from "../js/services/corte_caja_firestore";
+import {
+  enviarScanPosMovil,
+  suscribirScansPosUsuario,
+  reclamarScanPosPendiente,
+  finalizarScanPos,
+} from "../js/services/pos_sync_firestore";
 import { auth } from "../initializer/firebase";
+
+const MOBILE_POS_BREAKPOINT = 1024;
+const IVA_RATE_DEFAULT = 0.16;
+
+function detectarVistaMovilPOS() {
+  if (typeof window === "undefined") return false;
+  const byWidth = window.matchMedia(`(max-width: ${MOBILE_POS_BREAKPOINT}px)`).matches;
+  const byPointer = window.matchMedia("(pointer: coarse)").matches;
+  return byWidth || byPointer;
+}
 
 export default function POS() {
 
   const inputRef = useRef(null);
+  const scansProcesandoRef = useRef(new Set());
+  const posProcessorIdRef = useRef(
+    `pos-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  );
 
   const [clienteTelefono, setClienteTelefono] = useState("");
   const [clienteData, setClienteData] = useState(null);
@@ -32,7 +56,10 @@ export default function POS() {
   const [carrito, setCarrito] = useState([]);
   const [busqueda, setBusqueda] = useState("");
   const [mostrarSelectorProducto, setMostrarSelectorProducto] = useState(false);
+  const [mostrarSelectorServicio, setMostrarSelectorServicio] = useState(false);
+  const [cargandoServiciosListos, setCargandoServiciosListos] = useState(false);
   const [productosCoincidencia, setProductosCoincidencia] = useState([]);
+  const [serviciosListos, setServiciosListos] = useState([]);
   const [serviciosPorEntregar, setServiciosPorEntregar] = useState([]);
   const [mostrarComparador, setMostrarComparador] = useState(false);
   const [productoComparar, setProductoComparar] = useState(null);
@@ -48,13 +75,22 @@ export default function POS() {
 
   const [descuentoManual, setDescuentoManual] = useState(0);
   const [usarPuntos, setUsarPuntos] = useState(false);
+  const [aplicarIVA] = useState(() => {
+    try {
+      return localStorage.getItem("pos_aplicar_iva") !== "0";
+    } catch {
+      return true;
+    }
+  });
   const [cajaCerradaHoy, setCajaCerradaHoy] = useState(false);
   const [corteHoy, setCorteHoy] = useState(null);
   const [mostrarAperturaModal, setMostrarAperturaModal] = useState(false);
-  const [fondoInicialApertura, setFondoInicialApertura] = useState("");
+  const [fondoInicialApertura, setFondoInicialApertura] = useState("0");
   const [faltaFondoInicial, setFaltaFondoInicial] = useState(false);
+  const [esVistaMovil, setEsVistaMovil] = useState(detectarVistaMovilPOS);
+  const uidActual = auth.currentUser?.uid || "";
 
-  const ESTADOS_PERMITIDOS_SERVICIO = new Set(["listo", "cancelado", "no_reparable"]);
+  const ESTADOS_PERMITIDOS_SERVICIO = new Set(["listo"]);
 
   const normalizarEstado = (raw) => {
     return String(raw || "")
@@ -69,6 +105,77 @@ export default function POS() {
   const parseCosto = (raw) => {
     const n = Number(String(raw ?? "").replace(/[^\d.]/g, ""));
     return Number.isFinite(n) ? n : 0;
+  };
+
+  const parseCantidad = (raw) => {
+    const n = Number(String(raw ?? "").replace(/[^\d.]/g, ""));
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.floor(n));
+  };
+
+  const normalizarCodigo = (raw) =>
+    String(raw ?? "").trim().toLowerCase();
+
+  const resolverProductoBoleta = (item, catalogo = []) => {
+    const productoId = String(item?.productoId || "").trim();
+    if (productoId) {
+      const porId = catalogo.find((p) => String(p?.id || "").trim() === productoId);
+      if (porId) return porId;
+    }
+
+    const codigo = normalizarCodigo(item?.codigo || "");
+    if (!codigo) return null;
+    return catalogo.find((p) => normalizarCodigo(p?.codigo || "") === codigo) || null;
+  };
+
+  const calcularConsumoBoletaServicios = (servicios, catalogo = []) => {
+    const consumoPorProducto = new Map();
+    const faltantes = [];
+
+    (servicios || []).forEach((servicio) => {
+      if (!servicio || servicio.boletaStockAjustado) return;
+      const boletaItems = Array.isArray(servicio?.boleta?.items)
+        ? servicio.boleta.items
+        : [];
+
+      boletaItems.forEach((item) => {
+        const cantidad = parseCantidad(item?.cantidad);
+        if (cantidad <= 0) return;
+
+        const producto = resolverProductoBoleta(item, catalogo);
+        if (!producto?.id) {
+          return;
+        }
+
+        const prev = consumoPorProducto.get(producto.id) || {
+          producto,
+          cantidad: 0,
+        };
+        prev.cantidad += cantidad;
+        consumoPorProducto.set(producto.id, prev);
+      });
+    });
+
+    consumoPorProducto.forEach(({ producto, cantidad }) => {
+      const stockActual = Number(producto?.stock || 0);
+      if (cantidad > stockActual) {
+        faltantes.push({
+          nombre: producto?.nombre || producto?.codigo || producto?.id,
+          stockActual,
+          requerido: cantidad,
+        });
+      }
+    });
+
+    return { consumoPorProducto, faltantes };
+  };
+
+  const toMillis = (value) => {
+    if (!value) return 0;
+    if (typeof value?.toDate === "function") return value.toDate().getTime();
+    if (typeof value?.seconds === "number") return value.seconds * 1000;
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? 0 : d.getTime();
   };
 
   const formatoCierre = (() => {
@@ -90,7 +197,13 @@ export default function POS() {
     ]);
     setCajaCerradaHoy(cerrada);
     setCorteHoy(corte);
-    const falta = !cerrada && !(corte && corte.fondoInicialCaja !== undefined && corte.fondoInicialCaja !== null && Number(corte.fondoInicialCaja) > 0);
+    const tieneFondoInicialRegistrado = !!(
+      corte &&
+      corte.fondoInicialCaja !== undefined &&
+      corte.fondoInicialCaja !== null &&
+      Number.isFinite(Number(corte.fondoInicialCaja))
+    );
+    const falta = !cerrada && !tieneFondoInicialRegistrado;
     setFaltaFondoInicial(falta);
     if (falta) {
       setMostrarAperturaModal(true);
@@ -109,6 +222,14 @@ export default function POS() {
     }, 60000);
 
     return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const sync = () => setEsVistaMovil(detectarVistaMovilPOS());
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
   }, []);
 
   useEffect(() => {
@@ -158,21 +279,135 @@ export default function POS() {
     setClienteData(cliente);
   };
 
-  /* ================= PRODUCTOS ================= */
+  const cargarServiciosListosParaCobro = async () => {
+    setCargandoServiciosListos(true);
+    try {
+      const pendientes = await listarServiciosPendientes();
+      const listos = pendientes
+        .filter((s) => normalizarEstado(s?.status) === "listo")
+        .filter((s) => !Boolean(s?.cobradoEnPOS))
+        .filter((s) => parseCosto(s?.costo) > 0)
+        .sort((a, b) => toMillis(b?.updatedAt || b?.createdAt) - toMillis(a?.updatedAt || a?.createdAt));
 
-  const buscarYAgregarProducto = async () => {
+      setServiciosListos(listos);
+    } catch (err) {
+      console.error("Error cargando servicios listos:", err);
+      alert("No se pudieron cargar los servicios listos.");
+    } finally {
+      setCargandoServiciosListos(false);
+    }
+  };
+
+  const abrirSelectorServiciosListos = async () => {
     if (cajaCerradaHoy || faltaFondoInicial) {
       if (cajaCerradaHoy) {
         alert("La caja de hoy ya esta cerrada. Las ventas se habilitan de nuevo manana.");
       } else {
-        alert("Captura el fondo inicial de caja para comenzar ventas del día.");
+        alert("Captura el fondo inicial de caja para comenzar ventas del dia.");
         setMostrarAperturaModal(true);
       }
       return;
     }
 
-    const termino = busqueda.trim();
-    if (!termino) return;
+    setMostrarSelectorServicio(true);
+    await cargarServiciosListosParaCobro();
+  };
+
+  const vincularClienteDesdeServicio = async (servicio) => {
+    const telefonoServicio = String(servicio?.telefono || "").trim();
+    let cliente = null;
+
+    try {
+      if (servicio?.clienteId) {
+        cliente = await obtenerClientePorId(servicio.clienteId);
+      }
+
+      if (!cliente && telefonoServicio) {
+        cliente = await buscarClientePorTelefono(telefonoServicio);
+      }
+    } catch (err) {
+      console.error("No se pudo resolver cliente del servicio:", err);
+    }
+
+    setClienteTelefono(cliente?.telefono || telefonoServicio);
+    setClienteData(cliente || null);
+  };
+
+  const agregarServicioAlCarrito = async (
+    servicio,
+    { autocompletarCliente = false, silencioso = false } = {}
+  ) => {
+    if (!servicio) return false;
+
+    const estado = normalizarEstado(servicio.status);
+    const costoServicio = parseCosto(servicio.costo);
+    const itemId = `servicio-${servicio.id}`;
+
+    if (estado === "entregado" || servicio?.cobradoEnPOS) {
+      if (!silencioso) alert("Este servicio ya fue cobrado/entregado.");
+      return false;
+    }
+
+    if (!ESTADOS_PERMITIDOS_SERVICIO.has(estado) || costoServicio <= 0) {
+      if (!silencioso) alert("Solo se pueden cobrar servicios en estado Listo con costo valido.");
+      return false;
+    }
+
+    if (carrito.some((p) => p.id === itemId)) {
+      if (!silencioso) alert("Ese servicio ya esta agregado al carrito.");
+      return false;
+    }
+
+    setCarrito((prev) => [
+      ...prev,
+      {
+        id: itemId,
+        codigo: servicio.folio || "-",
+        nombre: `Servicio ${servicio.folio || ""} - ${servicio.nombre || "Cliente"}`.trim(),
+        precioVenta: costoServicio,
+        cantidad: 1,
+        stock: 1,
+        esServicio: true,
+        servicioId: servicio.id,
+        servicioFolio: servicio.folio || "-",
+      },
+    ]);
+
+    setServiciosPorEntregar((prev) => {
+      if (prev.some((s) => s.id === servicio.id)) return prev;
+      return [...prev, servicio];
+    });
+
+    if (autocompletarCliente) {
+      await vincularClienteDesdeServicio(servicio);
+    }
+
+    return true;
+  };
+
+  /* ================= PRODUCTOS ================= */
+
+  const buscarYAgregarPorTermino = async (
+    terminoRaw,
+    { mostrarAlertas = true, permitirBusquedaNombre = true } = {}
+  ) => {
+    if (cajaCerradaHoy || faltaFondoInicial) {
+      const msg = cajaCerradaHoy
+        ? "La caja de hoy ya esta cerrada. Las ventas se habilitan de nuevo manana."
+        : "Captura el fondo inicial de caja para comenzar ventas del dia.";
+
+      if (mostrarAlertas) {
+        alert(msg);
+        if (faltaFondoInicial) setMostrarAperturaModal(true);
+      }
+
+      return { ok: false, message: msg };
+    }
+
+    const termino = String(terminoRaw || "").trim();
+    if (!termino) {
+      return { ok: false, message: "Ingresa un codigo o folio." };
+    }
 
     const terminoNormalizado = termino.toLowerCase();
 
@@ -182,47 +417,35 @@ export default function POS() {
 
     if (productoPorCodigo) {
       agregarAlCarrito(productoPorCodigo);
-      setBusqueda("");
-      inputRef.current?.focus();
-      return;
+      return {
+        ok: true,
+        tipo: "producto",
+        label: productoPorCodigo?.codigo || productoPorCodigo?.nombre || termino,
+      };
     }
 
     const servicio = await buscarServicioPorFolio(termino);
 
     if (servicio) {
-      const estado = normalizarEstado(servicio.status);
-      const costoServicio = parseCosto(servicio.costo);
-
-      if (estado === "entregado") {
-        alert("Este servicio ya fue entregado.");
-        return;
-      }
-
-      if (!ESTADOS_PERMITIDOS_SERVICIO.has(estado) || costoServicio <= 0) {
-        alert("Aun esta en mantenimiento.");
-        return;
-      }
-
-      agregarAlCarrito({
-        id: `servicio-${servicio.id}`,
-        codigo: servicio.folio || "-",
-        nombre: `Servicio ${servicio.folio || ""} - ${servicio.nombre || "Cliente"}`.trim(),
-        precioVenta: costoServicio,
-        cantidad: 1,
-        stock: 1,
-        esServicio: true,
-        servicioId: servicio.id,
-        servicioFolio: servicio.folio || "-"
+      const agregado = await agregarServicioAlCarrito(servicio, {
+        autocompletarCliente: true,
+        silencioso: !mostrarAlertas,
       });
+      if (!agregado) {
+        return {
+          ok: false,
+          message: "El servicio no se pudo agregar. Debe estar en estado Listo y no haberse cobrado.",
+        };
+      }
+      return {
+        ok: true,
+        tipo: "servicio",
+        label: servicio?.folio || termino,
+      };
+    }
 
-      setServiciosPorEntregar((prev) => {
-        if (prev.some((s) => s.id === servicio.id)) return prev;
-        return [...prev, servicio];
-      });
-
-      setBusqueda("");
-      inputRef.current?.focus();
-      return;
+    if (!permitirBusquedaNombre) {
+      return { ok: false, message: "No se encontro un producto o servicio con ese codigo." };
     }
 
     const coincidencias = productosDB.filter((p) =>
@@ -230,25 +453,134 @@ export default function POS() {
     );
 
     if (coincidencias.length === 0) {
-      alert("Producto no encontrado");
-      return;
+      if (mostrarAlertas) alert("Producto no encontrado");
+      return { ok: false, message: "No se encontro un producto o servicio con ese codigo." };
     }
 
     if (coincidencias.length === 1) {
       agregarAlCarrito(coincidencias[0]);
-      setBusqueda("");
-      inputRef.current?.focus();
-      return;
+      return {
+        ok: true,
+        tipo: "producto",
+        label: coincidencias[0]?.codigo || coincidencias[0]?.nombre || termino,
+      };
     }
 
     setProductosCoincidencia(coincidencias);
     setMostrarSelectorProducto(true);
+
+    return {
+      ok: true,
+      tipo: "selector",
+      label: "Selecciona el producto correcto en la lista.",
+    };
+  };
+
+  useEffect(() => {
+    if (!uidActual || esVistaMovil) return undefined;
+
+    const unsubscribe = suscribirScansPosUsuario(
+      uidActual,
+      (scans) => {
+        if (cajaCerradaHoy || faltaFondoInicial) return;
+
+        const pendientes = (scans || [])
+          .filter((s) => String(s?.status || "") === "pending")
+          .filter((s) => String(s?.termino || "").trim() !== "")
+          .sort((a, b) => toMillis(a?.createdAt) - toMillis(b?.createdAt));
+
+        pendientes.forEach((scan) => {
+          if (scansProcesandoRef.current.has(scan.id)) return;
+          scansProcesandoRef.current.add(scan.id);
+
+          (async () => {
+            try {
+              const claim = await reclamarScanPosPendiente(
+                scan.id,
+                posProcessorIdRef.current,
+              );
+              if (!claim?.ok) return;
+
+              const termino = String(
+                claim?.scan?.termino || scan?.termino || "",
+              ).trim();
+              if (!termino) {
+                await finalizarScanPos(scan.id, {
+                  status: "error",
+                  message: "Codigo vacio.",
+                });
+                return;
+              }
+
+              const result = await buscarYAgregarPorTermino(termino, {
+                mostrarAlertas: false,
+                permitirBusquedaNombre: false,
+              });
+
+              if (result?.ok) {
+                await finalizarScanPos(scan.id, {
+                  status: "processed",
+                  result,
+                });
+              } else {
+                await finalizarScanPos(scan.id, {
+                  status: "error",
+                  message:
+                    result?.message ||
+                    "No se pudo agregar al carrito en POS escritorio.",
+                });
+              }
+            } catch (err) {
+              console.error("Error procesando scan remoto:", err);
+              try {
+                await finalizarScanPos(scan.id, {
+                  status: "error",
+                  message: err?.message || "Error procesando scan remoto.",
+                });
+              } catch (innerErr) {
+                console.error("No se pudo cerrar scan remoto:", innerErr);
+              }
+            } finally {
+              scansProcesandoRef.current.delete(scan.id);
+            }
+          })();
+        });
+      },
+      (err) => {
+        console.error("Error suscribiendo scans POS remotos:", err);
+      },
+    );
+
+    return () => {
+      unsubscribe?.();
+      scansProcesandoRef.current.clear();
+    };
+  }, [uidActual, esVistaMovil, cajaCerradaHoy, faltaFondoInicial, productosDB]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const buscarYAgregarProducto = async () => {
+    const result = await buscarYAgregarPorTermino(busqueda, { mostrarAlertas: true });
+    if (!result.ok) return;
+
+    if (result.tipo !== "selector") {
+      setBusqueda("");
+    }
+    inputRef.current?.focus();
   };
 
   const seleccionarProductoCoincidencia = (producto) => {
     agregarAlCarrito(producto);
     setMostrarSelectorProducto(false);
     setProductosCoincidencia([]);
+    setBusqueda("");
+    inputRef.current?.focus();
+  };
+
+  const seleccionarServicioListo = async (servicio) => {
+    const agregado = await agregarServicioAlCarrito(servicio, { autocompletarCliente: true });
+    if (!agregado) return;
+
+    setServiciosListos((prev) => prev.filter((s) => s.id !== servicio.id));
+    setMostrarSelectorServicio(false);
     setBusqueda("");
     inputRef.current?.focus();
   };
@@ -328,7 +660,8 @@ export default function POS() {
   const subtotalConDescuento =
     subtotal - descuentoManual - descuentoPuntos;
 
-  const iva = subtotalConDescuento * 0.16;
+  const ivaRate = aplicarIVA ? IVA_RATE_DEFAULT : 0;
+  const iva = subtotalConDescuento * ivaRate;
   const total = subtotalConDescuento + iva;
 
   const totalPagado =
@@ -366,11 +699,90 @@ export default function POS() {
       return;
     }
 
+    const consumoBoleta = calcularConsumoBoletaServicios(
+      serviciosPorEntregar,
+      productosDB,
+    );
+
+    const requeridosPorProducto = new Map();
+    const stockMetaPorProducto = new Map();
+
+    productosDB.forEach((producto) => {
+      const id = String(producto?.id || "").trim();
+      if (!id) return;
+      stockMetaPorProducto.set(id, {
+        nombre: producto?.nombre || producto?.codigo || id,
+        stockActual: Number(producto?.stock || 0),
+      });
+    });
+
+    carrito.forEach((item) => {
+      if (item?.esServicio) return;
+      const id = String(item?.id || "").trim();
+      if (!id) return;
+      const qty = parseCantidad(item?.cantidad);
+      if (qty <= 0) return;
+
+      const prev = requeridosPorProducto.get(id) || 0;
+      requeridosPorProducto.set(id, prev + qty);
+
+      if (!stockMetaPorProducto.has(id)) {
+        stockMetaPorProducto.set(id, {
+          nombre: item?.nombre || item?.codigo || id,
+          stockActual: Number(item?.stock || 0),
+        });
+      }
+    });
+
+    consumoBoleta.consumoPorProducto.forEach(({ producto, cantidad }, productoId) => {
+      const qty = parseCantidad(cantidad);
+      if (qty <= 0) return;
+
+      const prev = requeridosPorProducto.get(productoId) || 0;
+      requeridosPorProducto.set(productoId, prev + qty);
+
+      if (!stockMetaPorProducto.has(productoId)) {
+        stockMetaPorProducto.set(productoId, {
+          nombre: producto?.nombre || producto?.codigo || productoId,
+          stockActual: Number(producto?.stock || 0),
+        });
+      }
+    });
+
+    const faltantesInventario = [];
+    requeridosPorProducto.forEach((requerido, productoId) => {
+      const meta = stockMetaPorProducto.get(productoId);
+      const stockActual = Number(meta?.stockActual || 0);
+      if (requerido > stockActual) {
+        faltantesInventario.push({
+          nombre: meta?.nombre || productoId,
+          stockActual,
+          requerido,
+        });
+      }
+    });
+
+    if (faltantesInventario.length > 0) {
+      const detalle = faltantesInventario
+        .slice(0, 4)
+        .map(
+          (f) =>
+            `- ${f.nombre}: stock ${f.stockActual}, requerido ${f.requerido}`,
+        )
+        .join("\n");
+      alert(
+        `No hay stock suficiente para completar la venta.\n${detalle}`,
+      );
+      return;
+    }
+
     const ventaPayload = {
       clienteTelefono: clienteTelefono || null,
       subtotal,
       descuentoManual,
       descuentoPuntos,
+      aplicarIVA,
+      ivaPorcentaje: ivaRate,
       iva,
       total,
       tipoPago,
@@ -387,13 +799,17 @@ export default function POS() {
 
     const ventaId = await registrarVenta(ventaPayload);
 
-    for (let producto of carrito) {
-      if (producto.esServicio) continue;
-
-      await descontarStock(
-        producto.id,
-        producto.stock - producto.cantidad
+    for (const [productoId, requerido] of requeridosPorProducto.entries()) {
+      if (requerido <= 0) continue;
+      const stockActual = Number(
+        stockMetaPorProducto.get(productoId)?.stockActual || 0,
       );
+      const nuevoStock = Math.max(0, stockActual - requerido);
+      await descontarStock(productoId, nuevoStock);
+      stockMetaPorProducto.set(productoId, {
+        ...(stockMetaPorProducto.get(productoId) || {}),
+        stockActual: nuevoStock,
+      });
     }
 
     if (clienteData) {
@@ -406,12 +822,36 @@ export default function POS() {
     }
 
     for (const servicio of serviciosPorEntregar) {
-      await actualizarServicioPorId(servicio.id, { status: "Entregado" });
+      const boletaTieneProductosInventario = Array.isArray(servicio?.boleta?.items)
+        && servicio.boleta.items.some((item) => {
+          const qty = parseCantidad(item?.cantidad);
+          if (qty <= 0) return false;
+          return !!resolverProductoBoleta(item, productosDB);
+        });
+
+      // Marcar como cobrado y entregado exclusivamente desde POS/Ventas.
+      await actualizarServicioPorId(servicio.id, {
+        status: "entregado",
+        cobradoEnPOS: true,
+        fechaCobro: new Date(),
+        ...(servicio?.boletaStockAjustado || boletaTieneProductosInventario
+          ? {
+              boletaStockAjustado: true,
+              boletaStockAjustadoAt: new Date(),
+            }
+          : {}),
+      });
     }
+
+    const atendioVenta =
+      String(auth.currentUser?.displayName || "").trim() ||
+      String(auth.currentUser?.email || "").trim() ||
+      "Sin asignar";
 
     imprimirTicketVenta({
       ventaId,
       fecha: ventaPayload.fecha,
+      atendio: atendioVenta,
       cliente: {
         nombre: clienteData?.nombre || "Publico general",
         telefono: clienteTelefono || "-"
@@ -421,11 +861,11 @@ export default function POS() {
       productos: carrito,
       estado: serviciosPorEntregar.length > 0 ? "Entregado" : "Pagado",
       subtotal,
+      aplicaIVA: aplicarIVA,
+      ivaPorcentaje: ivaRate,
       iva,
       total
     });
-
-    alert("Venta profesional registrada");
 
     setCarrito([]);
     setClienteTelefono("");
@@ -444,9 +884,11 @@ export default function POS() {
   };
 
   const confirmarApertura = async () => {
-    const valor = Number(String(fondoInicialApertura || "").replace(/,/g, "").trim()) || 0;
-    if (valor <= 0) {
-      alert("Captura el fondo inicial de caja antes de continuar.");
+    const valorRaw = String(fondoInicialApertura ?? "").replace(/,/g, "").trim();
+    const valor = Number(valorRaw === "" ? 0 : valorRaw);
+
+    if (!Number.isFinite(valor) || valor < 0) {
+      alert("Captura un fondo inicial valido (0 o mayor).");
       return;
     }
 
@@ -466,10 +908,72 @@ export default function POS() {
     }
   };
 
+  const resolverCodigoMovil = async (termino) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      return {
+        ok: false,
+        message: "Inicia sesion para sincronizar con POS de escritorio.",
+      };
+    }
+
+    const terminoFinal = String(termino || "").trim();
+    if (!terminoFinal) {
+      return { ok: false, message: "Codigo vacio." };
+    }
+
+    try {
+      await enviarScanPosMovil({
+        uid,
+        termino: terminoFinal,
+        actorUid: uid,
+        actorEmail: auth.currentUser?.email || "",
+      });
+
+      return {
+        ok: true,
+        tipo: "sync",
+        label: terminoFinal,
+      };
+    } catch (err) {
+      console.error("No se pudo sincronizar scan movil:", err);
+      return {
+        ok: false,
+        message: "No se pudo enviar el codigo al POS de escritorio.",
+      };
+    }
+  };
+
+  const scannerBloqueado = cajaCerradaHoy || faltaFondoInicial;
+  const scannerBloqueadoMsg = cajaCerradaHoy
+    ? "Caja cerrada. El escaner se habilitara manana."
+    : "Captura el fondo inicial para habilitar el escaner.";
+
+  if (esVistaMovil) {
+    return (
+      <>
+        <POSMobileScanner
+          disabled={scannerBloqueado}
+          disabledMessage={scannerBloqueadoMsg}
+          itemsCount={carrito.length}
+          total={total}
+          onResolveCode={resolverCodigoMovil}
+        />
+
+        <ModalAperturaCaja
+          mostrar={mostrarAperturaModal}
+          onClose={() => setMostrarAperturaModal(false)}
+          fondoInicial={fondoInicialApertura}
+          setFondoInicial={setFondoInicialApertura}
+          confirmarApertura={confirmarApertura}
+        />
+      </>
+    );
+  }
+
   return (
     <Layout>
       <div className="pos-container">
-
         {/* IZQUIERDA */}
         <div className="main">
 
@@ -480,6 +984,17 @@ export default function POS() {
               {formatoCierre ? ` Cierre: ${formatoCierre}.` : ""}
             </div>
           )}
+
+          <div className="pos-actions">
+            <button
+              type="button"
+              className="btn-servicio-listo"
+              disabled={cajaCerradaHoy || faltaFondoInicial}
+              onClick={abrirSelectorServiciosListos}
+            >
+              Pagar servicio
+            </button>
+          </div>
 
           <input
             ref={inputRef}
@@ -555,7 +1070,7 @@ export default function POS() {
 
           <div className="resumen">
             <p>Subtotal: ${subtotal.toFixed(2)}</p>
-            <p>IVA (16%): ${iva.toFixed(2)}</p>
+            <p>IVA ({aplicarIVA ? "16%" : "0%"}): ${iva.toFixed(2)}</p>
             <h2>Total: ${total.toFixed(2)}</h2>
           </div>
 
@@ -579,10 +1094,17 @@ export default function POS() {
           </button>
 
         </div>
-
       </div>
 
       {/* 🔹 MODAL SEPARADO */}
+      <ModalSelectorServicio
+        mostrar={mostrarSelectorServicio}
+        cargando={cargandoServiciosListos}
+        servicios={serviciosListos}
+        onClose={() => setMostrarSelectorServicio(false)}
+        onSeleccionar={seleccionarServicioListo}
+      />
+
       <ModalPago
         mostrar={mostrarPago && !cajaCerradaHoy && !faltaFondoInicial}
         onClose={() => setMostrarPago(false)}
@@ -639,8 +1161,4 @@ export default function POS() {
     </Layout>
   );
 }
-
-
-
-
 

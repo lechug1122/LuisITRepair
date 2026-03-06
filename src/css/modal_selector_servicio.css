@@ -1,4 +1,4 @@
-.selector-overlay {
+.selector-servicio-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
@@ -8,8 +8,8 @@
   z-index: 10000;
 }
 
-.selector-modal {
-  width: 700px;
+.selector-servicio-modal {
+  width: 760px;
   max-width: 95%;
   max-height: 85vh;
   overflow: auto;
@@ -19,18 +19,17 @@
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
 }
 
-.selector-header {
+.selector-servicio-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.selector-header h3 {
+.selector-servicio-header h3 {
   margin: 0;
 }
 
-.selector-header button {
-  grid-column: auto !important;
+.selector-servicio-header button {
   width: 34px;
   border: none;
   background: #e2e8f0;
@@ -40,19 +39,23 @@
   font-weight: 700;
 }
 
-.selector-subtitle {
+.selector-servicio-subtitle {
   margin: 10px 0 14px;
   color: #334155;
 }
 
-.selector-lista {
+.selector-servicio-empty {
+  margin: 10px 0;
+  color: #475569;
+}
+
+.selector-servicio-lista {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.selector-item {
-  grid-column: auto !important;
+.selector-servicio-item {
   width: 100%;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -62,40 +65,49 @@
   cursor: pointer;
 }
 
-.selector-item:hover {
+.selector-servicio-item:hover {
   border-color: #0ea5e9;
   background: #f0f9ff;
 }
 
-.selector-item.agotado {
-  cursor: not-allowed;
-  opacity: 0.6;
+.selector-servicio-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.selector-nombre {
+.selector-servicio-folio {
   font-weight: 700;
   color: #0f172a;
 }
 
-.selector-meta {
+.selector-servicio-costo {
+  font-weight: 700;
+  color: #047857;
+}
+
+.selector-servicio-meta {
   margin-top: 6px;
   color: #475569;
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
   font-size: 14px;
+  flex-wrap: wrap;
 }
 
 @media (max-width: 560px) {
-  .selector-modal {
+  .selector-servicio-modal {
     width: calc(100vw - 12px);
     max-width: calc(100vw - 12px);
     max-height: calc(100vh - 18px);
     padding: 12px;
   }
 
-  .selector-meta {
-    gap: 8px;
-    font-size: 12px;
+  .selector-servicio-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .selector-servicio-item {
+    padding: 10px;
   }
 }

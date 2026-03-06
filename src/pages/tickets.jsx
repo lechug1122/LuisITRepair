@@ -10,8 +10,17 @@ import "../css/ticket.css";
 import logoUrl from "../assets/logo.png";
 
 export default function Ticket() {
-  const { folio } = useParams();
+  const { folio: folioParam } = useParams();
   const navigate = useNavigate();
+  const folio = useMemo(() => {
+    const raw = String(folioParam || "").trim();
+    if (!raw) return "";
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }, [folioParam]);
 
   const [loading, setLoading] = useState(true);
   const [servicio, setServicio] = useState(null);
@@ -50,7 +59,9 @@ export default function Ticket() {
     }).format(n);
   };
 
-  const urlStatus = `${window.location.origin}/status/${folio}`;
+  const urlStatus = `${window.location.origin}/status/${encodeURIComponent(
+    String(folio || ""),
+  )}`;
 
   // ✅ Info de estado (color + label + step)
   const estadoInfo = useMemo(() => {
@@ -111,6 +122,12 @@ export default function Ticket() {
             <div><b>Tipo:</b> {servicio.tipoDispositivo || "-"}</div>
             <div><b>Marca:</b> {servicio.marca || "-"}</div>
             <div><b>Modelo:</b> {servicio.modelo || "-"}</div>
+            <div>
+              <b>No. Serie:</b>{" "}
+              {servicio.omitirNumeroSerie
+                ? "No proporcionado"
+                : servicio.numeroSerie || "-"}
+            </div>
           </div>
 
           <div className="ticket-section">

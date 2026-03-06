@@ -5,12 +5,13 @@ service cloud.firestore {
     
     // Allow authorized users to access autorizados collection
     match /autorizados/{document=**} {
-      allow read: if request.auth != null;
+      allow read, write: if request.auth != null;
     }
     
-    // Allow authorized users to access servicios collection
+    // Public read for customer status lookup; writes remain authenticated
     match /servicios/{document=**} {
-      allow read, write: if request.auth != null;
+      allow read: if true;
+      allow write: if request.auth != null;
     }
     
     // Allow authorized users to access clientes collection
@@ -37,9 +38,24 @@ service cloud.firestore {
     match /folios/{document=**} {
       allow read, write: if request.auth != null;
     }
+
+    // Allow authorized users to access folio counters
+    match /contadores_folio/{document=**} {
+      allow read, write: if request.auth != null;
+    }
     
     // Allow authorized users to access egresos_diarios collection
     match /egresos_diarios/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Allow authorized users to access empleados collection
+    match /empleados/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // POS mobile scans sync queue (mobile -> desktop POS by same user)
+    match /pos_mobile_scans/{document=**} {
       allow read, write: if request.auth != null;
     }
   }

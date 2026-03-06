@@ -27,6 +27,9 @@ export default function Productos() {
   const [form, setForm] = useState(productoVacio);
   const [mostrarModal, setMostrarModal] = useState(false);
   const [modoEdicion, setModoEdicion] = useState(false);
+  const [mostrarModalCodigo, setMostrarModalCodigo] = useState(false);
+  const [codigoBusqueda, setCodigoBusqueda] = useState("");
+  const [errorCodigoBusqueda, setErrorCodigoBusqueda] = useState("");
 
   useEffect(() => {
     cargarProductos();
@@ -75,18 +78,31 @@ export default function Productos() {
     setMostrarModal(true);
   };
 
-  const editarPorCodigo = () => {
-    const codigo = prompt("Ingresa el codigo de barras del producto a modificar:");
-    if (!codigo) return;
+  const abrirModalEditarCodigo = () => {
+    setCodigoBusqueda("");
+    setErrorCodigoBusqueda("");
+    setMostrarModalCodigo(true);
+  };
 
-    const codigoNormalizado = normalizarCodigo(codigo);
-    const producto = productos.find((p) => normalizarCodigo(p.codigo) === codigoNormalizado);
-
-    if (!producto) {
-      alert("No se encontro un producto con ese codigo.");
+  const buscarProductoPorCodigo = () => {
+    const codigoNormalizado = normalizarCodigo(codigoBusqueda);
+    if (!codigoNormalizado) {
+      setErrorCodigoBusqueda("Ingresa un codigo para buscar.");
       return;
     }
 
+    const producto = productos.find(
+      (p) => normalizarCodigo(p.codigo) === codigoNormalizado,
+    );
+
+    if (!producto) {
+      setErrorCodigoBusqueda("No se encontro un producto con ese codigo.");
+      return;
+    }
+
+    setMostrarModalCodigo(false);
+    setCodigoBusqueda("");
+    setErrorCodigoBusqueda("");
     editarProducto(producto);
   };
 
@@ -133,7 +149,7 @@ export default function Productos() {
           <div className="acciones-header-productos">
             <button
               className="btn-accion-header btn-modificar-codigo"
-              onClick={editarPorCodigo}
+              onClick={abrirModalEditarCodigo}
               type="button"
             >
               Modificar por codigo
@@ -148,58 +164,60 @@ export default function Productos() {
           </div>
         </div>
 
-        <table className="tabla-productos">
-          <thead>
-            <tr>
-              <th>Producto</th>
-              <th>Codigo</th>
-              <th>Categoria</th>
-              <th>Compra</th>
-              <th>Venta</th>
-              <th>Margen</th>
-              <th>Stock</th>
-              <th>Estado</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {productos.map((p) => (
-              <tr key={p.id}>
-                <td>{p.nombre}</td>
-                <td>{p.codigo}</td>
-                <td>{p.categoria}</td>
-                <td>${p.precioCompra}</td>
-                <td>${p.precioVenta}</td>
-                <td className="margen">{calcularMargen(p.precioCompra, p.precioVenta)}%</td>
-                <td>{p.stock}</td>
-                <td>{p.activo ? <span className="activo">Activo</span> : <span className="inactivo">Inactivo</span>}</td>
-                <td>
-                  <div className="acciones-tabla">
-                    <button
-                      type="button"
-                      className="btn-accion-tabla btn-editar"
-                      onClick={() => editarProducto(p)}
-                    >
-                      Editar
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-accion-tabla btn-eliminar"
-                      onClick={() => eliminarProducto(p.id)}
-                    >
-                      Eliminar
-                    </button>
-                  </div>
-                </td>
+        <div className="tabla-productos-wrap">
+          <table className="tabla-productos">
+            <thead>
+              <tr>
+                <th>Producto</th>
+                <th>Codigo</th>
+                <th>Categoria</th>
+                <th>Compra</th>
+                <th>Venta</th>
+                <th>Margen</th>
+                <th>Stock</th>
+                <th>Estado</th>
+                <th>Acciones</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {productos.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.nombre}</td>
+                  <td>{p.codigo}</td>
+                  <td>{p.categoria}</td>
+                  <td>${p.precioCompra}</td>
+                  <td>${p.precioVenta}</td>
+                  <td className="margen">{calcularMargen(p.precioCompra, p.precioVenta)}%</td>
+                  <td>{p.stock}</td>
+                  <td>{p.activo ? <span className="activo">Activo</span> : <span className="inactivo">Inactivo</span>}</td>
+                  <td>
+                    <div className="acciones-tabla">
+                      <button
+                        type="button"
+                        className="btn-accion-tabla btn-editar"
+                        onClick={() => editarProducto(p)}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-accion-tabla btn-eliminar"
+                        onClick={() => eliminarProducto(p.id)}
+                      >
+                        Eliminar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
         {mostrarModal && (
-          <div className="modal-overlay">
-            <div className="modal-center">
-              <h2 className="modal-title">{modoEdicion ? "Editar producto" : "Nuevo producto"}</h2>
+          <div className="prod-modal-overlay">
+            <div className="prod-modal-center">
+              <h2 className="prod-modal-title">{modoEdicion ? "Editar producto" : "Nuevo producto"}</h2>
 
               <div className="form-grid">
                 <input
@@ -265,18 +283,69 @@ export default function Productos() {
                 />
               </div>
 
-              <div className="modal-buttons">
-                <button className="btn-modal btn-guardar" onClick={guardarProducto} type="button">
+              <div className="prod-modal-buttons">
+                <button className="prod-btn-modal prod-btn-guardar" onClick={guardarProducto} type="button">
                   Guardar
                 </button>
                 <button
-                  className="btn-modal btn-cancelar"
+                  className="prod-btn-modal prod-btn-cancelar"
                   onClick={() => {
                     setMostrarModal(false);
                     setModoEdicion(false);
                     setForm(productoVacio);
                   }}
                   type="button"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {mostrarModalCodigo && (
+          <div className="prod-modal-overlay">
+            <div className="prod-modal-center prod-modal-codigo">
+              <h2 className="prod-modal-title">Modificar por codigo</h2>
+              <p className="prod-modal-codigo-subtitle">
+                Ingresa el codigo de barras del producto que deseas editar.
+              </p>
+
+              <input
+                className={`prod-modal-codigo-input ${errorCodigoBusqueda ? "error" : ""}`}
+                type="text"
+                placeholder="Ej. 7501234567890"
+                value={codigoBusqueda}
+                onChange={(e) => {
+                  setCodigoBusqueda(e.target.value);
+                  if (errorCodigoBusqueda) setErrorCodigoBusqueda("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") buscarProductoPorCodigo();
+                }}
+                autoFocus
+              />
+
+              {errorCodigoBusqueda && (
+                <div className="prod-modal-codigo-error">{errorCodigoBusqueda}</div>
+              )}
+
+              <div className="prod-modal-buttons">
+                <button
+                  className="prod-btn-modal prod-btn-guardar"
+                  type="button"
+                  onClick={buscarProductoPorCodigo}
+                >
+                  Buscar producto
+                </button>
+                <button
+                  className="prod-btn-modal prod-btn-cancelar"
+                  type="button"
+                  onClick={() => {
+                    setMostrarModalCodigo(false);
+                    setCodigoBusqueda("");
+                    setErrorCodigoBusqueda("");
+                  }}
                 >
                   Cancelar
                 </button>

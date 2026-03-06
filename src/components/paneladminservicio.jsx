@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { actualizarServicioPorId } from "../js/services/servicios_firestore";
 import { STATUS, statusInfo } from "../js/utils/status_map";
 import { imprimirEtiquetas } from "../components/print_label";
 
 /* ======================================================
-   1️⃣ NORMALIZADOR (CLAVE DEL PROBLEMA)
-   Convierte "En reparación" -> "en_reparacion"
+   1ï¸âƒ£ NORMALIZADOR (CLAVE DEL PROBLEMA)
+   Convierte "En reparaciÃ³n" -> "en_reparacion"
 ====================================================== */
 function normalizarStatus(raw) {
   if (!raw) return "";
@@ -19,7 +19,7 @@ function normalizarStatus(raw) {
 }
 
 /* ======================================================
-   2️⃣ PASOS FIJOS DEL PROGRESS
+   2ï¸âƒ£ PASOS FIJOS DEL PROGRESS
 ====================================================== */
 const PASOS_BASE = [
   { key: "pendiente", label: "Pendiente" },
@@ -29,36 +29,42 @@ const PASOS_BASE = [
 ];
 
 /* ======================================================
-   3️⃣ MAPA DE PROGRESO (YA NORMALIZADO)
+   3ï¸âƒ£ MAPA DE PROGRESO (YA NORMALIZADO)
 ====================================================== */
 const PROGRESO_POR_STATUS = {
-  // 🔹 Inicio
+  // ðŸ”¹ Inicio
   pendiente: { pct: 0, theme: "normal", finalLabel: "Finalizado" },
 
-  // 🔹 EN PROCESO (orden interno)
+  // ðŸ”¹ EN PROCESO (orden interno)
   revision: { pct: 30, theme: "normal", finalLabel: "Finalizado" }, // en proceso (inicio)
+  espera_refaccion: {
+    pct: 40,
+    theme: "normal",
+    finalLabel: "Finalizado",
+  }, // alias status_map
   en_espera_de_refaccion: {
     pct: 40,
     theme: "normal",
     finalLabel: "Finalizado",
-  }, // un poco más adelante
-  en_reparacion: { pct: 55, theme: "normal", finalLabel: "Finalizado" }, // más avanzado
+  }, // un poco mÃ¡s adelante
+  reparacion: { pct: 55, theme: "normal", finalLabel: "Finalizado" }, // alias status_map
+  en_reparacion: { pct: 55, theme: "normal", finalLabel: "Finalizado" }, // mÃ¡s avanzado
   trabajando: { pct: 60, theme: "normal", finalLabel: "Finalizado" },
 
-  // 🔹 FINAL
+  // ðŸ”¹ FINAL
   listo: { pct: 85, theme: "normal", finalLabel: "Finalizado" },
   finalizado: { pct: 85, theme: "normal", finalLabel: "Finalizado" },
 
-  // 🔹 TERMINADO
+  // ðŸ”¹ TERMINADO
   entregado: { pct: 100, theme: "normal", finalLabel: "Finalizado" },
 
-  // 🔹 ESTADOS ESPECIALES
+  // ðŸ”¹ ESTADOS ESPECIALES
   cancelado: { pct: 100, theme: "danger", finalLabel: "Cancelado" },
   no_reparable: { pct: 100, theme: "muted", finalLabel: "No reparable" },
 };
 
 /* ======================================================
-   4️⃣ OBTENER CONFIG DEL STATUS (CON FALLBACK)
+   4ï¸âƒ£ OBTENER CONFIG DEL STATUS (CON FALLBACK)
 ====================================================== */
 function getCfg(statusNormalized) {
   return (
@@ -71,7 +77,7 @@ function getCfg(statusNormalized) {
 }
 
 /* ======================================================
-   5️⃣ COMPONENTE PROGRESS BAR
+   5ï¸âƒ£ COMPONENTE PROGRESS BAR
 ====================================================== */
 function WizardProgress({ status }) {
   const normalizedStatus = normalizarStatus(status);
@@ -84,7 +90,7 @@ function WizardProgress({ status }) {
     return copy;
   }, [cfg.finalLabel]);
 
-  // 0–24: pendiente | 25–74: proceso | 75–99: final | 100: entregado
+  // 0â€“24: pendiente | 25â€“74: proceso | 75â€“99: final | 100: entregado
   let activeIndex = 0;
   if (cfg.pct >= 25) activeIndex = 1;
   if (cfg.pct >= 75) activeIndex = 2;
@@ -122,8 +128,8 @@ function WizardProgress({ status }) {
 }
 
 /* ======================================================
-   6️⃣ PANEL ADMIN SERVICIO
-   ✅ AÑADIDO: entregado (booleano)
+   6ï¸âƒ£ PANEL ADMIN SERVICIO
+   âœ… AÃ‘ADIDO: entregado (booleano)
 ====================================================== */
 export default function PanelAdminServicio({
   servicio,
@@ -133,7 +139,7 @@ export default function PanelAdminServicio({
 }) {
   const [status, setStatus] = useState("pendiente");
   const [notaAdmin, setNotaAdmin] = useState("");
-  const [entregadoBool, setEntregadoBool] = useState(false); // ✅ NUEVO
+  const [entregadoBool, setEntregadoBool] = useState(false); // âœ… NUEVO
   const [saving, setSaving] = useState(false);
 
   const estadoActual = statusInfo(servicio?.status);
@@ -142,20 +148,20 @@ export default function PanelAdminServicio({
   useEffect(() => {
     setStatus(servicio?.status || "pendiente");
     setNotaAdmin(servicio?.notaAdmin || "");
-    setEntregadoBool(!!servicio?.entregado); // ✅ NUEVO (lee de Firebase)
+    setEntregadoBool(!!servicio?.entregado); // âœ… NUEVO (lee de Firebase)
   }, [servicio?.id]);
 
   const handleGuardar = async () => {
     if (!servicio?.id) return;
-    if (!confirm("¿Guardar cambios del servicio?")) return;
+    if (!confirm("Â¿Guardar cambios del servicio?")) return;
 
     setSaving(true);
     try {
       const payload = {
         status,
         notaAdmin,
-        // ✅ Si NO estás marcando entregado, entonces false
-        // (así "Listo" no cuenta como entregado)
+        // âœ… Si NO estÃ¡s marcando entregado, entonces false
+        // (asÃ­ "Listo" no cuenta como entregado)
         entregado: false,
       };
 
@@ -163,7 +169,7 @@ export default function PanelAdminServicio({
 
       setEntregadoBool(false);
 
-      // 🔑 MERGE para no perder datos
+      // ðŸ”‘ MERGE para no perder datos
       onActualizado?.({
         ...servicio,
         ...actualizado,
@@ -177,13 +183,13 @@ export default function PanelAdminServicio({
 
   const handleEntregado = async () => {
     if (!servicio?.id) return;
-    if (!confirm("¿Marcar como ENTREGADO?")) return;
+    if (!confirm("Â¿Marcar como ENTREGADO?")) return;
 
     setSaving(true);
     try {
       const payload = {
         status: "Entregado",
-        entregado: true, // ✅ NUEVO
+        entregado: true, // âœ… NUEVO
       };
 
       const actualizado = await actualizarServicioPorId(servicio.id, payload);
@@ -211,12 +217,12 @@ export default function PanelAdminServicio({
           <h3>Actualizar el estado</h3>
         </div>
 
-        {/* ✅ PROGRESS BAR */}
+        {/* âœ… PROGRESS BAR */}
         <WizardProgress status={status} />
 
-        {/* ✅ Indicador booleano (solo UI, opcional) */}
+        {/* âœ… Indicador booleano (solo UI, opcional) */}
         <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-          Entregado: <b>{entregadoBool ? "Sí" : "No"}</b>
+          Entregado: <b>{entregadoBool ? "SÃ­" : "No"}</b>
         </div>
 
         <label className="admin-label">Estado</label>
@@ -224,7 +230,7 @@ export default function PanelAdminServicio({
           className="admin-select"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
-          disabled={saving || entregadoBool} // opcional: bloquear cambios si ya entregó
+          disabled={saving || entregadoBool} // opcional: bloquear cambios si ya entregÃ³
         >
           {STATUS.map((e, idx) => (
             <option key={`status-${idx}`} value={e.value}>
@@ -233,20 +239,13 @@ export default function PanelAdminServicio({
           ))}
         </select>
 
-        <button
-          className="admin-btn"
-          onClick={handleGuardar}
-          disabled={saving || entregadoBool} // opcional: no guardar cambios si ya entregó
-        >
-          {saving ? "Guardando..." : "Guardar cambios"}
-        </button>
       </div>
 
       <div className="admin-section">
         <h3 className="admin-subtitle">Notas internas (solo admin)</h3>
         <textarea
           className="admin-notes"
-          placeholder="Ej: Cliente pidió llamada antes, trajo cargador..."
+          placeholder="Ej: Cliente pidiÃ³ llamada antes, trajo cargador..."
           value={notaAdmin}
           onChange={(e) => setNotaAdmin(e.target.value)}
           disabled={saving}
@@ -261,7 +260,7 @@ export default function PanelAdminServicio({
         <button
           className="admin-btn admin-btn-secondary"
           onClick={() => {
-            if (confirm("¿Seguro que deseas regresar?")) onRegresar?.();
+            if (confirm("Â¿Seguro que deseas regresar?")) onRegresar?.();
           }}
         >
           Regresar a home
@@ -269,7 +268,7 @@ export default function PanelAdminServicio({
         <button
           className="admin-btn admin-btn-secondary"
           onClick={() => {
-            const urlStatus = `${window.location.origin}/status/${servicio?.folio}`;
+            const urlStatus = `${window.location.origin}/status/${encodeURIComponent(String(servicio?.folio || "").trim())}`;
             imprimirEtiquetas(servicio, urlStatus, 1); // 12 etiquetas (ajusta)
           }}
         >
@@ -277,9 +276,16 @@ export default function PanelAdminServicio({
         </button>
 
         <button
+          className="admin-btn"
+          onClick={handleGuardar}
+          disabled={saving || entregadoBool} // opcional: no guardar cambios si ya entregó
+        >
+          {saving ? "Guardando..." : "Guardar cambios"}
+        </button>
+        <button
           className="admin-btn admin-btn-danger"
           onClick={handleEntregado}
-          disabled={saving || entregadoBool} // ✅ si ya está entregado, deshabilita
+          disabled={saving || entregadoBool} // âœ… si ya estÃ¡ entregado, deshabilita
         >
           {entregadoBool ? "Ya entregado" : "Marcar como entregado"}
         </button>
@@ -287,3 +293,5 @@ export default function PanelAdminServicio({
     </div>
   );
 }
+
+

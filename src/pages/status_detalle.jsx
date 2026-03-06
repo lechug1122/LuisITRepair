@@ -141,11 +141,21 @@ function WizardProgress({ status }) {
    Página cliente /status/:folio
 ========================= */
 export default function StatusDetalleCliente() {
-  const { folio } = useParams();
+  const { folio: folioParam } = useParams();
   const navigate = useNavigate();
+  const folio = useMemo(() => {
+    const raw = String(folioParam || "").trim();
+    if (!raw) return "";
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }, [folioParam]);
 
   const [loading, setLoading] = useState(true);
   const [servicio, setServicio] = useState(null);
+  const [lookupError, setLookupError] = useState("");
 
   // ✅ “última actualización” (cuando llega snapshot)
   const [lastClientUpdate, setLastClientUpdate] = useState(null);
@@ -158,6 +168,7 @@ export default function StatusDetalleCliente() {
 
     setLoading(true);
     setServicio(null);
+    setLookupError("");
 
     const q = query(collection(db, COLLECTION), where("folio", "==", f), limit(1));
 
@@ -165,6 +176,7 @@ export default function StatusDetalleCliente() {
       q,
       (snap) => {
         setLoading(false);
+        setLookupError("");
 
         if (snap.empty) {
           setServicio(null);
@@ -181,6 +193,12 @@ export default function StatusDetalleCliente() {
         console.error("onSnapshot error:", err);
         setLoading(false);
         setServicio(null);
+        const code = err?.code || "";
+        if (code.includes("permission-denied")) {
+          setLookupError("No hay permisos para consultar este servicio. Contacta al administrador.");
+        } else {
+          setLookupError("No se pudo consultar el servicio en este momento. Intenta de nuevo.");
+        }
         setLastClientUpdate(new Date());
       }
     );
@@ -241,31 +259,37 @@ export default function StatusDetalleCliente() {
             <div style={{ flex: 1 }} />
           </div>
 
-          <h2>Servicio no encontrado</h2>
+          <h2>{lookupError ? "No se pudo consultar el servicio" : "Servicio no encontrado"}</h2>
           <p>Folio: <b>{folio}</b></p>
-          <p>No existe un servicio con ese folio.</p>
+          <p>{lookupError || "No existe un servicio con ese folio."}</p>
         </div>
       </div>
     );
   }
 
   const boleta = servicio?.boleta || null;
+  const statusClass = `estado-${normalizarStatus(servicio?.status || "pendiente")}`;
 
   return (
     <div className="page-container">
       <div className="status-box status-box--wide">
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 12 }}>
+        <div className="status-header">
           <button
             type="button"
             onClick={() => navigate("/status")}
-            style={{ width: 120 }}
+            style={{ width: 120, flexShrink: 0 }}
           >
             ← Volver
           </button>
 
-          <div style={{ flex: 1 }}>
-            <h2 style={{ marginBottom: 6 }}>Estado de tu servicio</h2>
+          <div className="status-header-main">
+            <div className="status-header-topline">
+              <h2 style={{ marginBottom: 6 }}>Estado de tu servicio</h2>
+              <span className={`estado-badge ${statusClass}`}>
+                {servicio.status || "Pendiente"}
+              </span>
+            </div>
             <div className="status-lastupdate">
               Folio: <b>{servicio.folio}</b> · Ingreso: {formatFecha(servicio.createdAt)}
             </div>
@@ -299,12 +323,18 @@ export default function StatusDetalleCliente() {
         </div>
 
         {/* Equipo / Servicio */}
-        <div className="status-kpis" style={{ gridTemplateColumns: "repeat(2, 1fr)", marginTop: 12 }}>
+        <div className="status-kpis status-kpis--2col" style={{ marginTop: 12 }}>
           <div className="status-section" style={{ marginTop: 0 }}>
             <h3>Equipo</h3>
             <p><b>Tipo:</b> {servicio.tipoDispositivo || "-"}</p>
             <p><b>Marca:</b> {servicio.marca || "-"}</p>
             <p><b>Modelo:</b> {servicio.modelo || "-"}</p>
+            <p>
+              <b>No. de serie:</b>{" "}
+              {servicio.omitirNumeroSerie
+                ? "No proporcionado"
+                : servicio.numeroSerie || "-"}
+            </p>
           </div>
 
           <div className="status-section" style={{ marginTop: 0 }}>

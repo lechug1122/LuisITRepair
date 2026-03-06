@@ -1,37 +1,49 @@
 import { useNavigate, useLocation } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "../css/pos.css";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { puede } = useAutorizacionActual();
+
+  useEffect(() => {
+    const syncSidebarForViewport = () => {
+      if (window.innerWidth <= 900) {
+        setSidebarOpen(true);
+      }
+    };
+
+    syncSidebarForViewport();
+    window.addEventListener("resize", syncSidebarForViewport);
+    return () => window.removeEventListener("resize", syncSidebarForViewport);
+  }, []);
 
   const menuItems = [
-    { label: "Ventas", path: "/POS", emoji: "🛒" },
-    { label: "Productos", path: "/productos", emoji: "📦" },
-    { label: "Clientes", path: "/clientes", emoji: "👥" },
-    { label: "Reportes", path: "/reportes", emoji: "📊" },
-  ];
+    { label: "Ventas", path: "/POS", emoji: "🛒", permission: "ventas.pos" },
+    { label: "Productos", path: "/productos", emoji: "📦", permission: "productos.ver" },
+    { label: "Clientes", path: "/clientes", emoji: "👥", permission: "clientes.ver" },
+    { label: "Reportes", path: "/reportes", emoji: "📊", permission: "reportes.ver" },
+  ].filter((item) => puede(item.permission));
 
   return (
     <div className={`layout ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
-
-      {/* Sidebar */}
       <div className={`sidebar ${sidebarOpen ? "open" : "closed"}`}>
         <div className="sidebar-header">
           {sidebarOpen && (
             <div className="sidebar-brand">
-              <span className="brand-icon">💻</span>
+              <span className="brand-icon brand-badge">L</span>
               <h2>LuisITRepair</h2>
             </div>
           )}
-          <button 
+          <button
             className="sidebar-toggle"
             onClick={() => setSidebarOpen(!sidebarOpen)}
             title={sidebarOpen ? "Ocultar" : "Mostrar"}
           >
-            {sidebarOpen ? "◀" : "▶"}
+            {sidebarOpen ? "<" : ">"}
           </button>
         </div>
 
@@ -50,11 +62,7 @@ export default function Layout({ children }) {
         </ul>
       </div>
 
-      {/* Contenido dinámico */}
-      <div className="main-wrapper">
-        {children}
-      </div>
-
+      <div className="main-wrapper">{children}</div>
     </div>
   );
 }

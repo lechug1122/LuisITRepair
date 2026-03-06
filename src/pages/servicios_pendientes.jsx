@@ -24,6 +24,10 @@ export default function Servicios() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const goToServicio = (folioRaw) => {
+    const folioSafe = encodeURIComponent(String(folioRaw || "").trim());
+    navigate(`/servicios/${folioSafe}`);
+  };
 
   useEffect(() => {
     let alive = true;
@@ -118,7 +122,7 @@ export default function Servicios() {
                           <td>
                             <button
                               className="btn-ver"
-                              onClick={() => navigate(`/servicios/${s.folio}`)}
+                              onClick={() => goToServicio(s.folio)}
                               type="button"
                             >
                               Ver
@@ -141,12 +145,12 @@ export default function Servicios() {
                   <div
                     key={s.id}
                     className="serv-card"
-                    onClick={() => navigate(`/servicios/${s.folio}`)}
+                    onClick={() => goToServicio(s.folio)}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
-                        navigate(`/servicios/${s.folio}`);
+                        goToServicio(s.folio);
                       }
                     }}
                   >
@@ -188,7 +192,7 @@ export default function Servicios() {
                         className="btn-ver full"
                         onClick={(e) => {
                           e.stopPropagation();
-                          navigate(`/servicios/${s.folio}`);
+                          goToServicio(s.folio);
                         }}
                         type="button"
                       >

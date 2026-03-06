@@ -29,6 +29,8 @@ export default function ModalAperturaCaja({ mostrar, onClose, fondoInicial, setF
               <label>Fondo inicial:</label>
               <input
                 type="number"
+                min="0"
+                step="0.01"
                 value={fondoInicial}
                 onChange={(e) => setFondoInicial(e.target.value)}
                 autoFocus

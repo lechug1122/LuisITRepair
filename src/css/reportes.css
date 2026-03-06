@@ -34,6 +34,13 @@
   cursor: pointer;
 }
 
+.reportes-header-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
 .btn-refresh {
   background: #2563eb;
   transition: all 0.2s ease;
@@ -188,9 +195,26 @@
 
 .retiro-row {
   display: grid;
-  grid-template-columns: 120px 120px 1fr 220px 90px;
+  grid-template-columns: 120px 120px 1fr 220px;
   gap: 8px;
+}
+
+.retiro-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 8px;
   margin-bottom: 8px;
+}
+
+.retiro-row-actions {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.retiro-row-actions .btn-corte {
+  min-width: 160px;
 }
 
 .retiro-row input,
@@ -199,6 +223,96 @@
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   padding: 8px 10px;
+}
+
+.egresos-corte-wrap {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #cbd5e1;
+}
+
+.egresos-corte-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.egresos-corte-head h5 {
+  margin: 0;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.egresos-corte-head span {
+  font-weight: 800;
+  color: #0f172a;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+
+.egresos-corte-list {
+  display: grid;
+  gap: 10px;
+}
+
+.egreso-corte-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 10px;
+  transition: all 0.2s ease;
+}
+
+.egreso-corte-card:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.egreso-corte-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.egreso-corte-tipo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.egreso-corte-emoji {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.egreso-corte-monto {
+  font-size: 14px;
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.egreso-corte-desc {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+
+.egreso-corte-user {
+  font-size: 11px;
+  color: #475569;
+  background: #e2e8f0;
+  border-radius: 6px;
+  padding: 4px 8px;
+  display: inline-block;
 }
 
 .historial-cortes-filtros {
@@ -444,7 +558,7 @@
   font-weight: 700;
   z-index: 30;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform 0.24s ease, background 0.2s ease;
 }
 
 .calendar-side-tab:hover {
@@ -453,6 +567,18 @@
 
 .calendar-side-tab.open {
   background: #0f766e;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .calendar-side-tab {
+    transform: translate(calc(100% - 12px), -50%);
+  }
+
+  .calendar-side-tab:hover,
+  .calendar-side-tab:focus-visible,
+  .calendar-side-tab.open {
+    transform: translate(0, -50%);
+  }
 }
 
 .calendar-side-drawer {
@@ -636,5 +762,98 @@
 
   .calendar-side-drawer {
     width: calc(100vw - 28px);
+  }
+}
+
+@media (max-width: 992px) {
+  .reportes-page {
+    gap: 10px;
+    padding-right: 0;
+  }
+
+  .reportes-page.calendar-layout-pinned {
+    padding-right: 0;
+  }
+
+  .reportes-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .reportes-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .reportes-header-actions button {
+    flex: 1 1 180px;
+  }
+
+  .tabla-reportes-wrap {
+    overflow: hidden;
+  }
+
+  .tabla-reportes {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .calendar-side-tab {
+    top: auto;
+    bottom: 18px;
+    right: 10px;
+    transform: none;
+    writing-mode: horizontal-tb;
+    border-radius: 999px;
+    padding: 10px 14px;
+  }
+
+  .calendar-side-drawer {
+    top: 72px;
+    right: 10px;
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 84px);
+  }
+}
+
+@media (max-width: 600px) {
+  .reportes-kpis {
+    grid-template-columns: 1fr;
+  }
+
+  .kpi-card b {
+    font-size: 18px;
+  }
+
+  .historial-cortes-filtros,
+  .reportes-filtros,
+  .reportes-fechas {
+    grid-template-columns: 1fr;
+  }
+
+  .corte-modal-overlay {
+    padding: 8px;
+  }
+
+  .corte-modal {
+    padding: 10px;
+    max-height: calc(100vh - 16px);
+  }
+
+  .corte-modal-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .corte-modal-actions .btn-corte,
+  .corte-modal-actions .btn-refresh {
+    width: 100%;
+  }
+
+  .egresos-corte-header,
+  .egresos-corte-head {
+    flex-wrap: wrap;
   }
 }

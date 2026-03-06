@@ -4,14 +4,17 @@
 // ✅ Al generar boleta (PDF) guarda BD formaPago + items + total (y costo se actualiza)
 // ❌ Eliminado: Hoja de servicio (imagen) + todo lo relacionado
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import QRCode from "react-qr-code";
+import { Html5Qrcode } from "html5-qrcode";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
 
 import {
   buscarServicioPorFolio,
   actualizarServicioPorId,
 } from "../js/services/servicios_firestore";
+import { actualizarCliente } from "../js/services/clientes_firestore";
 import { obtenerProductos } from "../js/services/POS_firebase";
 import { STATUS } from "../js/utils/status_map";
 
@@ -21,8 +24,6 @@ import "../css/servicio_detalle.css";
 import {
   getStorage,
   ref as storageRef,
-  uploadBytes,
-  getDownloadURL,
   deleteObject,
 } from "firebase/storage";
 
@@ -33,6 +34,8 @@ const GOOGLE_SHEETS_WEBAPP_URL =
   "https://script.google.com/macros/s/AKfycbwzaBlvaMtMlEfyvOHWORy46lm_lqt8xCAYNe-xxvZN41D9EXw3_UP7ZZGC-ZUNuIr1/exec";
 
 const storage = getStorage();
+const STATUS_VALUE_SET = new Set(STATUS.map((s) => s.value));
+const BOLETA_SCANNER_ID = "boleta-reader";
 
 /* =========================
    Helpers
@@ -53,6 +56,16 @@ function isFinalStatus(status) {
   return s === "entregado" || s === "cancelado" || s === "no_reparable";
 }
 
+function statusValueFromRaw(raw) {
+  const s = normalizarStatus(raw);
+  if (!s) return "pendiente";
+  if (s === "en_revision") return "revision";
+  if (s === "en_reparacion") return "reparacion";
+  if (s === "en_espera_de_refaccion") return "espera_refaccion";
+  if (s === "finalizado") return "listo";
+  return STATUS_VALUE_SET.has(s) ? s : "pendiente";
+}
+
 function requierePrecioFinal(status) {
   const s = normalizarStatus(status);
   const estadosTempranos = new Set([
@@ -67,7 +80,7 @@ function requierePrecioFinal(status) {
 
 function formatFecha(ts) {
   if (!ts?.seconds) return "-";
-  return new Date(ts.seconds * 1000).toLocaleString("es-MX");
+  return new Date(ts.seconds * 1000).toLocaleDateString("es-MX");
 }
 
 function num(v) {
@@ -139,12 +152,18 @@ const PASOS_BASE = [
 const PROGRESO_POR_STATUS = {
   pendiente: { pct: 0, theme: "normal", finalLabel: "Finalizado" },
   revision: { pct: 30, theme: "normal", finalLabel: "Finalizado" },
+  reparacion: { pct: 52, theme: "normal", finalLabel: "Finalizado" },
+  en_reparacion: { pct: 52, theme: "normal", finalLabel: "Finalizado" },
+  espera_refaccion: {
+    pct: 40,
+    theme: "normal",
+    finalLabel: "Finalizado",
+  },
   en_espera_de_refaccion: {
     pct: 40,
     theme: "normal",
     finalLabel: "Finalizado",
   },
-  en_reparacion: { pct: 55, theme: "normal", finalLabel: "Finalizado" },
   trabajando: { pct: 60, theme: "normal", finalLabel: "Finalizado" },
   listo: { pct: 85, theme: "normal", finalLabel: "Finalizado" },
   finalizado: { pct: 85, theme: "normal", finalLabel: "Finalizado" },
@@ -228,6 +247,8 @@ function limpiarBoletaItems(items) {
   return (items || [])
     .map((it) => ({
       item: String(it.item || ""),
+      codigo: String(it.codigo || "").trim(),
+      productoId: String(it.productoId || "").trim(),
       descripcion: String(it.descripcion || "").trim(),
       pUnitario: num(it.pUnitario),
       cantidad: num(it.cantidad),
@@ -238,15 +259,6 @@ function limpiarBoletaItems(items) {
 /* =========================
    Upload helpers (solo obs fotos)
 ========================= */
-async function uploadImageToStorage({ servicioId, folder, file }) {
-  const ext = (file?.name || "").split(".").pop() || "jpg";
-  const path = `servicios/${servicioId}/${folder}/${Date.now()}_${uid()}.${ext}`;
-  const r = storageRef(storage, path);
-  await uploadBytes(r, file);
-  const url = await getDownloadURL(r);
-  return { url, path, name: file?.name || "" };
-}
-
 async function tryDeleteFromStorage(path) {
   if (!path) return;
   try {
@@ -258,6 +270,15 @@ async function tryDeleteFromStorage(path) {
 
 function buildEquipoEdit(servicio) {
   return {
+    nombre: servicio?.nombre || "",
+    telefono: servicio?.telefono || "",
+    direccion: servicio?.direccion || "",
+    tipoDispositivo: servicio?.tipoDispositivo || "",
+    marca: servicio?.marca || "",
+    modelo: servicio?.modelo || "",
+    numeroSerie: servicio?.numeroSerie || "",
+    omitirNumeroSerie: !!servicio?.omitirNumeroSerie,
+    trabajo: servicio?.trabajo || "",
     procesador: servicio?.laptopPc?.procesador || "",
     ram: servicio?.laptopPc?.ram || "",
     disco: servicio?.laptopPc?.disco || "",
@@ -300,8 +321,18 @@ function tieneCaracteristicasPendientes(servicio) {
 }
 
 export default function ServicioDetalle() {
-  const { folio } = useParams();
+  const { folio: folioParam } = useParams();
   const navigate = useNavigate();
+  const { rol } = useAutorizacionActual();
+  const folio = useMemo(() => {
+    const raw = String(folioParam || "").trim();
+    if (!raw) return "";
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }, [folioParam]);
 
   const [loading, setLoading] = useState(true);
   const [servicio, setServicio] = useState(null);
@@ -330,12 +361,51 @@ export default function ServicioDetalle() {
 
   const [exportingPdf, setExportingPdf] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
-  const [uploadingObs, setUploadingObs] = useState(false);
+  const [savingNotaAdmin, setSavingNotaAdmin] = useState(false);
   const [mostrarModalCaracteristicas, setMostrarModalCaracteristicas] =
     useState(false);
+  const [mostrarScannerBoleta, setMostrarScannerBoleta] = useState(false);
+  const [scannerBoletaInfo, setScannerBoletaInfo] = useState(
+    "Escanea un producto para agregarlo a la boleta.",
+  );
+  const [scannerBoletaError, setScannerBoletaError] = useState("");
+  const [esVistaMovil, setEsVistaMovil] = useState(false);
+  const [mostrarPestanaNotas, setMostrarPestanaNotas] = useState(false);
+  const [notaAdminEdit, setNotaAdminEdit] = useState("");
+  const notaAutosaveTimerRef = useRef(null);
+  const notaAdminGuardadaRef = useRef("");
+  const boletaScannerRef = useRef(null);
+  const boletaScannerDedupeRef = useRef({ value: "", at: 0 });
   const [equipoEdit, setEquipoEdit] = useState(buildEquipoEdit(null));
+  const [modalPaso, setModalPaso] = useState(0);
 
   const locked = !!servicio?.locked || isFinalStatus(servicio?.status);
+  const tipoEquipoEdit = normalizarStatus(
+    equipoEdit?.tipoDispositivo || servicio?.tipoDispositivo,
+  );
+  const esAdmin = normalizarStatus(rol) === "administrador";
+  const statusActual = statusValueFromRaw(status || servicio?.status || "pendiente");
+  const statusMeta = STATUS.find((s) => s.value === statusActual);
+  const statusLabel = statusMeta?.label || "Pendiente";
+
+  const pasosModal = useMemo(() => {
+    const base = [{ key: "general", label: "Datos generales" }];
+    if (
+      tipoEquipoEdit === "laptop" ||
+      tipoEquipoEdit === "pc" ||
+      tipoEquipoEdit === "impresora" ||
+      tipoEquipoEdit === "monitor"
+    ) {
+      base.push({ key: "tecnico", label: "Datos tecnicos" });
+    }
+    return base;
+  }, [tipoEquipoEdit]);
+
+  const modalPasoActual = pasosModal[modalPaso]?.key || "general";
+
+  useEffect(() => {
+    if (modalPaso > pasosModal.length - 1) setModalPaso(0);
+  }, [modalPaso, pasosModal.length]);
 
   useEffect(() => {
     let alive = true;
@@ -353,12 +423,15 @@ export default function ServicioDetalle() {
           !isFinalStatus(data?.status) &&
           tieneCaracteristicasPendientes(data)
         ) {
+          setModalPaso(0);
           setMostrarModalCaracteristicas(true);
         }
 
-        setStatus(data?.status || "pendiente");
+        setStatus(statusValueFromRaw(data?.status));
         setObservaciones(data?.observaciones || "");
         setFechaAprox(data?.fechaAprox || "");
+        setNotaAdminEdit(data?.notaAdmin || "");
+        notaAdminGuardadaRef.current = String(data?.notaAdmin || "").trim();
 
         if (
           data?.costo !== undefined &&
@@ -382,12 +455,18 @@ export default function ServicioDetalle() {
             const mapped = data.boleta.items.map((it, idx) => ({
               id: uid(),
               item: it?.item || `P-${String(idx + 1).padStart(3, "0")}`,
+              codigo: it?.codigo || "",
+              productoId: it?.productoId || "",
               descripcion: it?.descripcion || "",
               pUnitario: it?.pUnitario ?? "",
               cantidad: it?.cantidad ?? 1,
             }));
             setItems(mapped);
           }
+        } else {
+          setUsarBoleta(false);
+          setBoletaFormaPago("");
+          setBoletaNotas("");
         }
 
         const hoy = new Date();
@@ -413,6 +492,300 @@ export default function ServicioDetalle() {
     return () => (alive = false);
   }, [folio]);
 
+  useEffect(() => {
+    if (!esAdmin || !servicio?.id || locked || loading) return undefined;
+
+    const valorActual = String(notaAdminEdit || "").trim();
+    const valorGuardado = String(notaAdminGuardadaRef.current || "").trim();
+    if (valorActual === valorGuardado) return undefined;
+
+    if (notaAutosaveTimerRef.current) {
+      clearTimeout(notaAutosaveTimerRef.current);
+    }
+
+    notaAutosaveTimerRef.current = setTimeout(async () => {
+      try {
+        setSavingNotaAdmin(true);
+        await actualizarServicioPorId(servicio.id, { notaAdmin: valorActual });
+        notaAdminGuardadaRef.current = valorActual;
+        setServicio((prev) => (prev ? { ...prev, notaAdmin: valorActual } : prev));
+      } catch (e) {
+        console.error("Error guardando nota interna:", e);
+      } finally {
+        setSavingNotaAdmin(false);
+      }
+    }, 700);
+
+    return () => {
+      if (notaAutosaveTimerRef.current) {
+        clearTimeout(notaAutosaveTimerRef.current);
+      }
+    };
+  }, [notaAdminEdit, esAdmin, servicio?.id, locked, loading]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    const sync = () => {
+      const byWidth = window.matchMedia("(max-width: 900px)").matches;
+      const byTouch = window.matchMedia("(pointer: coarse)").matches;
+      setEsVistaMovil(byWidth || byTouch);
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, []);
+
+  const agregarProductoBoletaPorCodigo = (codigoRaw) => {
+    const termino = String(codigoRaw || "").trim().toLowerCase();
+    if (!termino) return { ok: false, message: "Codigo vacio." };
+
+    const producto = productosDB.find(
+      (p) => String(p.codigo || "").trim().toLowerCase() === termino,
+    );
+
+    if (!producto) {
+      return { ok: false, message: "Producto no encontrado en inventario." };
+    }
+
+    setItems((prev) => {
+      const existingIdx = prev.findIndex((row) => {
+        const sameId =
+          String(row?.productoId || "").trim() &&
+          String(row?.productoId || "").trim() === String(producto?.id || "").trim();
+        const sameCode =
+          String(row?.codigo || "").trim().toLowerCase() ===
+          String(producto?.codigo || "").trim().toLowerCase();
+        return sameId || sameCode;
+      });
+
+      if (existingIdx >= 0) {
+        return prev.map((row, idx) =>
+          idx !== existingIdx
+            ? row
+            : {
+                ...row,
+                cantidad: num(row?.cantidad) + 1,
+                pUnitario:
+                  row?.pUnitario !== undefined && row?.pUnitario !== ""
+                    ? row.pUnitario
+                    : producto.precioVenta ?? producto.precio ?? 0,
+              },
+        );
+      }
+
+      return [
+        ...prev,
+        {
+          id: uid(),
+          item: `P-${String(prev.length + 1).padStart(3, "0")}`,
+          codigo: producto.codigo || "",
+          productoId: producto.id || "",
+          descripcion:
+            producto.nombre ||
+            producto.nombreProducto ||
+            producto.descripcion ||
+            "",
+          pUnitario: producto.precioVenta ?? producto.precio ?? 0,
+          cantidad: 1,
+        },
+      ];
+    });
+
+    return {
+      ok: true,
+      label: producto.codigo || producto.nombre || "producto",
+    };
+  };
+
+  useEffect(() => {
+    if (!mostrarScannerBoleta) return undefined;
+
+    let active = true;
+    let qr = null;
+    const REAR_HINTS = ["back", "rear", "environment", "trasera", "posterior"];
+    const SCAN_CFG = { fps: 10, qrbox: 250 };
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const isTransitionError = (err) => {
+      const msg = String(err?.message || err || "").toLowerCase();
+      return (
+        msg.includes("already under transition") ||
+        msg.includes("cannot transition")
+      );
+    };
+
+    const isScannerRunning = (state) => {
+      const normalized = String(state ?? "").toUpperCase();
+      return (
+        state === 2 ||
+        state === 3 ||
+        normalized === "SCANNING" ||
+        normalized === "PAUSED"
+      );
+    };
+
+    const safelyDisposeScanner = async (instance) => {
+      if (!instance) return;
+      try {
+        const state =
+          typeof instance.getState === "function" ? instance.getState() : null;
+        if (isScannerRunning(state)) {
+          await instance.stop();
+        } else {
+          await instance.stop().catch(() => {});
+        }
+      } catch {
+        // noop
+      }
+      try {
+        await instance.clear();
+      } catch {
+        // noop
+      }
+    };
+
+    const cameraErrorMessage = (err) => {
+      const text = String(err?.message || err || "").toLowerCase();
+      if (text.includes("requires-secure-context")) {
+        return "Abre la app en HTTPS o localhost para usar la camara.";
+      }
+      if (text.includes("getusermedia-not-supported")) {
+        return "Este navegador no soporta camara.";
+      }
+      if (text.includes("reader-host-not-ready")) {
+        return "No se pudo preparar el lector. Intenta de nuevo.";
+      }
+      if (!window.isSecureContext) {
+        return "La camara requiere HTTPS o localhost.";
+      }
+      if (text.includes("permission") || text.includes("notallowederror")) {
+        return "Permiso de camara denegado. Habilitalo en el navegador.";
+      }
+      if (text.includes("notfounderror") || text.includes("overconstrained")) {
+        return "No se encontro camara compatible en este dispositivo.";
+      }
+      if (text.includes("notreadableerror") || text.includes("trackstarterror")) {
+        return "La camara esta en uso por otra app.";
+      }
+      return "No se pudo iniciar la camara.";
+    };
+
+    const pickRear = (cameras = []) => {
+      const rear = cameras.find((c) => {
+        const label = String(c?.label || "").toLowerCase();
+        return REAR_HINTS.some((hint) => label.includes(hint));
+      });
+      return rear?.id || null;
+    };
+
+    const waitForReaderHost = async (attempts = 20) => {
+      for (let i = 0; i < attempts; i += 1) {
+        const el = document.getElementById(BOLETA_SCANNER_ID);
+        if (el && el.clientWidth > 0) return el;
+        await wait(80);
+      }
+      return null;
+    };
+
+    const onSuccess = (decodedText) => {
+      if (!active) return;
+      const raw = String(decodedText || "").trim();
+      if (!raw) return;
+
+      const now = Date.now();
+      if (
+        boletaScannerDedupeRef.current.value === raw &&
+        now - boletaScannerDedupeRef.current.at < 500
+      ) {
+        return;
+      }
+
+      boletaScannerDedupeRef.current = { value: raw, at: now };
+      const result = agregarProductoBoletaPorCodigo(raw);
+      if (result.ok) {
+        setScannerBoletaError("");
+        setScannerBoletaInfo(`Agregado: ${result.label}`);
+      } else {
+        setScannerBoletaError(result.message || "No se pudo agregar.");
+      }
+    };
+
+    (async () => {
+      setScannerBoletaError("");
+      setScannerBoletaInfo("Solicitando acceso a camara...");
+      try {
+        if (!window.isSecureContext) {
+          throw new Error("requires-secure-context");
+        }
+
+        if (!navigator?.mediaDevices?.getUserMedia) {
+          throw new Error("getUserMedia-not-supported");
+        }
+
+        const preStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+        preStream.getTracks().forEach((track) => track.stop());
+
+        if (!active) return;
+
+        setScannerBoletaInfo("Iniciando camara...");
+
+        const host = await waitForReaderHost();
+        if (!host) {
+          throw new Error("reader-host-not-ready");
+        }
+
+        host.innerHTML = "";
+        qr = new Html5Qrcode(BOLETA_SCANNER_ID);
+        boletaScannerRef.current = qr;
+
+        try {
+          await qr.start({ facingMode: { ideal: "environment" } }, SCAN_CFG, onSuccess);
+        } catch (firstErr) {
+          if (isTransitionError(firstErr)) {
+            await wait(250);
+            if (active) {
+              await qr.start(
+                { facingMode: { ideal: "environment" } },
+                SCAN_CFG,
+                onSuccess,
+              );
+            }
+          } else {
+            await safelyDisposeScanner(qr);
+            if (!active) return;
+            qr = new Html5Qrcode(BOLETA_SCANNER_ID);
+            boletaScannerRef.current = qr;
+
+            const cameras = await Html5Qrcode.getCameras();
+            const rearId = pickRear(cameras);
+            const fallback = rearId || cameras?.[0]?.id;
+            if (!fallback) throw new Error("No hay camara disponible.");
+            await qr.start(fallback, SCAN_CFG, onSuccess);
+          }
+        }
+
+        if (active) setScannerBoletaInfo("Escaneando productos...");
+      } catch (err) {
+        console.error("No se pudo iniciar escaner boleta:", err);
+        if (active) setScannerBoletaError(cameraErrorMessage(err));
+      }
+    })();
+
+    return () => {
+      active = false;
+      const current = boletaScannerRef.current;
+      boletaScannerRef.current = null;
+      if (current) {
+        safelyDisposeScanner(current).catch(() => {});
+      }
+      const host = document.getElementById(BOLETA_SCANNER_ID);
+      if (host) host.innerHTML = "";
+    };
+  }, [mostrarScannerBoleta, productosDB]);
+
   const handleBack = () => {
     if (confirm("¿Seguro que quieres regresar?")) navigate(-1);
   };
@@ -425,6 +798,7 @@ export default function ServicioDetalle() {
       return;
     }
     setEquipoEdit(buildEquipoEdit(servicio));
+    setModalPaso(0);
     setMostrarModalCaracteristicas(true);
   };
 
@@ -449,7 +823,9 @@ export default function ServicioDetalle() {
     }
   };
 
-  const urlStatus = `${window.location.origin}/status/${folio}`;
+  const urlStatus = `${window.location.origin}/status/${encodeURIComponent(
+    String(folio || ""),
+  )}`;
 
   const whatsappUrl = useMemo(() => {
     const tel = String(servicio?.telefono || "").replace(/\D/g, "");
@@ -488,36 +864,6 @@ export default function ServicioDetalle() {
     setItems((prev) => prev.filter((x) => x.id !== id));
   };
 
-  // =========================
-  // Upload Observaciones fotos
-  // =========================
-  const onUploadObsFotos = async (files) => {
-    if (!files?.length) return;
-    if (!servicio?.id) return alert("❌ Falta ID del servicio.");
-    if (locked) return alert("🔒 Servicio bloqueado. No se puede subir.");
-
-    try {
-      setUploadingObs(true);
-      const list = Array.from(files);
-      const uploaded = [];
-      for (const f of list) {
-        const up = await uploadImageToStorage({
-          servicioId: servicio.id,
-          folder: "observaciones_fotos",
-          file: f,
-        });
-        uploaded.push(up);
-      }
-      setObsFotos((prev) => [...prev, ...uploaded]);
-      alert("✅ Fotos subidas. (Se guardan al presionar 'Guardar cambios')");
-    } catch (e) {
-      console.error(e);
-      alert(`❌ Error subiendo fotos: ${e?.message || e}`);
-    } finally {
-      setUploadingObs(false);
-    }
-  };
-
   const removeObsFoto = async (idx) => {
     if (locked) return;
     const foto = obsFotos[idx];
@@ -547,7 +893,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
   const costoSinBoleta = num(precioFinal);
   const costoConBoleta = totalBoleta;
-  const nextStatus = status || "pendiente";
+  const nextStatus = statusValueFromRaw(status);
   const pidePrecio = requierePrecioFinal(nextStatus);
 
   // ===============================
@@ -577,16 +923,10 @@ const guardarTodo = async ({ silent = false } = {}) => {
   // ===============================
 
   if (normalizarStatus(nextStatus) === "entregado") {
-    const boletaGuardada = servicio?.boleta;
-
-    const estaCobrado =
-      boletaGuardada &&
-      boletaGuardada.formaPago &&
-      num(boletaGuardada.total) > 0;
-
-    if (!estaCobrado) {
+    const estaCobradoEnPOS = !!servicio?.cobradoEnPOS;
+    if (!estaCobradoEnPOS) {
       if (!silent) {
-        alert("❌ No puedes marcar como ENTREGADO hasta que esté COBRADO desde el Punto de Venta.");
+        alert("No puedes marcar como ENTREGADO hasta que el servicio sea cobrado en POS/Ventas.");
       }
       return false;
     }
@@ -611,6 +951,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
     status: nextStatus,
     fechaAprox: fechaAprox || "",
     observaciones: observaciones || "",
+    ...(esAdmin ? { notaAdmin: String(notaAdminEdit || "").trim() } : {}),
 
     precioDespues: false,
     costo: costoGuardar,
@@ -643,6 +984,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
     const actualizado = await actualizarServicioPorId(servicio.id, patch);
 
     setServicio(actualizado);
+    notaAdminGuardadaRef.current = String(notaAdminEdit || "").trim();
 
     setPrecioFinal(
       String(
@@ -650,9 +992,6 @@ const guardarTodo = async ({ silent = false } = {}) => {
           (usarBoleta ? costoConBoleta : costoSinBoleta)
       )
     );
-
-    if (!silent)
-      alert("✅ Guardado completo (servicio + boleta + fotos).");
 
     return true;
   } catch (e) {
@@ -677,8 +1016,43 @@ const guardarTodo = async ({ silent = false } = {}) => {
       return;
     }
 
-    const tipo = normalizarStatus(servicio?.tipoDispositivo);
-    const patch = { caracteristicasPendientes: false };
+    const tipo = normalizarStatus(
+      equipoEdit?.tipoDispositivo || servicio?.tipoDispositivo,
+    );
+    const nombreLimpio = String(equipoEdit?.nombre || "").trim();
+    const telefonoLimpio = String(equipoEdit?.telefono || "")
+      .replace(/\D/g, "")
+      .slice(0, 10);
+    const direccionLimpia = String(equipoEdit?.direccion || "").trim();
+    const numeroSerieLimpio = String(equipoEdit?.numeroSerie || "").trim();
+
+    if (!nombreLimpio) {
+      alert("Captura el nombre del cliente.");
+      return;
+    }
+
+    if (!equipoEdit?.omitirNumeroSerie && !numeroSerieLimpio) {
+      alert(
+        "Captura el numero de serie o activa 'No quiero poner el numero de serie'.",
+      );
+      return;
+    }
+
+    const patch = {
+      caracteristicasPendientes: false,
+      nombre: nombreLimpio,
+      telefono: telefonoLimpio,
+      direccion: direccionLimpia,
+      tipoDispositivo: equipoEdit?.tipoDispositivo || "",
+      marca: String(equipoEdit?.marca || "").trim(),
+      modelo: String(equipoEdit?.modelo || "").trim(),
+      numeroSerie: equipoEdit?.omitirNumeroSerie ? "" : numeroSerieLimpio,
+      omitirNumeroSerie: !!equipoEdit?.omitirNumeroSerie,
+      trabajo: String(equipoEdit?.trabajo || "").trim(),
+      laptopPc: null,
+      impresora: null,
+      monitor: null,
+    };
 
     if (tipo === "laptop" || tipo === "pc") {
       patch.laptopPc = {
@@ -707,9 +1081,24 @@ const guardarTodo = async ({ silent = false } = {}) => {
     }
 
     const actualizado = await actualizarServicioPorId(servicio.id, patch);
+
+    if (servicio?.clienteId) {
+      try {
+        await actualizarCliente(servicio.clienteId, {
+          nombre: patch.nombre,
+          telefono: patch.telefono,
+          direccion: patch.direccion,
+          numeroSeriePreferido: patch.numeroSerie,
+          omitirNumeroSerie: patch.omitirNumeroSerie,
+        });
+      } catch (errCli) {
+        console.error("No se pudo actualizar el cliente enlazado:", errCli);
+      }
+    }
+
     setServicio(actualizado);
+    setEquipoEdit(buildEquipoEdit(actualizado));
     setMostrarModalCaracteristicas(false);
-    alert("✅ Características actualizadas.");
   };
 
   // ✅ Generar PDF: primero guarda boleta y luego abre PDF
@@ -786,9 +1175,9 @@ const guardarTodo = async ({ silent = false } = {}) => {
             <small>
               Folio: <b>{servicio.folio}</b> · Estado:{" "}
               <span
-                className={`badge badge-${normalizarStatus(status || "pendiente")}`}
+                className={`badge badge-${normalizarStatus(statusActual)}`}
               >
-                {status || "pendiente"}
+                {statusLabel}
               </span>
               {locked && (
                 <span style={{ marginLeft: 10, fontWeight: 900 }}>
@@ -806,40 +1195,51 @@ const guardarTodo = async ({ silent = false } = {}) => {
         {/* Estado */}
         <div className="box full">
           <h3>Estado del servicio</h3>
-          <WizardProgress status={status} />
+          <WizardProgress status={statusActual} />
 
-          <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-            <label>
-              <b>Actualizar estado</b>
-            </label>
+          <div className="estado-controls">
+            <div className="estado-control-item">
+              <label>
+                <b>Actualizar estado</b>
+              </label>
 
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              disabled={locked}
-            >
-              {STATUS.map((s, idx) => (
-                <option key={`${s.key}-${s.label}-${idx}`} value={s.label}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+              <select
+                className="input-compact"
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                disabled={locked}
+              >
+                {STATUS.filter(
+                  (s) =>
+                    s.value !== "entregado" ||
+                    statusValueFromRaw(status) === "entregado",
+                ).map((s, idx) => (
+                  <option key={`${s.value}-${s.label}-${idx}`} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-            <label>
-              <b>Fecha de entrega aproximada</b>
-            </label>
-            <input
-              type="date"
-              value={fechaAprox}
-              onChange={(e) => setFechaAprox(e.target.value)}
-              disabled={locked}
-            />
-            <div style={{ marginTop: 8 }}>
+            <div className="estado-control-item">
+              <label>
+                <b>Fecha de entrega aproximada</b>
+              </label>
+              <input
+                type="date"
+                className="input-compact"
+                value={fechaAprox}
+                onChange={(e) => setFechaAprox(e.target.value)}
+                disabled={locked}
+              />
+            </div>
+
+            <div className="estado-control-item estado-control-item-btn">
+              <label className="estado-action-label">&nbsp;</label>
               <button
                 className="btn btn-wa"
                 onClick={() => abrirWhatsAppAviso(status)}
                 disabled={locked}
-                style={{ width: "100%", textAlign: "center" }}
               >
                 Avisar cliente por WhatsApp
               </button>
@@ -863,17 +1263,10 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
             {whatsappUrl ? (
               <a
-                className="btn btn-wa"
+                className="btn btn-wa cliente-wa-btn"
                 href={whatsappUrl}
                 target="_blank"
                 rel="noreferrer"
-                style={{
-                  marginTop: 12,
-                  width: "100%",
-                  textAlign: "center",
-                  display: "inline-flex",
-                  justifyContent: "center",
-                }}
               >
                 WhatsApp Cliente
               </a>
@@ -883,10 +1276,10 @@ const guardarTodo = async ({ silent = false } = {}) => {
               </small>
             )}
 
-            <div style={{ marginTop: 12 }}>
+            <div className="qr-status-wrap">
               <b>QR estado:</b>
-              <div style={{ marginTop: 8 }}>
-                <QRCode value={urlStatus} size={110} />
+              <div className="qr-status-code">
+                <QRCode value={urlStatus} size={esVistaMovil ? 92 : 110} />
               </div>
               <small style={{ opacity: 0.8 }}>/status/{folio}</small>
             </div>
@@ -903,10 +1296,23 @@ const guardarTodo = async ({ silent = false } = {}) => {
             <p>
               <b>Modelo:</b> {servicio.modelo || "-"}
             </p>
+            <p>
+              <b>No. de serie:</b>{" "}
+              {servicio.omitirNumeroSerie
+                ? "No proporcionado"
+                : servicio.numeroSerie || "-"}
+            </p>
+            <p>
+              <b>Contrasena del equipo:</b>{" "}
+              {servicio?.laptopPc?.contrasenaEquipo || "-"}
+            </p>
           </div>
 
           <div className="box">
             <h3>Servicio</h3>
+            <p>
+              <b>Estado:</b> {statusLabel}
+            </p>
             <p>
               <b>Descripción:</b> {servicio.trabajo || "-"}
             </p>
@@ -936,52 +1342,18 @@ const guardarTodo = async ({ silent = false } = {}) => {
             <div style={{ marginTop: 8, display: "grid", gap: 8 }}></div>
 
             {obsFotos?.length > 0 && (
-              <div
-                style={{
-                  marginTop: 12,
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 10,
-                }}
-              >
+              <div className="obs-fotos-grid">
                 {obsFotos.map((f, idx) => (
-                  <div
-                    key={`${f.path || f.url}-${idx}`}
-                    style={{
-                      width: 140,
-                      border: "1px solid rgba(0,0,0,.12)",
-                      borderRadius: 12,
-                      overflow: "hidden",
-                      background: "#fff",
-                    }}
-                  >
+                  <div key={`${f.path || f.url}-${idx}`} className="obs-foto-item">
                     <a href={f.url} target="_blank" rel="noreferrer">
                       <img
                         src={f.url}
                         alt="foto"
-                        style={{
-                          width: "100%",
-                          height: 110,
-                          objectFit: "cover",
-                        }}
+                        className="obs-foto-img"
                       />
                     </a>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        padding: 8,
-                        gap: 8,
-                      }}
-                    >
-                      <small
-                        style={{
-                          opacity: 0.8,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
+                    <div className="obs-foto-foot">
+                      <small className="obs-foto-name">
                         {f.name || "foto"}
                       </small>
                       {!locked && (
@@ -1003,24 +1375,10 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
         {/* Boleta */}
         <div className="box full">
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-            }}
-          >
+          <div className="boleta-head">
             <h3 style={{ margin: 0 }}>Boleta de venta</h3>
 
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                fontWeight: 800,
-              }}
-            >
+            <label className="boleta-toggle">
               <input
                 type="checkbox"
                 checked={usarBoleta}
@@ -1032,7 +1390,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
           </div>
 
           {!usarBoleta && (
-            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+            <div className="boleta-precio-wrap">
               <label>
                 <b>Precio final</b>
               </label>
@@ -1050,20 +1408,14 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
           {usarBoleta && (
             <div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3, 1fr)",
-                  gap: 12,
-                  marginTop: 12,
-                }}
-              >
+              <div className="boleta-meta-grid">
                 <div>
                   <label>
                     <b>Fecha boleta</b>
                   </label>
                   <input
                     type="date"
+                    className="input-compact"
                     value={boletaFecha}
                     onChange={(e) => setBoletaFecha(e.target.value)}
                     disabled={locked}
@@ -1091,77 +1443,44 @@ const guardarTodo = async ({ silent = false } = {}) => {
                   <label>
                     <b>Total</b>
                   </label>
-                  <div
-                    style={{
-                      height: 44,
-                      display: "flex",
-                      alignItems: "center",
-                      fontWeight: 900,
-                    }}
-                  >
+                  <div className="boleta-total-label">
                     {money(totalBoleta)}
                   </div>
                 </div>
               </div>
 
-              <div style={{ overflowX: "auto", marginTop: 12 }}>
-                <div
-                  style={{
-                    marginBottom: 8,
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "center",
-                  }}
-                >
+              <div className="boleta-table-wrap">
+                <div className="boleta-scan-tools">
                   <label style={{ margin: 0 }}>
                     <b>Escanear producto para boleta</b>
                   </label>
                   <input
-                    placeholder="Escanea código y presiona Enter"
+                    placeholder="Escanea codigo y presiona Enter"
                     value={scanCode}
+                    disabled={locked}
                     onChange={(e) => setScanCode(e.target.value)}
-                    onKeyDown={async (e) => {
+                    onKeyDown={(e) => {
                       if (e.key !== "Enter") return;
-                      const termino = String(scanCode || "")
-                        .trim()
-                        .toLowerCase();
-                      if (!termino) return;
-
-                      const producto = productosDB.find(
-                        (p) =>
-                          String(p.codigo || "")
-                            .trim()
-                            .toLowerCase() === termino,
-                      );
-
-                      if (!producto) {
-                        alert("Producto no encontrado en la base del POS");
+                      const result = agregarProductoBoletaPorCodigo(scanCode);
+                      if (!result.ok) {
+                        alert(result.message || "No se pudo agregar producto.");
                         return;
                       }
-
-                      // Añadir como renglón a la boleta
-                      setItems((prev) => [
-                        ...prev,
-                        {
-                          id: uid(),
-                          item: `P-${String(prev.length + 1).padStart(3, "0")}`,
-                          descripcion:
-                            producto.nombre ||
-                            producto.nombreProducto ||
-                            producto.descripcion ||
-                            "",
-                          pUnitario:
-                            producto.precioVenta ?? producto.precio ?? 0,
-                          cantidad: 1,
-                        },
-                      ]);
-
                       setScanCode("");
                     }}
                     style={{ height: 36, padding: "0 8px", borderRadius: 6 }}
                   />
+                  {esVistaMovil && !locked && (
+                    <button
+                      type="button"
+                      className="btn boleta-scan-btn"
+                      onClick={() => setMostrarScannerBoleta(true)}
+                    >
+                      Escanear camara
+                    </button>
+                  )}
                 </div>
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <table className="boleta-table">
                   <thead>
                     <tr style={{ background: "#2563eb", color: "#fff" }}>
                       <th style={{ padding: 10, textAlign: "left" }}>ITEM</th>
@@ -1333,14 +1652,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
                 />
               </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                  marginTop: 12,
-                }}
-              >
+              <div className="boleta-actions">
                 {!locked && (
                   <button className="btn" onClick={addRow}>
                     Agregar renglón
@@ -1383,17 +1695,232 @@ const guardarTodo = async ({ silent = false } = {}) => {
         </div>
       </div>
 
+      {esAdmin && (
+        <>
+          <button
+            type="button"
+            className={`notas-side-tab no-print ${mostrarPestanaNotas ? "open" : ""}`}
+            onClick={() => setMostrarPestanaNotas((v) => !v)}
+            title="Notas internas"
+          >
+            <span className="notas-tab-icon" aria-hidden="true">📎</span>
+            <span>Notas</span>
+          </button>
+
+          <aside className={`notas-side-drawer no-print ${mostrarPestanaNotas ? "open" : ""}`}>
+            <div className="notas-side-head">
+              <span className="notas-clip" aria-hidden="true">📎</span>
+              <strong>Notas internas</strong>
+            </div>
+
+            <textarea
+              className="notas-side-textarea"
+              placeholder="Escribe una nota interna..."
+              value={notaAdminEdit}
+              onChange={(e) => setNotaAdminEdit(e.target.value)}
+              disabled={savingNotaAdmin || locked}
+            />
+
+            <div className="notas-side-actions">
+              <small>
+                {locked
+                  ? "Servicio cerrado: notas bloqueadas."
+                  : savingNotaAdmin
+                    ? "Guardando nota..."
+                    : "Se guarda automaticamente."}
+              </small>
+            </div>
+          </aside>
+        </>
+      )}
+
+      {mostrarScannerBoleta && (
+        <div className="boleta-scanner-overlay no-print">
+          <div className="boleta-scanner-modal">
+            <div className="boleta-scanner-head">
+              <h4>Escaner de boleta</h4>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => setMostrarScannerBoleta(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <p className="boleta-scanner-sub">
+              Escanea productos para agregarlos directamente a la boleta.
+            </p>
+
+            <div id={BOLETA_SCANNER_ID} className="boleta-scanner-reader" />
+
+            {scannerBoletaError ? (
+              <div className="boleta-scanner-msg boleta-scanner-msg--error">
+                {scannerBoletaError}
+              </div>
+            ) : (
+              <div className="boleta-scanner-msg">{scannerBoletaInfo}</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {mostrarModalCaracteristicas && (
         <div className="equipo-modal-overlay">
           <div className="equipo-modal">
-            <h3>Completar características del equipo</h3>
+            <h3>Editar datos del servicio</h3>
             <p className="equipo-modal-alerta">
-              Este servicio se registró con la opción de rellenar después.
-              Completa los datos técnicos.
+              Desde aqui puedes editar cliente, equipo y caracteristicas
+              tecnicas.
             </p>
 
-            {(normalizarStatus(servicio?.tipoDispositivo) === "laptop" ||
-              normalizarStatus(servicio?.tipoDispositivo) === "pc") && (
+            <div className="equipo-carousel-head">
+              <div className="equipo-carousel-tabs">
+                {pasosModal.map((p, idx) => (
+                  <button
+                    type="button"
+                    key={p.key}
+                    className={`equipo-tab ${idx === modalPaso ? "active" : ""}`}
+                    onClick={() => setModalPaso(idx)}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="equipo-carousel-nav">
+                <button
+                  type="button"
+                  className="equipo-nav-btn"
+                  disabled={modalPaso === 0}
+                  onClick={() => setModalPaso((p) => Math.max(0, p - 1))}
+                >
+                  ← Anterior
+                </button>
+                <small className="equipo-modal-step">
+                  Paso {modalPaso + 1} de {pasosModal.length}
+                </small>
+                <button
+                  type="button"
+                  className="equipo-nav-btn"
+                  disabled={modalPaso >= pasosModal.length - 1}
+                  onClick={() =>
+                    setModalPaso((p) => Math.min(pasosModal.length - 1, p + 1))
+                  }
+                >
+                  Siguiente →
+                </button>
+              </div>
+            </div>
+
+            {modalPasoActual === "general" && (
+              <div className="equipo-modal-grid equipo-modal-grid--general">
+              <label className="equipo-field">
+                <span>Nombre del cliente</span>
+                <input
+                  value={equipoEdit.nombre}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, nombre: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="equipo-field">
+                <span>Telefono</span>
+                <input
+                  value={equipoEdit.telefono}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      telefono: e.target.value.replace(/\D/g, "").slice(0, 10),
+                    }))
+                  }
+                />
+              </label>
+              <label className="equipo-field equipo-field--full">
+                <span>Direccion</span>
+                <input
+                  value={equipoEdit.direccion}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, direccion: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="equipo-field">
+                <span>Tipo de dispositivo</span>
+                <select
+                  value={equipoEdit.tipoDispositivo}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      tipoDispositivo: e.target.value,
+                    }))
+                  }
+                >
+                  <option value="laptop">Laptop</option>
+                  <option value="pc">Computadora de Escritorio</option>
+                  <option value="impresora">Impresora</option>
+                  <option value="monitor">Monitor</option>
+                </select>
+              </label>
+              <label className="equipo-field">
+                <span>Marca</span>
+                <input
+                  value={equipoEdit.marca}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, marca: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="equipo-field">
+                <span>Modelo</span>
+                <input
+                  value={equipoEdit.modelo}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, modelo: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="equipo-field">
+                <span>No. de serie</span>
+                <input
+                  value={equipoEdit.numeroSerie}
+                  disabled={!!equipoEdit.omitirNumeroSerie}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      numeroSerie: e.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="equipo-check equipo-field--full">
+                <input
+                  type="checkbox"
+                  checked={!!equipoEdit.omitirNumeroSerie}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      omitirNumeroSerie: e.target.checked,
+                      numeroSerie: e.target.checked ? "" : p.numeroSerie,
+                    }))
+                  }
+                />
+                <span>No quiero poner el numero de serie</span>
+              </label>
+              <label className="equipo-field equipo-field--full">
+                <span>Trabajo / falla reportada</span>
+                <textarea
+                  value={equipoEdit.trabajo}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({ ...p, trabajo: e.target.value }))
+                  }
+                />
+              </label>
+              </div>
+            )}
+
+            {modalPasoActual === "tecnico" &&
+              (tipoEquipoEdit === "laptop" || tipoEquipoEdit === "pc") && (
               <div className="equipo-modal-grid">
                 <input
                   placeholder="Procesador"
@@ -1446,10 +1973,20 @@ const guardarTodo = async ({ silent = false } = {}) => {
                     }))
                   }
                 />
+                <input
+                  placeholder="Contrasena del equipo"
+                  value={equipoEdit.contrasenaEquipo}
+                  onChange={(e) =>
+                    setEquipoEdit((p) => ({
+                      ...p,
+                      contrasenaEquipo: e.target.value,
+                    }))
+                  }
+                />
               </div>
             )}
 
-            {normalizarStatus(servicio?.tipoDispositivo) === "impresora" && (
+            {modalPasoActual === "tecnico" && tipoEquipoEdit === "impresora" && (
               <div className="equipo-modal-grid">
                 <input
                   placeholder="Tipo de impresora"
@@ -1481,7 +2018,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
               </div>
             )}
 
-            {normalizarStatus(servicio?.tipoDispositivo) === "monitor" && (
+            {modalPasoActual === "tecnico" && tipoEquipoEdit === "monitor" && (
               <div className="equipo-modal-grid">
                 <input
                   placeholder="Tamaño del monitor"
@@ -1518,7 +2055,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
                 className="btn btn-ok"
                 onClick={guardarCaracteristicasEquipo}
               >
-                Guardar características
+                Guardar cambios
               </button>
               <button
                 className="btn btn-danger"
@@ -1533,3 +2070,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
     </div>
   );
 }
+
+
+
+

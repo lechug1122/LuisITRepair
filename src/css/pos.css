@@ -20,7 +20,7 @@
 .sidebar {
   background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
   color: white;
-  padding: 16px 12px;
+  padding: 20px 12px 16px;
   transition: all 0.3s ease;
   border-right: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
@@ -59,6 +59,20 @@
 .sidebar-brand .brand-icon {
   font-size: 24px;
   flex-shrink: 0;
+}
+
+.sidebar-brand .brand-icon.brand-badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.3);
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: #dbeafe;
 }
 
 .sidebar-brand h2 {
@@ -152,6 +166,7 @@
   flex: 1;
   padding: 20px;
   overflow-y: auto;
+  min-width: 0;
   transition: all 0.3s ease;
 }
 
@@ -173,6 +188,26 @@
   border-radius: 6px;
   font-size: 14px;
   color: #0369a1;
+}
+
+.pos-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.btn-servicio-listo {
+  border: none;
+  border-radius: 8px;
+  background: #1d4ed8;
+  color: #fff;
+  font-weight: 700;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.btn-servicio-listo:hover {
+  background: #1e40af;
 }
 
 .buscador {
@@ -259,6 +294,21 @@
   margin-bottom: 10px;
 }
 
+.iva-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.iva-toggle input {
+  width: 16px;
+  height: 16px;
+}
+
 .btn-puntos {
   width: 100%;
   background: #facc15;
@@ -294,6 +344,7 @@
 
 .btn-venta:disabled,
 .btn-cancelar:disabled,
+.btn-servicio-listo:disabled,
 .btn-comparar:disabled,
 .buscador:disabled,
 .input:disabled {
@@ -318,4 +369,268 @@
   padding: 30px;
   width: 500px;
   border-radius: 12px;
+}
+
+.pos-mobile-scanner {
+  width: min(680px, 100%);
+  margin: 0 auto;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  padding: 14px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.pos-mobile-scanner h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #0f172a;
+}
+
+.pos-mobile-subtitle {
+  margin-top: 8px;
+  color: #475569;
+  font-size: 0.95rem;
+}
+
+.pos-mobile-reader-card {
+  margin-top: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.pos-mobile-reader {
+  position: relative;
+  min-height: 270px;
+  border-radius: 10px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(34, 197, 94, 0.12), transparent 45%),
+    radial-gradient(circle at 80% 10%, rgba(56, 189, 248, 0.2), transparent 40%),
+    #0f172a;
+}
+
+.pos-mobile-reader-host {
+  min-height: 270px;
+}
+
+.pos-mobile-reader-host > div {
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.pos-mobile-reader-host video {
+  width: 100% !important;
+  height: 270px !important;
+  object-fit: cover !important;
+  border-radius: 10px !important;
+}
+
+.pos-mobile-reader-overlay {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10px;
+}
+
+.pos-mobile-reader-overlay span {
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  font-size: 0.74rem;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.pos-mobile-msg {
+  margin-top: 10px;
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: #dbeafe;
+  color: #1e3a8a;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.pos-mobile-msg-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.pos-mobile-manual {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.pos-mobile-manual .buscador {
+  margin: 0;
+}
+
+.pos-mobile-summary {
+  margin-top: 12px;
+  border: 1px solid #d1fae5;
+  background: #ecfdf5;
+  color: #065f46;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+@media (max-width: 1024px) {
+  .sidebar.open {
+    width: 210px;
+  }
+
+  .panel-derecho {
+    width: 280px;
+    padding: 14px;
+  }
+}
+
+@media (max-width: 900px) {
+  .layout {
+    flex-direction: column;
+  }
+
+  .sidebar,
+  .sidebar.open,
+  .sidebar.closed {
+    width: 100%;
+    min-height: auto;
+    padding: 12px 10px 10px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: none;
+  }
+
+  .sidebar-header {
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+  }
+
+  .sidebar-toggle {
+    display: none;
+  }
+
+  .sidebar-menu {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 4px;
+  }
+
+  .sidebar-menu li {
+    flex: 0 0 auto;
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+
+  .sidebar-menu li .menu-label {
+    display: inline;
+  }
+
+  .main-wrapper {
+    padding: 12px;
+  }
+
+  .pos-container {
+    flex-direction: column;
+    min-height: auto;
+    gap: 12px;
+  }
+
+  .main {
+    padding: 14px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+  }
+
+  .panel-derecho {
+    width: 100%;
+    border-left: 0;
+    border-top: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 14px;
+  }
+
+  .pos-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .pos-actions {
+    justify-content: stretch;
+  }
+
+  .btn-servicio-listo {
+    width: 100%;
+  }
+
+  .tabla {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    border-radius: 10px;
+  }
+
+  .tabla th,
+  .tabla td {
+    min-width: 92px;
+  }
+}
+
+@media (max-width: 560px) {
+  .main-wrapper {
+    padding: 8px;
+  }
+
+  .main {
+    padding: 10px;
+  }
+
+  .main h1 {
+    font-size: 1.8rem;
+    margin-bottom: 8px;
+  }
+
+  .buscador,
+  .input {
+    font-size: 16px;
+  }
+
+  .tabla td button {
+    display: block;
+    width: 100%;
+    margin: 4px 0;
+  }
+
+  .pos-mobile-scanner {
+    padding: 10px;
+    border-radius: 12px;
+  }
+
+  .pos-mobile-reader,
+  .pos-mobile-reader-host {
+    min-height: 230px;
+  }
+
+  .pos-mobile-reader-host video {
+    height: 230px !important;
+  }
+
+  .pos-mobile-manual {
+    grid-template-columns: 1fr;
+  }
 }

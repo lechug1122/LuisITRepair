@@ -60,7 +60,13 @@ function levenshtein(a, b) {
 }
 
 /* ========= Crear cliente ========= */
-export async function crearCliente({ nombre, telefono, direccion }) {
+export async function crearCliente({
+  nombre,
+  telefono,
+  direccion,
+  numeroSeriePreferido = "",
+  omitirNumeroSerie = false,
+}) {
   const nombreNorm = normalizarTexto(nombre);
   const nombreCompact = compact(nombre);
 
@@ -70,6 +76,10 @@ export async function crearCliente({ nombre, telefono, direccion }) {
     nombreCompact,
     telefono: (telefono || "").trim(),
     direccion: (direccion || "").trim(),
+    numeroSeriePreferido: omitirNumeroSerie
+      ? ""
+      : String(numeroSeriePreferido || "").trim(),
+    omitirNumeroSerie: !!omitirNumeroSerie,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -79,10 +89,32 @@ export async function crearCliente({ nombre, telefono, direccion }) {
 
 /* ========= Actualizar cliente ========= */
 export async function actualizarCliente(id, patch) {
-  await updateDoc(doc(db, "clientes", id), {
+  const ref = doc(db, "clientes", id);
+  const snap = await getDoc(ref);
+  const actual = snap.exists() ? snap.data() : {};
+
+  const nombreFinal = Object.prototype.hasOwnProperty.call(patch || {}, "nombre")
+    ? String(patch?.nombre || "").trim()
+    : String(actual?.nombre || "").trim();
+  const omitirNumeroSerieFinal = Object.prototype.hasOwnProperty.call(
+    patch || {},
+    "omitirNumeroSerie"
+  )
+    ? !!patch?.omitirNumeroSerie
+    : !!actual?.omitirNumeroSerie;
+  const numeroSerieFinal = Object.prototype.hasOwnProperty.call(
+    patch || {},
+    "numeroSeriePreferido"
+  )
+    ? String(patch?.numeroSeriePreferido || "").trim()
+    : String(actual?.numeroSeriePreferido || "").trim();
+
+  await updateDoc(ref, {
     ...patch,
-    nombreNorm: normalizarTexto(patch?.nombre || ""),
-    nombreCompact: compact(patch?.nombre || ""),
+    numeroSeriePreferido: omitirNumeroSerieFinal ? "" : numeroSerieFinal,
+    omitirNumeroSerie: omitirNumeroSerieFinal,
+    nombreNorm: normalizarTexto(nombreFinal),
+    nombreCompact: compact(nombreFinal),
     updatedAt: serverTimestamp(),
   });
 }
@@ -109,8 +141,31 @@ export async function buscarClientesSimilares(
 
   const inC = compact(input);
 
+  let candidatos = arr;
+
+  // Fallback para clientes viejos con nombreNorm/nombreCompact vacios.
+  if (candidatos.length < maxReturn) {
+    const fallbackQ = query(
+      collection(db, "clientes"),
+      orderBy("updatedAt", "desc"),
+      limit(Math.max(maxFetch * 2, 120)),
+    );
+    const fallbackSnap = await getDocs(fallbackQ);
+    const fallback = fallbackSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((c) => {
+        const nombreN = normalizarTexto(c?.nombre || "");
+        const nombreC = compact(c?.nombre || "");
+        return nombreN.includes(norm) || nombreC.includes(inC);
+      });
+
+    const byId = new Map();
+    [...arr, ...fallback].forEach((c) => byId.set(c.id, c));
+    candidatos = [...byId.values()];
+  }
+
   // Ranking por distancia
-  const ranked = arr
+  const ranked = candidatos
     .map((c) => {
       const cC = c.nombreCompact || compact(c.nombre || "");
       const dist = levenshtein(inC, cC);

@@ -239,4 +239,51 @@
     gap: 15px;
   }
 }
+
+@media (max-width: 560px) {
+  .modal-cobro-pro {
+    width: calc(100vw - 12px);
+    max-width: calc(100vw - 12px);
+    padding: 12px;
+  }
+
+  .modal-header h2 {
+    font-size: 18px;
+  }
+
+  .total-grande-pro {
+    font-size: 38px;
+    margin: 10px 0;
+  }
+
+  .metodos {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .metodos button {
+    flex: 1 1 calc(50% - 8px);
+    font-size: 14px;
+    padding: 9px 10px;
+  }
+
+  .pago-input {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .pago-input input {
+    width: 100%;
+    font-size: 18px;
+  }
+
+  .cambio-pro {
+    font-size: 20px;
+  }
+
+  .acciones-pro button {
+    width: 100%;
+  }
+}
 /* end */

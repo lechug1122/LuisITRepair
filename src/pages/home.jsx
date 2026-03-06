@@ -29,9 +29,14 @@ import {
   Cell,
   Legend,
 } from "recharts";
+import { APARIENCIA_EVENT, readAparienciaConfigStorage } from "../js/services/apariencia_config";
 
 export default function Home() {
   const navigate = useNavigate();
+  const goToServicio = (folioRaw) => {
+    const folioSafe = encodeURIComponent(String(folioRaw || "").trim());
+    navigate(`/servicios/${folioSafe}`);
+  };
 
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -54,6 +59,12 @@ export default function Home() {
   const [mostrarPanelNoti, setMostrarPanelNoti] = useState(false);
   const [mostrarPanelCorte, setMostrarPanelCorte] = useState(false);
   const [mostrarCalendarioPanel, setMostrarCalendarioPanel] = useState(false);
+  const [animationsEnabled, setAnimationsEnabled] = useState(
+    () => readAparienciaConfigStorage().animations !== false,
+  );
+  const [isDarkMode, setIsDarkMode] = useState(
+    () => readAparienciaConfigStorage().themeMode === "oscuro",
+  );
   const [fijarCalendarioPanel, setFijarCalendarioPanel] = useState(() => {
     try {
       return localStorage.getItem("home_calendar_pinned") === "1";
@@ -109,6 +120,26 @@ export default function Home() {
       // noop
     }
   }, [fijarCalendarioPanel]);
+
+  useEffect(() => {
+    const onAparienciaChange = (event) => {
+      const next = event?.detail || readAparienciaConfigStorage();
+      setAnimationsEnabled(next?.animations !== false);
+      setIsDarkMode(next?.themeMode === "oscuro");
+    };
+
+    window.addEventListener(APARIENCIA_EVENT, onAparienciaChange);
+    return () => window.removeEventListener(APARIENCIA_EVENT, onAparienciaChange);
+  }, []);
+
+  const chartTextColor = isDarkMode ? "#cbd5e1" : "#475569";
+  const chartGridColor = isDarkMode ? "#334155" : "#dbe3ef";
+  const chartTooltipStyle = {
+    background: isDarkMode ? "#111827" : "#ffffff",
+    border: `1px solid ${chartGridColor}`,
+    color: isDarkMode ? "#e5e7eb" : "#0f172a",
+    borderRadius: 10,
+  };
 
   function filtrarPorFecha(fecha) {
     setSelectedDate(fecha);
@@ -307,10 +338,10 @@ export default function Home() {
           <h4>Ingresos del mes</h4>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={dataBarras}>
-              <XAxis dataKey="dia" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="total" fill="#2563eb" />
+              <XAxis dataKey="dia" tick={{ fill: chartTextColor }} axisLine={{ stroke: chartGridColor }} />
+              <YAxis tick={{ fill: chartTextColor }} axisLine={{ stroke: chartGridColor }} />
+              <Tooltip isAnimationActive={animationsEnabled} contentStyle={chartTooltipStyle} />
+              <Bar dataKey="total" fill="#2563eb" isAnimationActive={animationsEnabled} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -319,7 +350,14 @@ export default function Home() {
           <h4>Ingresos por tipo</h4>
           <ResponsiveContainer width="100%" height={260}>
             <PieChart>
-              <Pie data={dataPastel} dataKey="value" nameKey="name" outerRadius={90} label>
+              <Pie
+                data={dataPastel}
+                dataKey="value"
+                nameKey="name"
+                outerRadius={90}
+                label
+                isAnimationActive={animationsEnabled}
+              >
                 {dataPastel.map((entry, index) => (
                   <Cell
                     key={index}
@@ -337,8 +375,8 @@ export default function Home() {
                   />
                 ))}
               </Pie>
-              <Tooltip />
-              <Legend />
+              <Tooltip isAnimationActive={animationsEnabled} contentStyle={chartTooltipStyle} />
+              <Legend wrapperStyle={{ color: chartTextColor }} />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -445,7 +483,7 @@ export default function Home() {
                   {s.tipoDispositivo} {s.marca} - {s.nombre}
                 </span>
                 <span>{s.folio}</span>
-                <button className="btn-light" onClick={() => navigate(`/servicios/${s.folio}`)}>
+                <button className="btn-light" onClick={() => goToServicio(s.folio)}>
                   Ver
                 </button>
               </div>

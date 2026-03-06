@@ -3,35 +3,56 @@ import { useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
 import "../css/status_scan.css";
 
+const REAR_CAMERA_HINTS = ["back", "rear", "environment", "trasera", "posterior"];
+const SCAN_CONFIG = { fps: 10, qrbox: 250 };
+
+function pickRearCameraId(cameras = []) {
+  const rear = cameras.find((cam) => {
+    const label = (cam?.label || "").toLowerCase();
+    return REAR_CAMERA_HINTS.some((hint) => label.includes(hint));
+  });
+  return rear?.id || null;
+}
+
+function readFolioFromText(decodedText) {
+  const parts = decodedText.split("/status/");
+  return parts[1]?.trim() || "";
+}
+
 export default function StatusScan() {
   const navigate = useNavigate();
 
   useEffect(() => {
     const qr = new Html5Qrcode("reader");
 
+    const onSuccess = (decodedText) => {
+      const folio = readFolioFromText(decodedText);
+      if (!folio) return;
+      qr
+        .stop()
+        .then(() => navigate(`/status/${encodeURIComponent(String(folio).trim())}`));
+    };
+
     (async () => {
       try {
-        const cams = await Html5Qrcode.getCameras();
-        const camId = cams?.[0]?.id;
-
-        if (!camId) return;
-
+        // Preferred path for mobile: request rear camera.
         await qr.start(
-          camId,
-          { fps: 10, qrbox: 250 },
-          (decodedText) => {
-            // decodedText será una URL tipo: http://localhost/status/ABC123
-            // extraemos folio del final
-            const parts = decodedText.split("/status/");
-            const folio = parts[1]?.trim();
-
-            if (folio) {
-              qr.stop().then(() => navigate(`/status/${folio}`));
-            }
-          }
+          { facingMode: { ideal: "environment" } },
+          SCAN_CONFIG,
+          onSuccess
         );
-      } catch (e) {
-        // si falla permisos de cámara, el navegador mostrará aviso
+      } catch {
+        try {
+          // Fallback: choose a camera whose label hints rear camera.
+          const cameras = await Html5Qrcode.getCameras();
+          const rearCameraId = pickRearCameraId(cameras);
+          const fallbackCameraId = rearCameraId || cameras?.[0]?.id;
+
+          if (!fallbackCameraId) return;
+          await qr.start(fallbackCameraId, SCAN_CONFIG, onSuccess);
+        } catch {
+          // Camera permissions or availability failure.
+        }
       }
     })();
 
@@ -44,7 +65,7 @@ export default function StatusScan() {
     <div className="scan-page">
       <div className="scan-box">
         <h2>Escanear QR</h2>
-        <p>Apunta la cámara al código QR del ticket.</p>
+        <p>Usa la camara trasera para leer el QR del ticket.</p>
         <div id="reader" className="scan-reader" />
         <button type="button" onClick={() => navigate("/status")}>
           Regresar

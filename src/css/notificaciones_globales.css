@@ -1,3 +1,38 @@
+.app-navbar {
+  min-height: 64px;
+  background: linear-gradient(
+    135deg,
+    var(--app-navbar-start, #1d4ed8) 0%,
+    var(--app-navbar-end, #1e3a8a) 100%
+  ) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.app-navbar .container-fluid {
+  min-height: 64px;
+}
+
+.app-navbar .navbar-brand {
+  color: #fff !important;
+}
+
+.app-navbar-links .nav-link {
+  color: rgba(255, 255, 255, 0.85) !important;
+  border-radius: 8px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.app-navbar-links .nav-link:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff !important;
+}
+
+.app-navbar-links .nav-link.active {
+  background: var(--app-accent-soft-2);
+  color: #fff !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+}
+
 .bell-btn {
   position: relative;
   width: 38px;
@@ -6,6 +41,58 @@
   align-items: center;
   justify-content: center;
   border: 0;
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.user-menu-trigger {
+  width: 38px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  padding: 0;
+  font-size: 17px;
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #fff !important;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.user-menu-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 230px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 16px 28px rgba(2, 6, 23, 0.16);
+  padding: 8px;
+  z-index: 1060;
+}
+
+.user-menu-name {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu-btn {
+  margin-bottom: 6px;
+}
+
+.user-menu-btn:last-child {
+  margin-bottom: 0;
 }
 
 .bell-icon {
@@ -122,7 +209,7 @@
 .global-toast {
   width: min(380px, calc(100vw - 28px));
   background: #fff;
-  border-left: 4px solid #0ea5e9;
+  border-left: 4px solid var(--app-accent, #0ea5e9);
   border-radius: 12px;
   box-shadow: 0 14px 30px rgba(2, 6, 23, 0.2);
   padding: 10px 12px;
@@ -162,7 +249,108 @@
 }
 
 @media (max-width: 991px) {
+  .app-navbar {
+    min-height: 60px;
+  }
+
+  .app-navbar .container-fluid {
+    min-height: 60px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .app-navbar .navbar-brand {
+    font-size: 1.05rem;
+  }
+
+  .app-navbar .navbar-collapse {
+    margin-top: 8px;
+    background: linear-gradient(
+      135deg,
+      var(--app-navbar-start, #1d4ed8) 0%,
+      var(--app-navbar-end, #1e3a8a) 100%
+    );
+    border-radius: 10px;
+    padding: 8px;
+  }
+
+  .app-navbar-links {
+    gap: 2px !important;
+  }
+
+  .app-navbar-links .nav-link {
+    padding: 8px 10px;
+    border-radius: 8px;
+  }
+
+  .navbar-right-tools {
+    width: 100%;
+    justify-content: flex-end;
+    padding-top: 6px;
+  }
+
   .notification-panel {
-    right: -64px;
+    right: 0;
+    width: min(360px, calc(100vw - 20px));
+  }
+
+  .user-menu-panel {
+    right: 0;
+    width: min(260px, calc(100vw - 20px));
+  }
+}
+
+body.ui-theme-dark .app-navbar {
+  border-bottom-color: rgba(148, 163, 184, 0.25);
+}
+
+body.ui-theme-dark .notification-panel,
+body.ui-theme-dark .user-menu-panel,
+body.ui-theme-dark .global-toast {
+  background: var(--app-surface) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border) !important;
+}
+
+body.ui-theme-dark .notification-panel-header {
+  border-bottom-color: var(--app-border);
+}
+
+body.ui-theme-dark .notification-panel-item {
+  border-bottom-color: var(--app-border);
+}
+
+body.ui-theme-dark .notification-panel-title,
+body.ui-theme-dark .global-toast-title,
+body.ui-theme-dark .user-menu-name {
+  color: var(--app-text) !important;
+}
+
+body.ui-theme-dark .notification-panel-detail,
+body.ui-theme-dark .global-toast-detail,
+body.ui-theme-dark .notification-panel-time,
+body.ui-theme-dark .notification-panel-empty {
+  color: var(--app-muted) !important;
+}
+
+@media (max-width: 560px) {
+  .app-navbar .navbar-brand {
+    font-size: 0.98rem;
+  }
+
+  .bell-btn,
+  .user-menu-trigger {
+    width: 36px;
+    height: 36px;
+  }
+
+  .notification-panel {
+    width: calc(100vw - 20px);
+    max-height: 62vh;
+  }
+
+  .global-toast-stack {
+    top: 68px;
+    right: 10px;
   }
 }
