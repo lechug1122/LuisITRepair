@@ -10,6 +10,7 @@
   --app-accent-soft-2: rgba(37, 99, 235, 0.28);
   --app-navbar-start: #1d4ed8;
   --app-navbar-end: #1e3a8a;
+  --navbar-height: 64px;
   --app-radius: 12px;
   --app-font-scale: 1;
   --app-ticket-font: "Courier New", "Liberation Mono", monospace;
@@ -48,6 +49,21 @@ body {
   color: var(--app-text);
 }
 
+body.body-service-gradient {
+  background: linear-gradient(135deg, #4f8fb8 0%, #8ab9b6 100%);
+}
+
+body.body-pos-workspace {
+  background: linear-gradient(180deg, #eef5fb 0%, #dceaf6 100%);
+}
+
+body.body-pos-workspace,
+body.body-pos-workspace #root,
+body.body-pos-workspace .app-shell,
+body.body-pos-workspace .app-shell-mobile {
+  background: linear-gradient(180deg, #eef5fb 0%, #dceaf6 100%);
+}
+
 html,
 body,
 #root {
@@ -56,6 +72,40 @@ body,
 
 #root {
   min-height: 100vh;
+}
+
+/* Mantiene las vistas principales alineadas con el alto real del navbar. */
+.app-shell,
+.app-shell-mobile {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell {
+  margin-top: var(--navbar-height);
+  min-height: calc(100dvh - var(--navbar-height));
+}
+
+.app-shell-workspace {
+  height: calc(100dvh - var(--navbar-height));
+  min-height: calc(100dvh - var(--navbar-height));
+  overflow: hidden;
+}
+
+.app-shell-mobile {
+  margin-top: 0;
+  min-height: 100dvh;
+}
+
+.app-shell-service-gradient {
+  background: linear-gradient(135deg, #4f8fb8 0%, #8ab9b6 100%);
+}
+
+.app-shell > *,
+.app-shell-mobile > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 body button,
@@ -79,6 +129,21 @@ body.ui-theme-dark {
   color-scheme: dark;
 }
 
+body.ui-theme-dark.body-service-gradient {
+  background: linear-gradient(135deg, #2f5878 0%, #4f7a97 52%, #6e95a8 100%);
+}
+
+body.ui-theme-dark.body-pos-workspace {
+  background: linear-gradient(180deg, #18293a 0%, #0f172a 100%);
+}
+
+body.ui-theme-dark.body-pos-workspace,
+body.ui-theme-dark.body-pos-workspace #root,
+body.ui-theme-dark.body-pos-workspace .app-shell,
+body.ui-theme-dark.body-pos-workspace .app-shell-mobile {
+  background: linear-gradient(180deg, #18293a 0%, #0f172a 100%);
+}
+
 body.ui-theme-light {
   --app-bg: #f3f6fb;
   --app-surface: #ffffff;
@@ -86,6 +151,16 @@ body.ui-theme-light {
   --app-muted: #64748b;
   --app-border: #d6e4ff;
   color-scheme: light;
+}
+
+body.ui-theme-dark .app-shell-service-gradient {
+  background: linear-gradient(135deg, #2f5878 0%, #4f7a97 52%, #6e95a8 100%);
+}
+
+@media (max-width: 991.98px) {
+  :root {
+    --navbar-height: 60px;
+  }
 }
 
 body.ui-theme-dark .cfg-card,
@@ -132,8 +207,8 @@ body.ui-theme-dark .detalle-page,
 body.ui-theme-dark .servicios-page,
 body.ui-theme-dark .hoja-page,
 body.ui-theme-dark .pos-container,
-body.ui-theme-dark .layout,
-body.ui-theme-dark .main-wrapper,
+body.ui-theme-dark .workspace-layout,
+body.ui-theme-dark .workspace-main,
 body.ui-theme-dark .cfg-main,
 body.ui-theme-dark .ticket-page,
 body.ui-theme-dark .page-container,
@@ -331,7 +406,7 @@ body.ui-theme-dark .btn-light {
 }
 
 body.ui-density-compact .cfg-main,
-body.ui-density-compact .main-wrapper {
+body.ui-density-compact .workspace-main {
   padding-top: 12px !important;
   padding-bottom: 12px !important;
 }
@@ -377,7 +452,7 @@ button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
-/* ============ CUSTOM NAVBAR ============ */
+
 nav.navbar-custom {
   position: fixed !important;
   top: 0 !important;
@@ -402,7 +477,6 @@ nav.navbar-custom {
   gap: 16px;
 }
 
-/* Brand */
 .navbar-brand {
   display: flex;
   align-items: center;
@@ -429,7 +503,6 @@ nav.navbar-custom {
   letter-spacing: 1px;
 }
 
-/* Hamburger Menu */
 .navbar-toggler-custom {
   background: none !important;
   border: none !important;
@@ -467,7 +540,6 @@ nav.navbar-custom {
   transform: rotate(-45deg) translate(8px, -8px);
 }
 
-/* Navigation Menu */
 .navbar-menu {
   display: flex;
   align-items: center;
@@ -518,7 +590,6 @@ nav.navbar-custom {
   display: none;
 }
 
-/* Right Section */
 .navbar-right {
   position: relative;
   display: flex;
@@ -580,7 +651,6 @@ nav.navbar-custom {
   font-weight: 700;
 }
 
-/* Notification Panel */
 .notification-panel {
   position: absolute;
   top: calc(100% + 10px);
@@ -654,7 +724,6 @@ nav.navbar-custom {
   color: #9ca3af;
 }
 
-/* Responsive */
 @media (max-width: 992px) {
   .navbar-toggler-custom {
     display: block;

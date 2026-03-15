@@ -1,10 +1,7 @@
 ﻿import { jsPDF } from "jspdf";
 import logoUrl from "../../assets/logo.png";
 import { getPdfFontFamily } from "./apariencia_config";
-
-const BUSINESS_NAME = import.meta.env.VITE_NEGOCIO_NOMBRE || "LuisITRepair";
-const BUSINESS_SUBTITLE =
-  import.meta.env.VITE_NEGOCIO_SUBTITULO || "Servicios tecnicos y punto de venta";
+import { obtenerEmpresa, readEmpresaConfigCache } from "./configure_empresa";
 
 const money = (value) =>
   new Intl.NumberFormat("es-MX", {
@@ -169,10 +166,14 @@ function sumDenominaciones(denominaciones = [], selector) {
 }
 
 export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
+  const empresaCfg = await obtenerEmpresa();
+  const empresaCache = readEmpresaConfigCache();
   const now = new Date();
   const corte = options?.corte || null;
-  const negocioNombre = options?.negocioNombre || BUSINESS_NAME;
-  const negocioSubtitulo = options?.negocioSubtitulo || BUSINESS_SUBTITLE;
+  const negocioNombre =
+    options?.negocioNombre || empresaCfg?.nombre || empresaCache.nombre;
+  const negocioSubtitulo =
+    options?.negocioSubtitulo || empresaCfg?.subtitulo || empresaCache.subtitulo;
   const fechaKeyObjetivo = String(options?.fechaKey || corte?.fechaKey || toDateKey(now));
   const fechaObjetivo = parseDateKey(fechaKeyObjetivo) || now;
 

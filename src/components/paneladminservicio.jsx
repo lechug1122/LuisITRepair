@@ -1,12 +1,8 @@
-﻿import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { actualizarServicioPorId } from "../js/services/servicios_firestore";
-import { STATUS, statusInfo } from "../js/utils/status_map";
+import { STATUS } from "../js/utils/status_map";
 import { imprimirEtiquetas } from "../components/print_label";
 
-/* ======================================================
-   1ï¸âƒ£ NORMALIZADOR (CLAVE DEL PROBLEMA)
-   Convierte "En reparaciÃ³n" -> "en_reparacion"
-====================================================== */
 function normalizarStatus(raw) {
   if (!raw) return "";
   return raw
@@ -18,54 +14,29 @@ function normalizarStatus(raw) {
     .trim();
 }
 
-/* ======================================================
-   2ï¸âƒ£ PASOS FIJOS DEL PROGRESS
-====================================================== */
 const PASOS_BASE = [
   { key: "pendiente", label: "Pendiente" },
   { key: "proceso", label: "En proceso" },
   { key: "final", label: "Finalizado" },
-  { key: "entregado", label: "Entregado" },
 ];
 
-/* ======================================================
-   3ï¸âƒ£ MAPA DE PROGRESO (YA NORMALIZADO)
-====================================================== */
+const ADMIN_STATUS_OPTIONS = STATUS.filter((item) => item.value !== "entregado");
+
 const PROGRESO_POR_STATUS = {
-  // ðŸ”¹ Inicio
   pendiente: { pct: 0, theme: "normal", finalLabel: "Finalizado" },
-
-  // ðŸ”¹ EN PROCESO (orden interno)
-  revision: { pct: 30, theme: "normal", finalLabel: "Finalizado" }, // en proceso (inicio)
-  espera_refaccion: {
-    pct: 40,
-    theme: "normal",
-    finalLabel: "Finalizado",
-  }, // alias status_map
-  en_espera_de_refaccion: {
-    pct: 40,
-    theme: "normal",
-    finalLabel: "Finalizado",
-  }, // un poco mÃ¡s adelante
-  reparacion: { pct: 55, theme: "normal", finalLabel: "Finalizado" }, // alias status_map
-  en_reparacion: { pct: 55, theme: "normal", finalLabel: "Finalizado" }, // mÃ¡s avanzado
+  revision: { pct: 30, theme: "normal", finalLabel: "Finalizado" },
+  espera_refaccion: { pct: 40, theme: "normal", finalLabel: "Finalizado" },
+  en_espera_de_refaccion: { pct: 40, theme: "normal", finalLabel: "Finalizado" },
+  reparacion: { pct: 55, theme: "normal", finalLabel: "Finalizado" },
+  en_reparacion: { pct: 55, theme: "normal", finalLabel: "Finalizado" },
   trabajando: { pct: 60, theme: "normal", finalLabel: "Finalizado" },
-
-  // ðŸ”¹ FINAL
-  listo: { pct: 85, theme: "normal", finalLabel: "Finalizado" },
-  finalizado: { pct: 85, theme: "normal", finalLabel: "Finalizado" },
-
-  // ðŸ”¹ TERMINADO
+  listo: { pct: 100, theme: "normal", finalLabel: "Finalizado" },
+  finalizado: { pct: 100, theme: "normal", finalLabel: "Finalizado" },
   entregado: { pct: 100, theme: "normal", finalLabel: "Finalizado" },
-
-  // ðŸ”¹ ESTADOS ESPECIALES
   cancelado: { pct: 100, theme: "danger", finalLabel: "Cancelado" },
   no_reparable: { pct: 100, theme: "muted", finalLabel: "No reparable" },
 };
 
-/* ======================================================
-   4ï¸âƒ£ OBTENER CONFIG DEL STATUS (CON FALLBACK)
-====================================================== */
 function getCfg(statusNormalized) {
   return (
     PROGRESO_POR_STATUS[statusNormalized] || {
@@ -76,25 +47,29 @@ function getCfg(statusNormalized) {
   );
 }
 
-/* ======================================================
-   5ï¸âƒ£ COMPONENTE PROGRESS BAR
-====================================================== */
+function normalizeAdminStatus(raw) {
+  const normalized = normalizarStatus(raw);
+  if (!normalized) return "pendiente";
+  if (normalized === "entregado" || normalized === "finalizado") return "listo";
+  if (normalized === "en_reparacion") return "reparacion";
+  if (normalized === "en_espera_de_refaccion") return "espera_refaccion";
+  return normalized;
+}
+
 function WizardProgress({ status }) {
   const normalizedStatus = normalizarStatus(status);
   const cfg = getCfg(normalizedStatus);
 
   const pasos = useMemo(() => {
-    const copy = PASOS_BASE.map((p) => ({ ...p }));
-    const idx = copy.findIndex((p) => p.key === "final");
+    const copy = PASOS_BASE.map((paso) => ({ ...paso }));
+    const idx = copy.findIndex((paso) => paso.key === "final");
     if (idx !== -1) copy[idx].label = cfg.finalLabel;
     return copy;
   }, [cfg.finalLabel]);
 
-  // 0â€“24: pendiente | 25â€“74: proceso | 75â€“99: final | 100: entregado
   let activeIndex = 0;
   if (cfg.pct >= 25) activeIndex = 1;
-  if (cfg.pct >= 75) activeIndex = 2;
-  if (cfg.pct >= 100) activeIndex = 3;
+  if (cfg.pct >= 85) activeIndex = 2;
 
   const themeClass =
     cfg.theme === "danger"
@@ -106,15 +81,15 @@ function WizardProgress({ status }) {
   return (
     <div
       className={`wizard-progress2 ${themeClass}`}
-      style={{ ["--pct"]: `${cfg.pct}%` }}
+      style={{ ["--pct"]: `${cfg.pct}%`, ["--steps"]: pasos.length }}
     >
       <div className="wizard-track" />
       <div className="wizard-fill" />
 
-      {pasos.map((paso, i) => {
+      {pasos.map((paso, index) => {
         let cls = "wizard-step";
-        if (i < activeIndex) cls += " complete";
-        if (i === activeIndex) cls += " in-progress";
+        if (index < activeIndex) cls += " complete";
+        if (index === activeIndex) cls += " in-progress";
 
         return (
           <div key={paso.key} className={cls}>
@@ -127,10 +102,6 @@ function WizardProgress({ status }) {
   );
 }
 
-/* ======================================================
-   6ï¸âƒ£ PANEL ADMIN SERVICIO
-   âœ… AÃ‘ADIDO: entregado (booleano)
-====================================================== */
 export default function PanelAdminServicio({
   servicio,
   onActualizado,
@@ -139,63 +110,25 @@ export default function PanelAdminServicio({
 }) {
   const [status, setStatus] = useState("pendiente");
   const [notaAdmin, setNotaAdmin] = useState("");
-  const [entregadoBool, setEntregadoBool] = useState(false); // âœ… NUEVO
   const [saving, setSaving] = useState(false);
 
-  const estadoActual = statusInfo(servicio?.status);
-  const estadoSeleccionado = statusInfo(status);
-
   useEffect(() => {
-    setStatus(servicio?.status || "pendiente");
+    setStatus(normalizeAdminStatus(servicio?.status));
     setNotaAdmin(servicio?.notaAdmin || "");
-    setEntregadoBool(!!servicio?.entregado); // âœ… NUEVO (lee de Firebase)
-  }, [servicio?.id]);
+  }, [servicio?.id, servicio?.status, servicio?.notaAdmin]);
 
   const handleGuardar = async () => {
     if (!servicio?.id) return;
-    if (!confirm("Â¿Guardar cambios del servicio?")) return;
+    if (!confirm("¿Guardar cambios del servicio?")) return;
 
     setSaving(true);
     try {
       const payload = {
         status,
         notaAdmin,
-        // âœ… Si NO estÃ¡s marcando entregado, entonces false
-        // (asÃ­ "Listo" no cuenta como entregado)
-        entregado: false,
       };
 
       const actualizado = await actualizarServicioPorId(servicio.id, payload);
-
-      setEntregadoBool(false);
-
-      // ðŸ”‘ MERGE para no perder datos
-      onActualizado?.({
-        ...servicio,
-        ...actualizado,
-        ...payload,
-        id: servicio.id,
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleEntregado = async () => {
-    if (!servicio?.id) return;
-    if (!confirm("Â¿Marcar como ENTREGADO?")) return;
-
-    setSaving(true);
-    try {
-      const payload = {
-        status: "Entregado",
-        entregado: true, // âœ… NUEVO
-      };
-
-      const actualizado = await actualizarServicioPorId(servicio.id, payload);
-
-      setStatus("Entregado");
-      setEntregadoBool(true);
 
       onActualizado?.({
         ...servicio,
@@ -217,35 +150,28 @@ export default function PanelAdminServicio({
           <h3>Actualizar el estado</h3>
         </div>
 
-        {/* âœ… PROGRESS BAR */}
         <WizardProgress status={status} />
-
-        {/* âœ… Indicador booleano (solo UI, opcional) */}
-        <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-          Entregado: <b>{entregadoBool ? "SÃ­" : "No"}</b>
-        </div>
 
         <label className="admin-label">Estado</label>
         <select
           className="admin-select"
           value={status}
           onChange={(e) => setStatus(e.target.value)}
-          disabled={saving || entregadoBool} // opcional: bloquear cambios si ya entregÃ³
+          disabled={saving}
         >
-          {STATUS.map((e, idx) => (
-            <option key={`status-${idx}`} value={e.value}>
-              {e.label}
+          {ADMIN_STATUS_OPTIONS.map((item, idx) => (
+            <option key={`status-${idx}`} value={item.value}>
+              {item.label}
             </option>
           ))}
         </select>
-
       </div>
 
       <div className="admin-section">
         <h3 className="admin-subtitle">Notas internas (solo admin)</h3>
         <textarea
           className="admin-notes"
-          placeholder="Ej: Cliente pidiÃ³ llamada antes, trajo cargador..."
+          placeholder="Ej: Cliente pidio llamada antes, trajo cargador..."
           value={notaAdmin}
           onChange={(e) => setNotaAdmin(e.target.value)}
           disabled={saving}
@@ -253,45 +179,44 @@ export default function PanelAdminServicio({
       </div>
 
       <div className="admin-actions">
-        <button className="admin-btn admin-btn-secondary" onClick={onImprimir}>
+        <button
+          type="button"
+          className="admin-btn admin-btn-secondary"
+          onClick={onImprimir}
+        >
           Imprimir ticket
         </button>
 
         <button
+          type="button"
           className="admin-btn admin-btn-secondary"
           onClick={() => {
-            if (confirm("Â¿Seguro que deseas regresar?")) onRegresar?.();
+            if (confirm("¿Seguro que deseas regresar?")) onRegresar?.();
           }}
         >
           Regresar a home
         </button>
+
         <button
+          type="button"
           className="admin-btn admin-btn-secondary"
           onClick={() => {
             const urlStatus = `${window.location.origin}/status/${encodeURIComponent(String(servicio?.folio || "").trim())}`;
-            imprimirEtiquetas(servicio, urlStatus, 1); // 12 etiquetas (ajusta)
+            imprimirEtiquetas(servicio, urlStatus, 1);
           }}
         >
           Imprimir etiqueta
         </button>
 
         <button
-          className="admin-btn"
+          type="button"
+          className="admin-btn admin-btn-primary"
           onClick={handleGuardar}
-          disabled={saving || entregadoBool} // opcional: no guardar cambios si ya entregó
+          disabled={saving}
         >
           {saving ? "Guardando..." : "Guardar cambios"}
-        </button>
-        <button
-          className="admin-btn admin-btn-danger"
-          onClick={handleEntregado}
-          disabled={saving || entregadoBool} // âœ… si ya estÃ¡ entregado, deshabilita
-        >
-          {entregadoBool ? "Ya entregado" : "Marcar como entregado"}
         </button>
       </div>
     </div>
   );
 }
-
-

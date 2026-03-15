@@ -2,7 +2,9 @@
   "projects": {
     "default": "hojaservice-3ab3d",
     "hojasservice-3a3d": "hojaservice-3ab3d",
-    "hojaservice-3ab3d": "hojaservice-3ab3d"
+    "hojaservice-3ab3d": "hojaservice-3ab3d",
+    "hajasservice": "hojaservice-3ab3d",
+    "hojaservice": "hojaservice-3ab3d"
   },
   "targets": {},
   "etags": {}

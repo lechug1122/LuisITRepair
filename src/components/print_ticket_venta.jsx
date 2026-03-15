@@ -4,6 +4,8 @@
   splitTicketLines,
 } from "../js/services/ticket_config";
 import { getTicketFontFamily } from "../js/services/apariencia_config";
+import { readEmpresaConfigCache } from "../js/services/configure_empresa";
+import { formatCurrency, readMonedaConfigCache } from "../js/services/moneda_config";
 
 const escapeHtml = (value) => {
   return String(value ?? "")
@@ -14,12 +16,7 @@ const escapeHtml = (value) => {
     .replaceAll("'", "&#39;");
 };
 
-const formatMoney = (value) => {
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-  }).format(Number(value || 0));
-};
+const formatMoney = (value) => formatCurrency(value, readMonedaConfigCache());
 
 const formatDate = (value) => {
   if (!value) return "-";
@@ -65,6 +62,7 @@ export function imprimirTicketVenta({
   }
 
   const cfg = buildTicketConfig(ticketConfig || readTicketConfigStorage());
+  const empresaCfg = readEmpresaConfigCache();
   const atendioTexto = String(atendio || "").trim() || "-";
   const ticketFontFamily = getTicketFontFamily();
 
@@ -73,7 +71,9 @@ export function imprimirTicketVenta({
       const cantidad = Number(p.cantidad || 0);
       const precio = Number(p.precioVenta || 0);
       const totalLinea = cantidad * precio;
-      const etiqueta = p.esServicio
+      const etiqueta = p.esCanje
+        ? "Canje por puntos"
+        : p.esServicio
         ? `Servicio ${escapeHtml(p.servicioFolio || "")}`
         : "Producto";
 
@@ -124,7 +124,8 @@ export function imprimirTicketVenta({
 
   const businessLines = [];
   if (cfg.showBusinessData) {
-    if (cfg.businessName.trim()) businessLines.push(cfg.businessName.trim());
+    const businessName = String(empresaCfg?.nombre || cfg.businessName || "").trim();
+    if (businessName) businessLines.push(businessName);
     if (cfg.businessAddress.trim()) businessLines.push(cfg.businessAddress.trim());
     if (cfg.businessPhone.trim()) businessLines.push(cfg.businessPhone.trim());
   }

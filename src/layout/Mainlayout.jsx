@@ -3,6 +3,11 @@ import { Outlet, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { suscribirNotificacionesGlobales } from "../js/services/realtime_notifications";
 import { autoCerrarCortesPendientes } from "../js/services/corte_caja_firestore";
+import {
+  isNotificationEnabled,
+  readNotificacionesConfigCache,
+} from "../js/services/configure_notificaciones";
+import { buildSystemUpdateNotification } from "../js/services/system_updates";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import usePresenciaEmpleado from "../hooks/usePresenciaEmpleado";
 import "../css/notificaciones_globales.css";
@@ -91,6 +96,19 @@ export default function MainLayout() {
     };
   }, [esAdmin, reproducirSonido]);
 
+  useEffect(() => {
+    if (!esAdmin) return;
+
+    const config = readNotificacionesConfigCache();
+    if (!isNotificationEnabled(config, "actualizaciones_sistema")) return;
+
+    const updateNoti = buildSystemUpdateNotification();
+    setNotificaciones((prev) => {
+      if (prev.some((item) => item.id === updateNoti.id)) return prev;
+      return [updateNoti, ...prev].slice(0, 50);
+    });
+  }, [esAdmin]);
+
   function togglePanelNotificaciones() {
     if (!esAdmin) return;
     setPanelAbierto((prev) => {
@@ -107,10 +125,20 @@ export default function MainLayout() {
   const notificacionesVisibles = esAdmin ? notificaciones : [];
   const noLeidasVisibles = esAdmin ? noLeidas : 0;
   const [ocultarChromePOSMovil, setOcultarChromePOSMovil] = useState(false);
+  const path = String(location.pathname || "").toLowerCase();
+  const usarShellWorkspace = ["/productos", "/reportes"].includes(path);
+  const shellClassName = [
+    "container-fluid",
+    "px-0",
+    ocultarChromePOSMovil ? "app-shell-mobile" : "app-shell",
+    usarShellWorkspace ? "app-shell-workspace" : "",
+    ["/", "/home", "/hoja_servicio", "/servicios"].includes(path) ? "app-shell-service-gradient" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   useEffect(() => {
     const syncPOSMobileChrome = () => {
-      const path = String(location.pathname || "").toLowerCase();
       const esPOS = path === "/pos";
       const isSmall = window.matchMedia("(max-width: 1024px)").matches;
       const isTouchLike = window.matchMedia("(pointer: coarse)").matches;
@@ -121,6 +149,12 @@ export default function MainLayout() {
     window.addEventListener("resize", syncPOSMobileChrome);
     return () => window.removeEventListener("resize", syncPOSMobileChrome);
   }, [location.pathname]);
+
+  useEffect(() => {
+    const usarFondoServicios = ["/", "/home", "/hoja_servicio", "/servicios"].includes(path);
+    document.body.classList.toggle("body-service-gradient", usarFondoServicios);
+    return () => document.body.classList.remove("body-service-gradient");
+  }, [path]);
 
   return (
     <>
@@ -133,7 +167,7 @@ export default function MainLayout() {
           mostrarNotificaciones={esAdmin}
         />
       )}
-      <main className="container-fluid px-0" style={{ marginTop: ocultarChromePOSMovil ? "0" : "64px" }}>
+      <main className={shellClassName}>
         <Outlet />
       </main>
 

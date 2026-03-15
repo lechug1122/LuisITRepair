@@ -4,10 +4,19 @@ import { collection, doc, getDoc, onSnapshot, updateDoc } from "firebase/firesto
 import { signOut } from "firebase/auth";
 import { auth, db } from "../initializer/firebase";
 import UpdateModal from "../components/UpdateModal";
+import useMonedaConfig from "../hooks/useMonedaConfig";
 import "../css/configuracion.css";
 
-const SYSTEM_VERSION = "1.5.0";
+const SYSTEM_VERSION = "1.7.0";
 const PRESENCE_TTL_MS = 2 * 60 * 1000;
+const SUPPORT_PHONE = "2731430147";
+const SUPPORT_EMAIL = "luisitrepairhuatusco@gmail.com";
+const SUPPORT_WHATSAPP_URL = `https://wa.me/52${SUPPORT_PHONE}?text=${encodeURIComponent(
+  "Hola, necesito ayuda con el sistema.",
+)}`;
+const SUPPORT_MAILTO_URL = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
+  "Soporte del sistema",
+)}&body=${encodeURIComponent("Hola, necesito ayuda con el sistema.")}`;
 
 function toMillis(value) {
   if (!value) return 0;
@@ -31,10 +40,11 @@ function logSnapshotError(scope, error) {
   );
 }
 
-function Configuracion() {
+export default function Configuracion() {
   const navigate = useNavigate();
   const location = useLocation();
   const enSubSeccion = location.pathname !== "/configuracion";
+  const { formatCurrency } = useMonedaConfig();
 
   const [showUpdate, setShowUpdate] = useState(false);
   const [presenciaAhora, setPresenciaAhora] = useState(Date.now());
@@ -51,15 +61,15 @@ function Configuracion() {
     { name: "Empleados", path: "/configuracion/empleados" },
     { name: "Roles y Permisos", path: "/configuracion/roles" },
     { name: "POS", path: "/configuracion/pos" },
-    { name: "Inventario", path: "/configuracion/inventario" },
+    // { name: "Inventario", path: "/configuracion/inventario" },
     { name: "Servicios", path: "/configuracion/servicios" },
     { name: "Metodos de Pago", path: "/configuracion/metodos" },
-    { name: "Impresoras", path: "/configuracion/impresoras" },
     { name: "Apariencia", path: "/configuracion/apariencia" },
     { name: "Notificaciones", path: "/configuracion/notificaciones" },
-    { name: "Respaldos", path: "/configuracion/respaldos" },
-    { name: "Seguridad", path: "/configuracion/seguridad" },
-    { name: "Integraciones", path: "/configuracion/integraciones" },
+    // { name: "Impresoras", path: "/configuracion/impresoras" },
+    // { name: "Respaldos", path: "/configuracion/respaldos" },
+    // { name: "Seguridad", path: "/configuracion/seguridad" },
+    // { name: "Integraciones", path: "/configuracion/integraciones" },
   ];
 
   useEffect(() => {
@@ -251,7 +261,7 @@ function Configuracion() {
                 className="cfg-back-btn"
                 onClick={() => navigate("/configuracion")}
               >
-                ← Volver a Configuracion
+                Volver a Configuracion
               </button>
             </div>
           )}
@@ -262,7 +272,7 @@ function Configuracion() {
           <div className="stats">
             <h4>Estadisticas</h4>
             <div className="stat">
-              Ventas <strong>${stats.ventas.toFixed(2)}</strong>
+              Ventas <strong>{formatCurrency(stats.ventas)}</strong>
             </div>
             <div className="stat">
               Servicios <strong>{stats.servicios}</strong>
@@ -281,6 +291,7 @@ function Configuracion() {
                   emp.lastActive,
                   presenciaAhora,
                 );
+
                 return (
                   <li key={emp.id}>
                     {emp.nombre}
@@ -311,10 +322,48 @@ function Configuracion() {
               Ver novedades
             </button>
           </div>
+
+          <div className="cfg-help-card">
+            <div className="cfg-help-head">
+              <h4>Ayuda</h4>
+              <span>Soporte directo</span>
+            </div>
+
+            <p className="cfg-help-text">
+              Si necesitas apoyo con configuracion, errores o cambios del sistema, puedes
+              contactarme por cualquiera de estos medios.
+            </p>
+
+            <div className="cfg-help-contact">
+              <span>Telefono</span>
+              <strong>{SUPPORT_PHONE}</strong>
+            </div>
+
+            <div className="cfg-help-contact">
+              <span>Correo</span>
+              <strong>{SUPPORT_EMAIL}</strong>
+            </div>
+
+            <div className="cfg-help-actions">
+              <a
+                className="cfg-help-btn cfg-help-btn-whatsapp"
+                href={SUPPORT_WHATSAPP_URL}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Abrir WhatsApp
+              </a>
+
+              <a
+                className="cfg-help-btn cfg-help-btn-mail"
+                href={SUPPORT_MAILTO_URL}
+              >
+                Enviar correo
+              </a>
+            </div>
+          </div>
         </aside>
       </div>
     </>
   );
 }
-
-export default Configuracion;

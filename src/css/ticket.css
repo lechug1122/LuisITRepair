@@ -204,22 +204,23 @@
 .admin-card{
   background: #ffffff;
   border-radius: 16px;
-  padding: 22px 22px;
+  padding: 24px;
   box-shadow: 0 10px 30px rgba(0,0,0,.08);
   border: 1px solid rgba(0,0,0,.06);
-  max-width: 980px;
+  max-width: 1080px;
 }
 
 /* títulos */
 .admin-title{
   margin: 0 0 14px 0;
-  font-size: 44px;
+  font-size: clamp(2.2rem, 4vw, 4rem);
   font-weight: 800;
+  line-height: 1.02;
 }
 
 .admin-subtitle{
   margin: 0 0 10px 0;
-  font-size: 32px;
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
   font-weight: 800;
 }
 
@@ -236,10 +237,13 @@
 .admin-select{
   width: 100%;
   height: 52px;
-  border-radius: 10px;
-  border: 1px solid rgba(0,0,0,.18);
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
   padding: 0 14px;
   outline: none;
+  font-size: 1rem;
+  color: #0f172a;
+  background: #fff;
 }
 
 .admin-save{
@@ -255,33 +259,62 @@
 .admin-notes{
   width: 100%;
   min-height: 140px;
-  border-radius: 12px;
-  border: 1px solid rgba(0,0,0,.18);
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
   padding: 14px;
   resize: vertical;
   outline: none;
+  font-size: 1rem;
+  color: #0f172a;
+  background: #fff;
 }
 
-/* ✅ Botones acomodados */
 .admin-actions{
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;      /* si se reduce pantalla, bajan */
-  justify-content: flex-start;
-  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 22px;
 }
 
 .admin-btn{
-  padding: 12px 18px;
+  min-height: 56px;
+  padding: 14px 18px;
   border-radius: 14px;
-  border: none;
+  border: 1px solid #cbd5e1;
   font-weight: 800;
+  font-size: 1rem;
+  line-height: 1.2;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
+  transition: transform .16s ease, box-shadow .2s ease, border-color .2s ease, background .2s ease;
 }
 
-/* variantes */
+.admin-btn:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+}
+
+.admin-btn:disabled{
+  opacity: .7;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .admin-btn-secondary{
-  opacity: .9;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.admin-btn-primary{
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  border-color: #2563eb;
 }
 
 .admin-btn-danger{
@@ -289,14 +322,6 @@
   color: #fff;
 }
 
-/* ✅ si quieres que los 3 queden “del mismo ancho” */
-@media (min-width: 900px){
-  .admin-actions .admin-btn{
-    flex: 1;            /* los 3 se reparten el ancho */
-    min-width: 220px;
-    text-align: center;
-  }
-}
 .progress-wrapper {
   display: flex;
   align-items: center;
@@ -411,7 +436,7 @@
   margin: 12px 0 18px;
   padding: 10px 0 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(var(--steps, 3), 1fr);
   align-items: start;
   --main: #0077cc;
   --base: #d0d0d0;
@@ -490,4 +515,14 @@
 
 .wizard-fill{
   transition: width .25s ease;
+}
+
+@media (max-width: 980px){
+  .admin-card{
+    padding: 20px;
+  }
+
+  .admin-actions{
+    grid-template-columns: 1fr;
+  }
 }

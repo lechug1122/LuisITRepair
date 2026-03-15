@@ -1,12 +1,6 @@
 import { useEffect } from "react";
 import "../css/modal_selector_servicio.css";
-
-const money = (value) =>
-  new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 2,
-  }).format(Number(value || 0));
+import useMonedaConfig from "../hooks/useMonedaConfig";
 
 export default function ModalSelectorServicio({
   mostrar,
@@ -15,6 +9,8 @@ export default function ModalSelectorServicio({
   onClose,
   onSeleccionar,
 }) {
+  const { formatCurrency } = useMonedaConfig();
+
   useEffect(() => {
     if (!mostrar) return undefined;
 
@@ -59,7 +55,7 @@ export default function ModalSelectorServicio({
               >
                 <div className="selector-servicio-row">
                   <span className="selector-servicio-folio">{servicio.folio || "-"}</span>
-                  <span className="selector-servicio-costo">{money(servicio.costo)}</span>
+                  <span className="selector-servicio-costo">{formatCurrency(servicio.costo)}</span>
                 </div>
                 <div className="selector-servicio-row selector-servicio-meta">
                   <span>{servicio.nombre || "Cliente sin nombre"}</span>

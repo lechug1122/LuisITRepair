@@ -6,10 +6,24 @@
     var(--app-navbar-end, #1e3a8a) 100%
   ) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .app-navbar .container-fluid {
   min-height: 64px;
+}
+
+@media (min-width: 992px) {
+  .app-navbar {
+    height: var(--navbar-height, 64px);
+  }
+
+  .app-navbar .container-fluid {
+    min-height: var(--navbar-height, 64px);
+    height: 100%;
+    align-items: center;
+  }
 }
 
 .app-navbar .navbar-brand {

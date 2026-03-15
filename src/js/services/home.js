@@ -1,5 +1,10 @@
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
+import {
+  isNotificationEnabled,
+  obtenerNotificacionesConfig,
+} from "./configure_notificaciones";
+import { buildSystemUpdateNotification } from "./system_updates";
 
 /* =========================
    Helpers
@@ -18,7 +23,7 @@ function normalizarStatus(raw) {
 
 function isFinalStatus(status) {
   const s = normalizarStatus(status);
-  return s === "entregado" || s === "cancelado" || s === "no_reparable";
+  return s === "entregado";
 }
 
 function toDate(value) {
@@ -29,71 +34,95 @@ function toDate(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function isSameMonth(date, month, year) {
+  return !!date && date.getMonth() === month && date.getFullYear() === year;
+}
+
+function calcularUtilidadProducto(producto) {
+  if (!producto || producto.esServicio || producto.esCanje) return 0;
+
+  const cantidad = Number(producto?.cantidad || 0);
+  const precioVenta = Number(producto?.precioVenta ?? producto?.precio ?? 0);
+  const precioCompra = Number(producto?.precioCompra ?? producto?.costoCompra ?? 0);
+
+  if (!Number.isFinite(cantidad) || cantidad <= 0) return 0;
+  if (!Number.isFinite(precioVenta) || !Number.isFinite(precioCompra)) return 0;
+
+  return Math.max(precioVenta - precioCompra, 0) * cantidad;
+}
+
+function calcularUtilidadVenta(venta) {
+  return (venta?.productos || []).reduce(
+    (acc, producto) => acc + calcularUtilidadProducto(producto),
+    0,
+  );
+}
+
 /* =========================
    KPIs Dashboard
 ========================= */
 export async function obtenerKPIsDashboard() {
-  const clientesSnap = await getDocs(collection(db, "clientes"));
-  const serviciosSnap = await getDocs(collection(db, "servicios"));
+  const [clientesSnap, serviciosSnap, ventasSnap] = await Promise.all([
+    getDocs(collection(db, "clientes")),
+    getDocs(collection(db, "servicios")),
+    getDocs(collection(db, "ventas")),
+  ]);
 
   const ahora = new Date();
   const diaActual = ahora.getDate();
   const mesActual = ahora.getMonth();
-  const añoActual = ahora.getFullYear();
+  const anioActual = ahora.getFullYear();
 
   const servicios = serviciosSnap.docs.map((d) => ({
     id: d.id,
     ...d.data(),
   }));
 
-  /* ===== Servicios activos ===== */
-  const activos = servicios.filter(
-    (s) => !isFinalStatus(s.status)
-  ).length;
+  const ventas = ventasSnap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  }));
 
-  /* ===== Entregados HOY ===== */
+  const activos = servicios.filter((s) => !isFinalStatus(s.status)).length;
+
   const entregadosHoy = servicios.filter((s) => {
     if (normalizarStatus(s.status) !== "entregado") return false;
 
-    const fechaRaw = s.fechaEntregado;
-    if (!fechaRaw || typeof fechaRaw.toDate !== "function") return false;
-
-    const fecha = fechaRaw.toDate();
+    const fecha = toDate(s.fechaEntregado);
+    if (!fecha) return false;
 
     return (
       fecha.getDate() === diaActual &&
       fecha.getMonth() === mesActual &&
-      fecha.getFullYear() === añoActual
+      fecha.getFullYear() === anioActual
     );
   }).length;
 
-  /* ===== Ingresos del MES ===== */
-  const ingresosMes = servicios.reduce((acc, s) => {
+  const ingresosServiciosMes = servicios.reduce((acc, s) => {
     if (normalizarStatus(s.status) !== "entregado") return acc;
 
-    const fechaRaw = s.fechaEntregado;
-    if (!fechaRaw || typeof fechaRaw.toDate !== "function") return acc;
+    const fecha = toDate(s.fechaEntregado);
+    if (!isSameMonth(fecha, mesActual, anioActual)) return acc;
 
-    const fecha = fechaRaw.toDate();
+    return acc + Number(s.costo || 0);
+  }, 0);
 
-    if (
-      fecha.getMonth() === mesActual &&
-      fecha.getFullYear() === añoActual
-    ) {
-      return acc + Number(s.costo || 0);
-    }
+  const utilidadProductosMes = ventas.reduce((acc, venta) => {
+    const fecha = toDate(venta.fecha);
+    if (!isSameMonth(fecha, mesActual, anioActual)) return acc;
 
-    return acc;
+    return acc + calcularUtilidadVenta(venta);
   }, 0);
 
   return {
-    ingresosMes,
+    ingresosMes: ingresosServiciosMes + utilidadProductosMes,
+    ingresosServiciosMes,
+    utilidadProductosMes,
     activos,
     entregados: entregadosHoy,
     totalClientes: clientesSnap.size,
   };
 }
-
 
 /* =========================
    Servicios Pendientes
@@ -126,6 +155,7 @@ export async function obtenerTodosServicios() {
    Notificaciones Home
 ========================= */
 export async function obtenerNotificacionesHome() {
+  const config = await obtenerNotificacionesConfig();
   const [serviciosSnap, productosSnap, ventasSnap] = await Promise.all([
     getDocs(collection(db, "servicios")),
     getDocs(collection(db, "productos")),
@@ -161,6 +191,17 @@ export async function obtenerNotificacionesHome() {
     const minimo = Number(p.stockMinimo || 0);
     return activo && minimo > 0 && stock <= minimo;
   });
+  const stockAgotado = productos.filter(
+    (p) => p.activo !== false && Number(p.stock || 0) <= 0,
+  );
+  const serviciosPorCobrar = activos.filter((s) => {
+    const st = normalizarStatus(s.status);
+    return (
+      ["listo", "finalizado", "cancelado", "no_reparable"].includes(st)
+      && Number(s.costo || 0) > 0
+      && !Boolean(s.cobradoEnPOS)
+    );
+  });
 
   const tarjetasSinRef = ventas.filter((v) => {
     const tipo = normalizarStatus(v.tipoPago);
@@ -176,7 +217,10 @@ export async function obtenerNotificacionesHome() {
 
   const notificaciones = [];
 
-  if (atrasados.length > 0) {
+  if (
+    atrasados.length > 0
+    && isNotificationEnabled(config, "servicios_atrasados")
+  ) {
     notificaciones.push({
       id: "servicios-atrasados",
       nivel: "alta",
@@ -187,7 +231,10 @@ export async function obtenerNotificacionesHome() {
     });
   }
 
-  if (listos.length > 0) {
+  if (
+    listos.length > 0
+    && isNotificationEnabled(config, "servicios_listos_entrega")
+  ) {
     notificaciones.push({
       id: "servicios-listos",
       nivel: "media",
@@ -198,7 +245,10 @@ export async function obtenerNotificacionesHome() {
     });
   }
 
-  if (sinFechaAprox.length > 0) {
+  if (
+    sinFechaAprox.length > 0
+    && isNotificationEnabled(config, "servicios_sin_fecha")
+  ) {
     notificaciones.push({
       id: "sin-fecha-aprox",
       nivel: "media",
@@ -209,7 +259,7 @@ export async function obtenerNotificacionesHome() {
     });
   }
 
-  if (stockBajo.length > 0) {
+  if (stockBajo.length > 0 && isNotificationEnabled(config, "stock_bajo")) {
     notificaciones.push({
       id: "stock-bajo",
       nivel: "alta",
@@ -220,7 +270,38 @@ export async function obtenerNotificacionesHome() {
     });
   }
 
-  if (tarjetasSinRef.length > 0) {
+  if (
+    stockAgotado.length > 0
+    && isNotificationEnabled(config, "stock_agotado")
+  ) {
+    notificaciones.push({
+      id: "stock-agotado",
+      nivel: "alta",
+      titulo: "Productos agotados",
+      detalle: `${stockAgotado.length} productos se quedaron sin existencia.`,
+      accion: "/productos",
+      accionTexto: "Ver agotados",
+    });
+  }
+
+  if (
+    serviciosPorCobrar.length > 0
+    && isNotificationEnabled(config, "servicios_por_cobrar")
+  ) {
+    notificaciones.push({
+      id: "servicios-por-cobrar",
+      nivel: "media",
+      titulo: "Servicios pendientes de cobro",
+      detalle: `${serviciosPorCobrar.length} servicios ya se pueden cobrar en POS.`,
+      accion: "/POS",
+      accionTexto: "Ir a POS",
+    });
+  }
+
+  if (
+    tarjetasSinRef.length > 0
+    && isNotificationEnabled(config, "tarjeta_sin_referencia")
+  ) {
     notificaciones.push({
       id: "tarjeta-sin-referencia",
       nivel: "baja",
@@ -229,6 +310,10 @@ export async function obtenerNotificacionesHome() {
       accion: "/reportes",
       accionTexto: "Auditar ventas",
     });
+  }
+
+  if (isNotificationEnabled(config, "actualizaciones_sistema")) {
+    notificaciones.push(buildSystemUpdateNotification());
   }
 
   return notificaciones;

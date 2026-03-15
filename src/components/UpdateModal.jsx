@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import "../css/updateModal.css";
 
 function UpdateModal({ onClose }) {
@@ -6,55 +6,85 @@ function UpdateModal({ onClose }) {
 
   const slides = [
     {
-      title: "Servicios y detalle movil",
+      title: "Servicios y retardo automatico",
       content: (
-        <ul>
-          <li>Vista responsive completa para telefono y tablet.</li>
-          <li>Topbar y navbar ajustados para no romper en pantallas chicas.</li>
-          <li>Se mejoro el flujo para abrir y editar servicios desde cliente.</li>
-          <li>Se corrigieron tamanos para conservar visual original en servicios.</li>
-        </ul>
+        <>
+          <p className="slide-lead">
+            El sistema ya calcula automaticamente el retardo segun la fecha de entrega y la
+            tolerancia configurada.
+          </p>
+          <ul>
+            <li>El recargo por guardado crece solo conforme pasan los dias.</li>
+            <li>Cancelado y No reparable siguen acumulando retardo mientras no esten entregados.</li>
+            <li>Tambien se detecta abandono por dias o por exceder el costo configurado.</li>
+            <li>El total del servicio y de la boleta ya incluye el recargo correcto.</li>
+          </ul>
+        </>
       ),
     },
     {
-      title: "Panel lateral y accesos",
+      title: "Detalle del servicio renovado",
       content: (
-        <ul>
-          <li>Pestanas flotantes de notas y calendario con comportamiento auto-oculto.</li>
-          <li>El panel lateral se asoma al acercar el puntero y no estorba contenido.</li>
-          <li>Se ajusto la separacion visual para reducir espacios sobrantes.</li>
-        </ul>
+        <>
+          <p className="slide-lead">
+            La vista de detalle ahora tiene mejor seguimiento visual y mas contexto operativo.
+          </p>
+          <ul>
+            <li>Se corrigio el progress bar para estados normales, cancelados y no reparables.</li>
+            <li>Aparece un modal rojo centrado cuando el equipo entra en retraso o abandono.</li>
+            <li>El modal incluye resumen del cargo, total actualizado y mensaje listo para WhatsApp.</li>
+            <li>Se mejoraron botones, acomodo general y consistencia visual del modulo.</li>
+          </ul>
+        </>
       ),
     },
     {
-      title: "POS y ticket",
+      title: "Hojas de servicio y configuracion",
       content: (
-        <ul>
-          <li>IVA se controla desde configuracion y se refleja en ticket y POS.</li>
-          <li>Se renombro el bloque a Configuracion de IVA para ubicarlo mas rapido.</li>
-          <li>Personalizacion de ticket con visualizador en tiempo real.</li>
-          <li>Se agrego campo de atendio para imprimir en ticket de venta.</li>
-        </ul>
+        <>
+          <p className="slide-lead">
+            La configuracion de servicios ahora controla mejor lo que se imprime, lo que se cobra y
+            lo que se avisa.
+          </p>
+          <ul>
+            <li>La hoja de servicio en PDF puede activarse o desactivarse sin perder retardo y abandono.</li>
+            <li>Los terminos y condiciones ya son editables desde configuracion.</li>
+            <li>La politica de retardo y abandono se guarda con el servicio y viaja al PDF cuando aplica.</li>
+            <li>Se agrego una opcion para activar o no avisos de abandono desde Notificaciones.</li>
+          </ul>
+        </>
       ),
     },
     {
-      title: "Productos e inventario",
+      title: "Dashboard y notificaciones",
       content: (
-        <ul>
-          <li>Modificar por codigo ahora usa modal propio, sin prompts nativos.</li>
-          <li>Validacion de codigo mas clara y edicion directa del producto encontrado.</li>
-          <li>Botones del modal corregidos para mantener proporciones consistentes.</li>
-        </ul>
+        <>
+          <p className="slide-lead">
+            El panel principal quedo mas claro para lectura rapida y mejor seguimiento del negocio.
+          </p>
+          <ul>
+            <li>Se mejoraron las graficas de barras y pastel con un estilo mas limpio.</li>
+            <li>Ingresos del mes ya consideran utilidad real de productos vendidos en POS.</li>
+            <li>Los cuadros y graficas muestran ayudas visuales y explicaciones mas claras.</li>
+            <li>Ahora tambien aparece una notificacion de actualizacion reciente dentro del sistema.</li>
+          </ul>
+        </>
       ),
     },
     {
-      title: "Hoja de servicio y control",
+      title: "POS, clientes y canjes",
       content: (
-        <ul>
-          <li>Terminos actualizados: despues de 30 dias de abandono no hay responsabilidad.</li>
-          <li>Mejor ajuste de textos para evitar montado en formato de impresion.</li>
-          <li>Correcciones de presencia para estado en linea de trabajadores.</li>
-        </ul>
+        <>
+          <p className="slide-lead">
+            Ventas y fidelidad ahora se sienten mas integradas dentro del flujo diario.
+          </p>
+          <ul>
+            <li>Los canjes por puntos ya pueden elegirse desde modal y entrar a la lista con total en $0.00.</li>
+            <li>La tabla del POS se reorganizo para verse mas limpia y entendible.</li>
+            <li>Cliente detalle muestra progreso tipo stepper y mejor acomodo responsive.</li>
+            <li>Se ajustaron varias vistas para que sidebar, paneles y fondos se vean mas parejos.</li>
+          </ul>
+        </>
       ),
     },
   ];
@@ -96,7 +126,10 @@ function UpdateModal({ onClose }) {
         </button>
 
         <div className="update-head">
-          <span className="update-chip">Novedades</span>
+          <div className="update-head-copy">
+            <span className="update-chip">Actualizacion reciente</span>
+            <span className="update-caption">Marzo 2026 · Cambios ya activos</span>
+          </div>
           <span className="update-step">
             {index + 1}/{totalSlides}
           </span>
@@ -131,7 +164,7 @@ function UpdateModal({ onClose }) {
           {slides.map((slide, i) => (
             <button
               type="button"
-              key={i}
+              key={slide.title}
               title={slide.title}
               className={i === index ? "dot active" : "dot"}
               onClick={() => setIndex(i)}

@@ -25,11 +25,16 @@
 
 .emp-btn {
   border: none;
-  border-radius: 10px;
+  border-radius: 14px;
   padding: 10px 14px;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.15;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
 .emp-btn:hover {
@@ -48,20 +53,23 @@
 
 .emp-btn-soft {
   color: #0f172a;
-  background: #e2e8f0;
+  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+  border: 1px solid #d7e0ea;
+  box-shadow: 0 6px 12px rgba(15, 23, 42, 0.06);
 }
 
 .emp-btn-soft:hover {
-  background: #cbd5e1;
+  background: linear-gradient(180deg, #ffffff 0%, #dbe4ee 100%);
 }
 
 .emp-btn-danger {
   color: #fff;
-  background: #ef4444;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  box-shadow: 0 10px 18px rgba(239, 68, 68, 0.22);
 }
 
 .emp-btn-danger:hover {
-  background: #dc2626;
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
 }
 
 .emp-btn-icon {
@@ -134,6 +142,34 @@
   color: #64748b;
 }
 
+.emp-super-admin-box {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid #dbe7f6;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
+.emp-super-admin-box input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+
+.emp-super-admin-box strong {
+  display: block;
+  color: #0f172a;
+}
+
+.emp-super-admin-box small {
+  display: block;
+  margin-top: 3px;
+  color: #475569;
+}
+
 .emp-permisos-summary {
   margin-top: 14px;
   display: flex;
@@ -198,13 +234,50 @@
 }
 
 .emp-actions-cell {
-  width: 220px;
+  width: 260px;
 }
 
 .emp-actions-group {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+}
+
+.emp-actions-group .emp-btn {
+  min-width: 112px;
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+
+.emp-btn-reset {
+  color: #1d4ed8;
+  background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid #bfdbfe;
+  box-shadow: 0 10px 18px rgba(59, 130, 246, 0.12);
+}
+
+.emp-btn-reset:hover {
+  background: linear-gradient(180deg, #ffffff 0%, #dbeafe 100%);
+}
+
+.emp-rol-stack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.emp-super-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #fef3c7;
+  color: #92400e;
 }
 
 .estado-activo,

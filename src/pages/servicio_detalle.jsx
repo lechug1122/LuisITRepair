@@ -1,6 +1,6 @@
 // ServicioDetalle.jsx
 // ✅ Fotos en Observaciones (varias)
-// ✅ Lock si status = entregado/cancelado/no_reparable (confirmación + ya no modifica)
+// ✅ Lock solo cuando ya fue entregado/cobrado en POS
 // ✅ Al generar boleta (PDF) guarda BD formaPago + items + total (y costo se actualiza)
 // ❌ Eliminado: Hoja de servicio (imagen) + todo lo relacionado
 
@@ -16,6 +16,8 @@ import {
 } from "../js/services/servicios_firestore";
 import { actualizarCliente } from "../js/services/clientes_firestore";
 import { obtenerProductos } from "../js/services/POS_firebase";
+import useServiciosConfig from "../hooks/useServiciosConfig";
+import useNotificacionesConfig from "../hooks/useNotificacionesConfig";
 import { STATUS } from "../js/utils/status_map";
 
 import "../css/servicio_detalle.css";
@@ -53,7 +55,7 @@ function normalizarStatus(raw) {
 
 function isFinalStatus(status) {
   const s = normalizarStatus(status);
-  return s === "entregado" || s === "cancelado" || s === "no_reparable";
+  return s === "entregado";
 }
 
 function statusValueFromRaw(raw) {
@@ -98,6 +100,35 @@ function money(n) {
     currency: "MXN",
     maximumFractionDigits: 2,
   }).format(val);
+}
+
+function parseDateOnly(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  let year = 0;
+  let month = 0;
+  let day = 0;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    [year, month, day] = raw.split("-").map(Number);
+  } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw)) {
+    [day, month, year] = raw.split("/").map(Number);
+  } else {
+    return null;
+  }
+
+  if (!year || !month || !day) return null;
+
+  const date = new Date(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function diffDays(from, to) {
+  if (!(from instanceof Date) || !(to instanceof Date)) return 0;
+  const ms = to.getTime() - from.getTime();
+  return Math.floor(ms / 86400000);
 }
 
 function uid() {
@@ -149,54 +180,60 @@ const PASOS_BASE = [
   { key: "entregado", label: "Entregado" },
 ];
 
-const PROGRESO_POR_STATUS = {
-  pendiente: { pct: 0, theme: "normal", finalLabel: "Finalizado" },
-  revision: { pct: 30, theme: "normal", finalLabel: "Finalizado" },
-  reparacion: { pct: 52, theme: "normal", finalLabel: "Finalizado" },
-  en_reparacion: { pct: 52, theme: "normal", finalLabel: "Finalizado" },
-  espera_refaccion: {
-    pct: 40,
+const WIZARD_VARIANTS = {
+  normal: {
     theme: "normal",
-    finalLabel: "Finalizado",
+    steps: PASOS_BASE,
+    activeByStatus: {
+      pendiente: 0,
+      revision: 1,
+      reparacion: 1,
+      en_reparacion: 1,
+      espera_refaccion: 1,
+      en_espera_de_refaccion: 1,
+      trabajando: 1,
+      listo: 2,
+      finalizado: 2,
+      entregado: 3,
+    },
   },
-  en_espera_de_refaccion: {
-    pct: 40,
-    theme: "normal",
-    finalLabel: "Finalizado",
+  danger: {
+    theme: "danger",
+    steps: [
+      { key: "pendiente", label: "Pendiente" },
+      { key: "proceso", label: "En proceso" },
+      { key: "cancelado", label: "Cancelado" },
+    ],
+    activeByStatus: {
+      cancelado: 2,
+    },
   },
-  trabajando: { pct: 60, theme: "normal", finalLabel: "Finalizado" },
-  listo: { pct: 85, theme: "normal", finalLabel: "Finalizado" },
-  finalizado: { pct: 85, theme: "normal", finalLabel: "Finalizado" },
-  entregado: { pct: 100, theme: "normal", finalLabel: "Finalizado" },
-  cancelado: { pct: 100, theme: "danger", finalLabel: "Cancelado" },
-  no_reparable: { pct: 100, theme: "muted", finalLabel: "No reparable" },
+  muted: {
+    theme: "muted",
+    steps: [
+      { key: "pendiente", label: "Pendiente" },
+      { key: "proceso", label: "En proceso" },
+      { key: "no_reparable", label: "No reparable" },
+    ],
+    activeByStatus: {
+      no_reparable: 2,
+    },
+  },
 };
 
-function getCfg(status) {
+function getWizardConfig(status) {
   const s = normalizarStatus(status);
-  return (
-    PROGRESO_POR_STATUS[s] || {
-      pct: 0,
-      theme: "normal",
-      finalLabel: "Finalizado",
-    }
-  );
+  if (s === "cancelado") return WIZARD_VARIANTS.danger;
+  if (s === "no_reparable") return WIZARD_VARIANTS.muted;
+  return WIZARD_VARIANTS.normal;
 }
 
 function WizardProgress({ status }) {
-  const cfg = getCfg(status);
-
-  const pasos = useMemo(() => {
-    const copy = PASOS_BASE.map((p) => ({ ...p }));
-    const idx = copy.findIndex((p) => p.key === "final");
-    if (idx !== -1) copy[idx].label = cfg.finalLabel;
-    return copy;
-  }, [cfg.finalLabel]);
-
-  let activeIndex = 0;
-  if (cfg.pct >= 25) activeIndex = 1;
-  if (cfg.pct >= 75) activeIndex = 2;
-  if (cfg.pct >= 100) activeIndex = 3;
+  const statusKey = normalizarStatus(status);
+  const cfg = getWizardConfig(statusKey);
+  const pasos = cfg.steps;
+  const activeIndex = cfg.activeByStatus[statusKey] ?? 0;
+  const fillPct = pasos.length > 1 ? (activeIndex / (pasos.length - 1)) * 100 : 0;
 
   const themeClass =
     cfg.theme === "danger"
@@ -208,7 +245,10 @@ function WizardProgress({ status }) {
   return (
     <div
       className={`wizard-progress2 ${themeClass}`}
-      style={{ ["--pct"]: `${cfg.pct}%` }}
+      style={{
+        ["--pct"]: `${fillPct}%`,
+        gridTemplateColumns: `repeat(${pasos.length}, minmax(0, 1fr))`,
+      }}
     >
       <div className="wizard-track" />
       <div className="wizard-fill" />
@@ -297,6 +337,54 @@ function buildEquipoEdit(servicio) {
   };
 }
 
+function getEquipoDetalles(servicio) {
+  if (!servicio) return [];
+
+  const detalles = [
+    { label: "Tipo", value: servicio.tipoDispositivo || "-" },
+    { label: "Marca", value: servicio.marca || "-" },
+    { label: "Modelo", value: servicio.modelo || "-" },
+    {
+      label: "No. de serie",
+      value: servicio.omitirNumeroSerie ? "No proporcionado" : servicio.numeroSerie || "-",
+    },
+  ];
+
+  const tipo = normalizarStatus(servicio?.tipoDispositivo);
+
+  if (tipo === "laptop" || tipo === "pc") {
+    detalles.push(
+      { label: "Procesador", value: servicio?.laptopPc?.procesador || "-" },
+      { label: "RAM", value: servicio?.laptopPc?.ram || "-" },
+      { label: "Disco", value: servicio?.laptopPc?.disco || "-" },
+      { label: "Estado de pantalla", value: servicio?.laptopPc?.estadoPantalla || "-" },
+      { label: "Estado de teclado", value: servicio?.laptopPc?.estadoTeclado || "-" },
+      { label: "Estado de mouse", value: servicio?.laptopPc?.estadoMouse || "-" },
+      { label: "Funciona", value: servicio?.laptopPc?.funciona || "-" },
+      { label: "Enciende", value: servicio?.laptopPc?.enciendeEquipo || "-" },
+      { label: "Contrasena del equipo", value: servicio?.laptopPc?.contrasenaEquipo || "-" },
+    );
+  }
+
+  if (tipo === "impresora") {
+    detalles.push(
+      { label: "Tipo de impresora", value: servicio?.impresora?.tipoImpresora || "-" },
+      { label: "Imprime", value: servicio?.impresora?.imprime || "-" },
+      { label: "Condiciones", value: servicio?.impresora?.condicionesImpresora || "-" },
+    );
+  }
+
+  if (tipo === "monitor") {
+    detalles.push(
+      { label: "Tamano", value: servicio?.monitor?.tamanoMonitor || "-" },
+      { label: "Colores correctos", value: servicio?.monitor?.colores || "-" },
+      { label: "Condiciones", value: servicio?.monitor?.condicionesMonitor || "-" },
+    );
+  }
+
+  return detalles;
+}
+
 function tieneCaracteristicasPendientes(servicio) {
   if (!servicio) return false;
   if (servicio.caracteristicasPendientes) return true;
@@ -324,6 +412,8 @@ export default function ServicioDetalle() {
   const { folio: folioParam } = useParams();
   const navigate = useNavigate();
   const { rol } = useAutorizacionActual();
+  const { precioRevision, politicaRetardo } = useServiciosConfig();
+  const { config: notificacionesConfig } = useNotificacionesConfig();
   const folio = useMemo(() => {
     const raw = String(folioParam || "").trim();
     if (!raw) return "";
@@ -343,6 +433,9 @@ export default function ServicioDetalle() {
 
   const [usarBoleta, setUsarBoleta] = useState(false);
   const [precioFinal, setPrecioFinal] = useState("");
+  const [hoyCursor, setHoyCursor] = useState(() => new Date());
+  const [mostrarModalRetardo, setMostrarModalRetardo] = useState(false);
+  const [abandonoDismissKey, setAbandonoDismissKey] = useState("");
 
   const [boletaFecha, setBoletaFecha] = useState("");
   const [boletaFormaPago, setBoletaFormaPago] = useState("");
@@ -376,10 +469,14 @@ export default function ServicioDetalle() {
   const notaAdminGuardadaRef = useRef("");
   const boletaScannerRef = useRef(null);
   const boletaScannerDedupeRef = useRef({ value: "", at: 0 });
+  const autoRetardoSyncRef = useRef(false);
   const [equipoEdit, setEquipoEdit] = useState(buildEquipoEdit(null));
   const [modalPaso, setModalPaso] = useState(0);
+  const statusPrevioRef = useRef("pendiente");
 
-  const locked = !!servicio?.locked || isFinalStatus(servicio?.status);
+  const locked =
+    normalizarStatus(servicio?.status) === "entregado" ||
+    (!!servicio?.locked && normalizarStatus(servicio?.lockedReason) === "entregado");
   const tipoEquipoEdit = normalizarStatus(
     equipoEdit?.tipoDispositivo || servicio?.tipoDispositivo,
   );
@@ -387,6 +484,7 @@ export default function ServicioDetalle() {
   const statusActual = statusValueFromRaw(status || servicio?.status || "pendiente");
   const statusMeta = STATUS.find((s) => s.value === statusActual);
   const statusLabel = statusMeta?.label || "Pendiente";
+  const equipoDetalles = useMemo(() => getEquipoDetalles(servicio), [servicio]);
 
   const pasosModal = useMemo(() => {
     const base = [{ key: "general", label: "Datos generales" }];
@@ -406,6 +504,14 @@ export default function ServicioDetalle() {
   useEffect(() => {
     if (modalPaso > pasosModal.length - 1) setModalPaso(0);
   }, [modalPaso, pasosModal.length]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setHoyCursor(new Date());
+    }, 60000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -438,7 +544,9 @@ export default function ServicioDetalle() {
           data?.costo !== null &&
           data?.costo !== ""
         ) {
-          setPrecioFinal(String(data.costo));
+          const cargoRetardoGuardado = Number(data?.retardo?.cargoTotal || 0);
+          const costoBase = Math.max(0, num(data.costo) - cargoRetardoGuardado);
+          setPrecioFinal(String(costoBase || num(data.costo)));
         }
 
         if (Array.isArray(data?.observacionesFotos))
@@ -534,6 +642,22 @@ export default function ServicioDetalle() {
     window.addEventListener("resize", sync);
     return () => window.removeEventListener("resize", sync);
   }, []);
+
+  useEffect(() => {
+    const statusNormalizado = normalizarStatus(status);
+    const statusPrevio = normalizarStatus(statusPrevioRef.current);
+
+    if (
+      statusNormalizado === "cancelado" &&
+      !usarBoleta &&
+      Number(precioRevision || 0) > 0 &&
+      (statusPrevio !== "cancelado" || !String(precioFinal || "").trim())
+    ) {
+      setPrecioFinal(String(precioRevision));
+    }
+
+    statusPrevioRef.current = status;
+  }, [precioFinal, precioRevision, status, usarBoleta]);
 
   const agregarProductoBoletaPorCodigo = (codigoRaw) => {
     const termino = String(codigoRaw || "").trim().toLowerCase();
@@ -823,6 +947,37 @@ export default function ServicioDetalle() {
     }
   };
 
+  const cerrarAdvertenciaAbandono = () => {
+    setMostrarModalRetardo(false);
+    setAbandonoDismissKey(avisoRetardoKey);
+  };
+
+  const notificarClienteAbandono = async () => {
+    try {
+      const tel = String(servicio?.telefono || "").replace(/\D/g, "");
+      if (!tel) {
+        alert("No hay telefono del cliente para WhatsApp.");
+        return;
+      }
+
+      if (servicio?.id) {
+        const actualizado = await actualizarServicioPorId(servicio.id, {
+          abandonoNotificadoAt: new Date().toISOString(),
+          abandonoNotificadoCargo: cargoRetardoTotal,
+          abandonoNotificadoDias: diasRetardoAplicados,
+        });
+        setServicio(actualizado);
+      }
+
+      const wa = `https://wa.me/52${tel}?text=${encodeURIComponent(mensajeAbandonoCliente)}`;
+      window.open(wa, "_blank", "noopener,noreferrer");
+      cerrarAdvertenciaAbandono();
+    } catch (error) {
+      console.error("No se pudo notificar abandono:", error);
+      alert("No se pudo abrir la notificacion de abandono.");
+    }
+  };
+
   const urlStatus = `${window.location.origin}/status/${encodeURIComponent(
     String(folio || ""),
   )}`;
@@ -836,12 +991,304 @@ export default function ServicioDetalle() {
     return `https://wa.me/52${tel}?text=${msg}`;
   }, [servicio?.telefono, servicio?.nombre, servicio?.folio, folio]);
 
+  const retardoConfig = useMemo(() => {
+    const snapshotRetardo = servicio?.hojaServicio?.retardo;
+
+    if (snapshotRetardo?.habilitado) {
+      return snapshotRetardo;
+    }
+
+    if (politicaRetardo?.habilitado) {
+      return politicaRetardo;
+    }
+
+    return snapshotRetardo || politicaRetardo || null;
+  }, [servicio?.hojaServicio?.retardo, politicaRetardo]);
+
   const totalBoleta = useMemo(() => {
     return items.reduce(
       (acc, r) => acc + num(r.pUnitario) * num(r.cantidad),
       0,
     );
   }, [items]);
+
+  const hoyNormalizado = useMemo(() => {
+    const next = new Date(hoyCursor);
+    next.setHours(0, 0, 0, 0);
+    return next;
+  }, [hoyCursor]);
+
+  const diasRetardoAutomaticos = useMemo(() => {
+    if (!retardoConfig?.habilitado) return 0;
+    const entrega = parseDateOnly(fechaAprox || servicio?.fechaAprox || "");
+    if (!entrega) return 0;
+    const atrasoBruto = diffDays(entrega, hoyNormalizado);
+    return Math.max(0, atrasoBruto - Number(retardoConfig?.diasTolerancia || 0));
+  }, [fechaAprox, hoyNormalizado, retardoConfig, servicio?.fechaAprox]);
+
+  const diasRetardoAplicados = useMemo(() => {
+    if (!retardoConfig?.habilitado) return 0;
+    return diasRetardoAutomaticos;
+  }, [diasRetardoAutomaticos, retardoConfig]);
+
+  const bloquesRetardo = useMemo(() => {
+    if (!retardoConfig?.habilitado || diasRetardoAplicados <= 0) return 0;
+    const cada = Math.max(1, Number(retardoConfig?.aplicarCadaDias || 1));
+    return Math.ceil(diasRetardoAplicados / cada);
+  }, [diasRetardoAplicados, retardoConfig]);
+
+  const cargoRetardoTotal = useMemo(() => {
+    if (!retardoConfig?.habilitado) return 0;
+    return bloquesRetardo * Number(retardoConfig?.cargo || 0);
+  }, [bloquesRetardo, retardoConfig]);
+
+  const baseEditable = useMemo(
+    () => (usarBoleta ? totalBoleta : num(precioFinal)),
+    [precioFinal, totalBoleta, usarBoleta],
+  );
+
+  const abandonoPorDias = useMemo(() => {
+    if (!retardoConfig?.habilitado) return false;
+    return diasRetardoAplicados >= Math.max(1, Number(retardoConfig?.abandonoDias || 0));
+  }, [diasRetardoAplicados, retardoConfig]);
+
+  const abandonoPorCosto = useMemo(() => {
+    if (!retardoConfig?.habilitado || !retardoConfig?.abandonoSiSuperaCosto) return false;
+    return cargoRetardoTotal > baseEditable && baseEditable > 0;
+  }, [baseEditable, cargoRetardoTotal, retardoConfig]);
+
+  const abandonoActivo = abandonoPorDias || abandonoPorCosto;
+  const notificacionAbandonoActiva = notificacionesConfig?.abandono_equipos !== false;
+
+  const totalConRetardo = useMemo(
+    () => baseEditable + cargoRetardoTotal,
+    [baseEditable, cargoRetardoTotal],
+  );
+
+  const statusPersistidoNormalizado = useMemo(
+    () => normalizarStatus(servicio?.status || ""),
+    [servicio?.status],
+  );
+
+  const subtotalBoletaPersistido = useMemo(() => {
+    return (servicio?.boleta?.items || []).reduce(
+      (acc, item) => acc + num(item?.pUnitario) * num(item?.cantidad),
+      0,
+    );
+  }, [servicio?.boleta?.items]);
+
+  const costoBasePersistido = useMemo(() => {
+    const costoActual = num(servicio?.costo);
+    const retardoActual = num(servicio?.retardo?.cargoTotal);
+    const sinRetardo = Math.max(0, costoActual - retardoActual);
+
+    if (sinRetardo > 0) return sinRetardo;
+    if (statusPersistidoNormalizado === "cancelado" && Number(precioRevision || 0) > 0) {
+      return Number(precioRevision || 0);
+    }
+
+    return 0;
+  }, [precioRevision, servicio?.costo, servicio?.retardo?.cargoTotal, statusPersistidoNormalizado]);
+
+  const diasRetardoPersistidos = useMemo(() => {
+    if (!retardoConfig?.habilitado) return 0;
+    const entrega = parseDateOnly(servicio?.fechaAprox || "");
+    if (!entrega) return 0;
+    const atrasoBruto = diffDays(entrega, hoyNormalizado);
+    return Math.max(0, atrasoBruto - Number(retardoConfig?.diasTolerancia || 0));
+  }, [hoyNormalizado, retardoConfig, servicio?.fechaAprox]);
+
+  const bloquesRetardoPersistidos = useMemo(() => {
+    if (!retardoConfig?.habilitado || diasRetardoPersistidos <= 0) return 0;
+    const cada = Math.max(1, Number(retardoConfig?.aplicarCadaDias || 1));
+    return Math.ceil(diasRetardoPersistidos / cada);
+  }, [diasRetardoPersistidos, retardoConfig]);
+
+  const cargoRetardoPersistido = useMemo(() => {
+    if (!retardoConfig?.habilitado || statusPersistidoNormalizado === "entregado") return 0;
+    return bloquesRetardoPersistidos * Number(retardoConfig?.cargo || 0);
+  }, [bloquesRetardoPersistidos, retardoConfig, statusPersistidoNormalizado]);
+
+  const abandonoPersistidoPorDias = useMemo(() => {
+    if (!retardoConfig?.habilitado) return false;
+    return diasRetardoPersistidos >= Math.max(1, Number(retardoConfig?.abandonoDias || 0));
+  }, [diasRetardoPersistidos, retardoConfig]);
+
+  const basePersistidaEditable = servicio?.boleta ? subtotalBoletaPersistido : costoBasePersistido;
+
+  const abandonoPersistidoPorCosto = useMemo(() => {
+    if (!retardoConfig?.habilitado || !retardoConfig?.abandonoSiSuperaCosto) return false;
+    return cargoRetardoPersistido > basePersistidaEditable && basePersistidaEditable > 0;
+  }, [basePersistidaEditable, cargoRetardoPersistido, retardoConfig]);
+
+  const abandonoPersistidoActivo = abandonoPersistidoPorDias || abandonoPersistidoPorCosto;
+  const diasRetardoModal = Math.max(
+    diasRetardoAplicados,
+    diasRetardoPersistidos,
+    Number(servicio?.retardo?.diasAplicados || 0),
+  );
+  const cargoRetardoModal = Math.max(
+    cargoRetardoTotal,
+    cargoRetardoPersistido,
+    num(servicio?.retardo?.cargoTotal),
+  );
+  const abandonoModalActivo =
+    abandonoActivo || abandonoPersistidoActivo || !!servicio?.retardo?.abandonoActivo;
+  const avisoRetardoKey = useMemo(
+    () => [
+      servicio?.id || folio || "sin_servicio",
+      diasRetardoModal,
+      Number(cargoRetardoModal || 0).toFixed(2),
+      abandonoModalActivo ? "abandono" : "retardo",
+    ].join("|"),
+    [abandonoModalActivo, cargoRetardoModal, diasRetardoModal, folio, servicio?.id],
+  );
+  const avisoRetardoVisible =
+    normalizarStatus(servicio?.status || "") !== "entregado" &&
+    (diasRetardoModal > 0 || cargoRetardoModal > 0) &&
+    abandonoDismissKey !== avisoRetardoKey;
+
+  const mensajeAbandonoCliente = useMemo(() => {
+    if (!servicio) return "";
+
+    const nombre = servicio?.nombre || "cliente";
+    const fol = servicio?.folio || folio || "#";
+    const tipo = servicio?.tipoDispositivo || "equipo";
+    const marca = servicio?.marca || "";
+    const modelo = servicio?.modelo || "";
+    if (abandonoActivo) {
+      const motivo = abandonoPorDias
+        ? "exceder los dias permitidos de resguardo"
+        : "superar el cargo permitido de resguardo";
+
+      return [
+        `Estimado(a) ${nombre},`,
+        "",
+        `Tu equipo con folio ${fol} (${tipo} ${marca} ${modelo}) se encuentra en abandono por ${motivo}.`,
+        `El cargo acumulado por guardado es de +${money(cargoRetardoTotal)} y el total actualizado del servicio es ${money(totalConRetardo)}.`,
+        "Favor de comunicarte con nosotros lo antes posible para coordinar la entrega o cierre del servicio.",
+      ].join("\n");
+    }
+
+    return [
+      `Estimado(a) ${nombre},`,
+      "",
+      `Tu equipo con folio ${fol} (${tipo} ${marca} ${modelo}) presenta retraso en resguardo.`,
+      `Ya se genero un cargo acumulado por guardado de +${money(cargoRetardoTotal)} y el total actualizado del servicio es ${money(totalConRetardo)}.`,
+      "Favor de comunicarte con nosotros lo antes posible para recoger tu equipo y evitar cargos mayores.",
+    ].join("\n");
+  }, [
+    abandonoActivo,
+    abandonoPorDias,
+    cargoRetardoTotal,
+    folio,
+    servicio,
+    totalConRetardo,
+  ]);
+
+  useEffect(() => {
+    if (
+      loading ||
+      !servicio?.id ||
+      locked ||
+      savingAll ||
+      autoRetardoSyncRef.current ||
+      statusPersistidoNormalizado === "entregado" ||
+      !retardoConfig?.habilitado
+    ) {
+      return;
+    }
+
+    const retardoActual = servicio?.retardo || {};
+    const costoActual = num(servicio?.costo);
+    const totalBoletaActual = num(servicio?.boleta?.total);
+    const cargoActual = num(retardoActual?.cargoTotal);
+    const diasActuales = Number(retardoActual?.diasAplicados || 0);
+    const abandonoActual = !!retardoActual?.abandonoActivo;
+    const costoEsperado = servicio?.boleta
+      ? subtotalBoletaPersistido + cargoRetardoPersistido
+      : costoBasePersistido > 0
+        ? costoBasePersistido + cargoRetardoPersistido
+        : costoActual;
+
+    const boletaDesfasada = !!servicio?.boleta &&
+      Math.abs(totalBoletaActual - (subtotalBoletaPersistido + cargoRetardoPersistido)) > 0.009;
+    const costoDesfasado = Math.abs(costoActual - costoEsperado) > 0.009;
+    const retardoDesfasado =
+      cargoActual !== cargoRetardoPersistido ||
+      diasActuales !== diasRetardoPersistidos ||
+      abandonoActual !== abandonoPersistidoActivo;
+
+    if (!boletaDesfasada && !costoDesfasado && !retardoDesfasado) {
+      return;
+    }
+
+    const patch = {
+      costo: costoEsperado,
+      retardo: {
+        habilitado: true,
+        diasTolerancia: Number(retardoConfig?.diasTolerancia || 0),
+        diasAutomaticos: diasRetardoPersistidos,
+        diasAplicados: diasRetardoPersistidos,
+        cargoUnitario: Number(retardoConfig?.cargo || 0),
+        aplicarCadaDias: Math.max(1, Number(retardoConfig?.aplicarCadaDias || 1)),
+        cargoTotal: cargoRetardoPersistido,
+        abandonoDias: Math.max(1, Number(retardoConfig?.abandonoDias || 0)),
+        abandonoSiSuperaCosto: !!retardoConfig?.abandonoSiSuperaCosto,
+        abandonoActivo: abandonoPersistidoActivo,
+        abandonoMotivo: abandonoPersistidoPorDias
+          ? "dias"
+          : abandonoPersistidoPorCosto
+            ? "costo"
+            : "",
+      },
+      ...(servicio?.boleta
+        ? {
+            boleta: {
+              ...servicio.boleta,
+              items: limpiarBoletaItems(servicio.boleta.items || []),
+              total: subtotalBoletaPersistido + cargoRetardoPersistido,
+            },
+          }
+        : {}),
+    };
+
+    autoRetardoSyncRef.current = true;
+
+    actualizarServicioPorId(servicio.id, patch)
+      .then((actualizado) => {
+        setServicio(actualizado);
+      })
+      .catch((error) => {
+        console.error("No se pudo sincronizar retardo automatico:", error);
+      })
+      .finally(() => {
+        autoRetardoSyncRef.current = false;
+      });
+  }, [
+    abandonoPersistidoActivo,
+    abandonoPersistidoPorCosto,
+    abandonoPersistidoPorDias,
+    cargoRetardoPersistido,
+    costoBasePersistido,
+    loading,
+    locked,
+    retardoConfig,
+    savingAll,
+    servicio,
+    statusPersistidoNormalizado,
+    subtotalBoletaPersistido,
+    diasRetardoPersistidos,
+  ]);
+
+  useEffect(() => {
+    if (avisoRetardoVisible) {
+      setMostrarModalRetardo(true);
+      return;
+    }
+
+    setMostrarModalRetardo(false);
+  }, [avisoRetardoVisible]);
 
   const itemsValidos = useMemo(() => {
     return (items || []).some((it) => (it?.descripcion || "").trim() !== "");
@@ -941,11 +1388,19 @@ const guardarTodo = async ({ silent = false } = {}) => {
     if (!ok) return false;
   }
 
+  const statusNormalizado = normalizarStatus(nextStatus);
+  const costoRevision = Number(precioRevision || 0);
+  const aplicarRetardo =
+    !!retardoConfig?.habilitado &&
+    statusNormalizado !== "entregado";
+  const cargoRetardoGuardar = aplicarRetardo ? cargoRetardoTotal : 0;
   const costoGuardar = usarBoleta
-    ? costoConBoleta
-    : costoSinBoleta > 0
-    ? costoSinBoleta
-    : servicio?.costo || "";
+    ? costoConBoleta + cargoRetardoGuardar
+    : statusNormalizado === "cancelado" && costoRevision > 0
+      ? costoRevision + cargoRetardoGuardar
+      : costoSinBoleta > 0
+        ? costoSinBoleta + cargoRetardoGuardar
+        : servicio?.costo || "";
 
   const patch = {
     status: nextStatus,
@@ -955,6 +1410,33 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
     precioDespues: false,
     costo: costoGuardar,
+    retardo: aplicarRetardo
+      ? {
+          habilitado: true,
+          diasTolerancia: Number(retardoConfig?.diasTolerancia || 0),
+          diasAutomaticos: diasRetardoAutomaticos,
+          diasAplicados: diasRetardoAplicados,
+          cargoUnitario: Number(retardoConfig?.cargo || 0),
+          aplicarCadaDias: Math.max(1, Number(retardoConfig?.aplicarCadaDias || 1)),
+          cargoTotal: cargoRetardoGuardar,
+          abandonoDias: Math.max(1, Number(retardoConfig?.abandonoDias || 0)),
+          abandonoSiSuperaCosto: !!retardoConfig?.abandonoSiSuperaCosto,
+          abandonoActivo,
+          abandonoMotivo: abandonoPorDias ? "dias" : abandonoPorCosto ? "costo" : "",
+        }
+      : {
+          habilitado: false,
+          diasTolerancia: Number(retardoConfig?.diasTolerancia || 0),
+          diasAutomaticos: 0,
+          diasAplicados: 0,
+          cargoUnitario: Number(retardoConfig?.cargo || 0),
+          aplicarCadaDias: Math.max(1, Number(retardoConfig?.aplicarCadaDias || 1)),
+          cargoTotal: 0,
+          abandonoDias: Math.max(1, Number(retardoConfig?.abandonoDias || 0)),
+          abandonoSiSuperaCosto: !!retardoConfig?.abandonoSiSuperaCosto,
+          abandonoActivo: false,
+          abandonoMotivo: "",
+        },
 
     observacionesFotos: obsFotos || [],
 
@@ -965,7 +1447,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
             formaPago: boletaFormaPago || "",
             notas: boletaNotas || "",
             items: limpiarBoletaItems(items),
-            total: costoConBoleta,
+            total: costoConBoleta + cargoRetardoGuardar,
           },
         }
       : { boleta: null }),
@@ -988,8 +1470,11 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
     setPrecioFinal(
       String(
-        actualizado?.costo ??
-          (usarBoleta ? costoConBoleta : costoSinBoleta)
+        Math.max(
+          0,
+          Number(actualizado?.costo ?? (usarBoleta ? costoConBoleta : costoSinBoleta)) -
+            Number(actualizado?.retardo?.cargoTotal || 0),
+        )
       )
     );
 
@@ -1172,15 +1657,15 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
           <div className="detalle-title">
             <h2>Detalle del Servicio</h2>
-            <small>
+            <small className="detalle-meta">
               Folio: <b>{servicio.folio}</b> · Estado:{" "}
               <span
-                className={`badge badge-${normalizarStatus(statusActual)}`}
+                className={`servicio-status-badge servicio-status-badge-${normalizarStatus(statusActual)}`}
               >
                 {statusLabel}
               </span>
               {locked && (
-                <span style={{ marginLeft: 10, fontWeight: 900 }}>
+                <span className="detalle-locked-flag">
                   🔒 CERRADO
                 </span>
               )}
@@ -1245,6 +1730,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
               </button>
             </div>
           </div>
+
         </div>
 
         {/* Grid */}
@@ -1287,25 +1773,15 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
           <div className="box">
             <h3>Equipo</h3>
-            <p>
-              <b>Tipo:</b> {servicio.tipoDispositivo || "-"}
-            </p>
-            <p>
-              <b>Marca:</b> {servicio.marca || "-"}
-            </p>
-            <p>
-              <b>Modelo:</b> {servicio.modelo || "-"}
-            </p>
-            <p>
-              <b>No. de serie:</b>{" "}
-              {servicio.omitirNumeroSerie
-                ? "No proporcionado"
-                : servicio.numeroSerie || "-"}
-            </p>
-            <p>
-              <b>Contrasena del equipo:</b>{" "}
-              {servicio?.laptopPc?.contrasenaEquipo || "-"}
-            </p>
+            <div className="equipo-detalles-grid">
+              {equipoDetalles.map((item) => (
+                <div key={`${item.label}-${item.value}`} className="equipo-detail-item">
+                  <small>{item.label}</small>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+
           </div>
 
           <div className="box">
@@ -1403,8 +1879,58 @@ const guardarTodo = async ({ silent = false } = {}) => {
               <small style={{ opacity: 0.75 }}>
                 Si NO usas boleta, este precio se guarda como <b>costo</b>.
               </small>
+              {retardoConfig?.habilitado ? (
+                <small className="boleta-retardo-inline">
+                  Base: <b>{money(num(precioFinal))}</b> + recargo por retardo:{" "}
+                  <b>{money(cargoRetardoTotal)}</b> = total a guardar:{" "}
+                  <b>{money(totalConRetardo)}</b>
+                </small>
+              ) : null}
             </div>
           )}
+
+          <div className="boleta-retardo-card">
+            <div className="boleta-retardo-head">
+              <h4>Retardo y abandono</h4>
+              <span className={`boleta-retardo-pill${retardoConfig?.habilitado ? " on" : " off"}`}>
+                {retardoConfig?.habilitado ? "Activo" : "Deshabilitado"}
+              </span>
+            </div>
+
+            {retardoConfig?.habilitado ? (
+              <>
+                <div className="boleta-retardo-grid">
+                  <div className="boleta-retardo-auto">
+                    <small>Dias de retardo automaticos</small>
+                    <strong>{diasRetardoAplicados} dia(s)</strong>
+                    <span>
+                      Se calculan solos con base en la fecha de entrega, la tolerancia y el dia
+                      actual.
+                    </span>
+                  </div>
+
+                  <div className="boleta-retardo-preview">
+                    <span>Tolerancia: {Number(retardoConfig?.diasTolerancia || 0)} dia(s)</span>
+                    <span>
+                      Cargo: {money(retardoConfig?.cargo || 0)} cada{" "}
+                      {Math.max(1, Number(retardoConfig?.aplicarCadaDias || 1))} dia(s)
+                    </span>
+                    <span>Retardo aplicado: {diasRetardoAplicados} dia(s)</span>
+                    <span>Recargo total: {money(cargoRetardoTotal)}</span>
+                  </div>
+                </div>
+
+                <div className="boleta-retardo-summary">
+                  <strong>Total a guardar:</strong> {money(totalConRetardo)}
+                </div>
+
+              </>
+            ) : (
+              <small className="boleta-retardo-disabled">
+                La politica de retardo esta deshabilitada en configuracion.
+              </small>
+            )}
+          </div>
 
           {usarBoleta && (
             <div>
@@ -1444,7 +1970,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
                     <b>Total</b>
                   </label>
                   <div className="boleta-total-label">
-                    {money(totalBoleta)}
+                    {money(totalConRetardo)}
                   </div>
                 </div>
               </div>
@@ -1623,7 +2149,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
                           fontWeight: 900,
                         }}
                       >
-                        TOTAL:
+                        SUBTOTAL:
                       </td>
                       <td
                         style={{
@@ -1633,6 +2159,54 @@ const guardarTodo = async ({ silent = false } = {}) => {
                         }}
                       >
                         {money(totalBoleta)}
+                      </td>
+                      <td />
+                    </tr>
+                    {cargoRetardoTotal > 0 ? (
+                      <tr>
+                        <td
+                          colSpan={4}
+                          style={{
+                            padding: 10,
+                            textAlign: "right",
+                            fontWeight: 800,
+                            color: "#1d4ed8",
+                          }}
+                        >
+                          RETARDO:
+                        </td>
+                        <td
+                          style={{
+                            padding: 10,
+                            textAlign: "right",
+                            fontWeight: 800,
+                            color: "#1d4ed8",
+                          }}
+                        >
+                          {money(cargoRetardoTotal)}
+                        </td>
+                        <td />
+                      </tr>
+                    ) : null}
+                    <tr>
+                      <td
+                        colSpan={4}
+                        style={{
+                          padding: 10,
+                          textAlign: "right",
+                          fontWeight: 900,
+                        }}
+                      >
+                        TOTAL FINAL:
+                      </td>
+                      <td
+                        style={{
+                          padding: 10,
+                          textAlign: "right",
+                          fontWeight: 900,
+                        }}
+                      >
+                        {money(totalConRetardo)}
                       </td>
                       <td />
                     </tr>
@@ -1733,6 +2307,77 @@ const guardarTodo = async ({ silent = false } = {}) => {
           </aside>
         </>
       )}
+
+      {mostrarModalRetardo ? (
+        <div className="abandono-modal-overlay no-print">
+          <div className={`abandono-modal${abandonoModalActivo ? " is-abandono" : " is-retraso"}`}>
+            <div className="abandono-modal-head">
+              <div className="abandono-modal-icon-wrap">
+                <div className="abandono-modal-icon" aria-hidden="true">!</div>
+              </div>
+
+              <div className="abandono-modal-copy">
+                <span className="abandono-modal-kicker">
+                  {abandonoModalActivo ? "Alerta critica" : "Seguimiento automatico"}
+                </span>
+                <h3>{abandonoModalActivo ? "Equipo en abandono" : "Equipo con retraso"}</h3>
+                <p>
+                  {abandonoModalActivo
+                    ? "El equipo ya excedio la politica configurada de resguardo y requiere seguimiento inmediato."
+                    : `Ya paso la tolerancia configurada y el equipo acumula ${diasRetardoModal} dia(s) de retraso.`}
+                </p>
+              </div>
+
+              <div className={`abandono-modal-badge${abandonoModalActivo ? " danger" : ""}`}>
+                {abandonoModalActivo ? "Abandono" : "Retraso"}
+              </div>
+            </div>
+
+            <div className="abandono-modal-summary">
+              <div className="abandono-modal-stat">
+                <span>Folio</span>
+                <strong>{servicio?.folio || folio || "-"}</strong>
+              </div>
+              <div className="abandono-modal-stat">
+                <span>Dias de retraso</span>
+                <strong>{diasRetardoModal} dia(s)</strong>
+              </div>
+              <div className="abandono-modal-stat">
+                <span>Recargo acumulado</span>
+                <strong>{money(cargoRetardoModal)}</strong>
+              </div>
+              <div className="abandono-modal-stat">
+                <span>Total actualizado</span>
+                <strong>{money(totalConRetardo)}</strong>
+              </div>
+            </div>
+
+            <div className="abandono-modal-message">
+              <strong>Mensaje sugerido al cliente</strong>
+              <p>{mensajeAbandonoCliente}</p>
+            </div>
+
+            <div className="abandono-modal-actions">
+              {notificacionAbandonoActiva ? (
+                <button
+                  type="button"
+                  className="btn btn-wa abandono-modal-btn-primary"
+                  onClick={notificarClienteAbandono}
+                >
+                  Notificar al cliente
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-light abandono-modal-btn-secondary"
+                onClick={cerrarAdvertenciaAbandono}
+              >
+                Cerrar advertencia
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {mostrarScannerBoleta && (
         <div className="boleta-scanner-overlay no-print">

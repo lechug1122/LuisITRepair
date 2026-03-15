@@ -2,7 +2,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
 
 /* =========================
-   Helper
+   Helpers
 ========================= */
 function normalizarStatus(raw) {
   if (!raw) return "";
@@ -16,45 +16,92 @@ function normalizarStatus(raw) {
     .trim();
 }
 
+function toDate(value) {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") return value.toDate();
+  if (typeof value?.seconds === "number") return new Date(value.seconds * 1000);
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isSameMonth(date, month, year) {
+  return !!date && date.getMonth() === month && date.getFullYear() === year;
+}
+
+function calcularUtilidadProducto(producto) {
+  if (!producto || producto.esServicio || producto.esCanje) return 0;
+
+  const cantidad = Number(producto?.cantidad || 0);
+  const precioVenta = Number(producto?.precioVenta ?? producto?.precio ?? 0);
+  const precioCompra = Number(producto?.precioCompra ?? producto?.costoCompra ?? 0);
+
+  if (!Number.isFinite(cantidad) || cantidad <= 0) return 0;
+  if (!Number.isFinite(precioVenta) || !Number.isFinite(precioCompra)) return 0;
+
+  return Math.max(precioVenta - precioCompra, 0) * cantidad;
+}
+
+function calcularUtilidadVenta(venta) {
+  return (venta?.productos || []).reduce(
+    (acc, producto) => acc + calcularUtilidadProducto(producto),
+    0,
+  );
+}
+
 /* =========================
-   📊 Barras - Ingresos por día
+   Barras - Ingresos por dia
 ========================= */
 export async function obtenerIngresosPorDia() {
-  const serviciosSnap = await getDocs(collection(db, "servicios"));
+  const [serviciosSnap, ventasSnap] = await Promise.all([
+    getDocs(collection(db, "servicios")),
+    getDocs(collection(db, "ventas")),
+  ]);
 
   const ahora = new Date();
   const mesActual = ahora.getMonth();
-  const añoActual = ahora.getFullYear();
-  const diasDelMes = new Date(añoActual, mesActual + 1, 0).getDate();
+  const anioActual = ahora.getFullYear();
+  const diasDelMes = new Date(anioActual, mesActual + 1, 0).getDate();
 
-  const servicios = serviciosSnap.docs.map(d => d.data());
-
+  const servicios = serviciosSnap.docs.map((d) => d.data());
+  const ventas = ventasSnap.docs.map((d) => d.data());
   const ingresosPorDia = {};
 
-  servicios.forEach(s => {
-    if (normalizarStatus(s.status) !== "entregado") return;
-    if (!s.fechaEntregado) return;
+  servicios.forEach((servicio) => {
+    if (normalizarStatus(servicio.status) !== "entregado") return;
 
-    const fecha = s.fechaEntregado.toDate();
+    const fecha = toDate(servicio.fechaEntregado);
+    if (!isSameMonth(fecha, mesActual, anioActual)) return;
 
-    if (
-      fecha.getMonth() === mesActual &&
-      fecha.getFullYear() === añoActual
-    ) {
-      const dia = fecha.getDate();
-      const monto = Number(s.costo || 0);
+    const dia = fecha.getDate();
+    ingresosPorDia[dia] = {
+      servicios: (ingresosPorDia[dia]?.servicios || 0) + Number(servicio.costo || 0),
+      utilidadPos: ingresosPorDia[dia]?.utilidadPos || 0,
+    };
+  });
 
-      ingresosPorDia[dia] =
-        (ingresosPorDia[dia] || 0) + monto;
-    }
+  ventas.forEach((venta) => {
+    const fecha = toDate(venta.fecha);
+    if (!isSameMonth(fecha, mesActual, anioActual)) return;
+
+    const dia = fecha.getDate();
+    ingresosPorDia[dia] = {
+      servicios: ingresosPorDia[dia]?.servicios || 0,
+      utilidadPos:
+        (ingresosPorDia[dia]?.utilidadPos || 0) + calcularUtilidadVenta(venta),
+    };
   });
 
   const resultado = [];
 
-  for (let i = 1; i <= diasDelMes; i++) {
+  for (let i = 1; i <= diasDelMes; i += 1) {
+    const serviciosDia = Number(ingresosPorDia[i]?.servicios || 0);
+    const utilidadPosDia = Number(ingresosPorDia[i]?.utilidadPos || 0);
+
     resultado.push({
-      dia: `Día ${i}`,
-      total: ingresosPorDia[i] || 0
+      dia: `Dia ${i}`,
+      servicios: serviciosDia,
+      utilidadPos: utilidadPosDia,
+      total: serviciosDia + utilidadPosDia,
     });
   }
 
@@ -62,41 +109,30 @@ export async function obtenerIngresosPorDia() {
 }
 
 /* =========================
-   🥧 Pastel - Ingresos por tipo
+   Pastel - Ingresos por tipo
 ========================= */
 export async function obtenerIngresosPorTipo() {
   const serviciosSnap = await getDocs(collection(db, "servicios"));
 
   const ahora = new Date();
   const mesActual = ahora.getMonth();
-  const añoActual = ahora.getFullYear();
+  const anioActual = ahora.getFullYear();
 
-  const servicios = serviciosSnap.docs.map(d => d.data());
-
+  const servicios = serviciosSnap.docs.map((d) => d.data());
   const ingresosPorTipo = {};
 
-  servicios.forEach(s => {
-    if (normalizarStatus(s.status) !== "entregado") return;
-    if (!s.fechaEntregado) return;
+  servicios.forEach((servicio) => {
+    if (normalizarStatus(servicio.status) !== "entregado") return;
 
-    const fecha = s.fechaEntregado.toDate();
+    const fecha = toDate(servicio.fechaEntregado);
+    if (!isSameMonth(fecha, mesActual, anioActual)) return;
 
-    if (
-      fecha.getMonth() === mesActual &&
-      fecha.getFullYear() === añoActual
-    ) {
-      const tipo = (s.tipoDispositivo || "Otro").toUpperCase();
-      const monto = Number(s.costo || 0);
-
-      ingresosPorTipo[tipo] =
-        (ingresosPorTipo[tipo] || 0) + monto;
-    }
+    const tipo = (servicio.tipoDispositivo || "Otro").toUpperCase();
+    ingresosPorTipo[tipo] = (ingresosPorTipo[tipo] || 0) + Number(servicio.costo || 0);
   });
 
-  return Object.keys(ingresosPorTipo).map(tipo => ({
+  return Object.keys(ingresosPorTipo).map((tipo) => ({
     name: tipo,
-    value: ingresosPorTipo[tipo]
+    value: ingresosPorTipo[tipo],
   }));
 }
-
-

@@ -7,10 +7,12 @@ import {
   splitTicketLines,
 } from "../js/services/ticket_config";
 import {
-  DEFAULT_FACTURACION_CONFIG,
+  createDefaultFacturacionConfig,
   readFacturacionConfigStorage,
   saveFacturacionConfigStorage,
 } from "../js/services/facturacion_config";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
+import useMonedaConfig from "../hooks/useMonedaConfig";
 
 const IVA_STORAGE_KEY = "pos_aplicar_iva";
 
@@ -20,13 +22,6 @@ function leerIVAStorage() {
   } catch {
     return true;
   }
-}
-
-function formatMoney(value) {
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-  }).format(Number(value || 0));
 }
 
 function formatDate(value) {
@@ -48,6 +43,8 @@ function formatFacturaFolio(serie, folio) {
 }
 
 export default function ConfiguracionPOS() {
+  const { nombreEmpresa } = useEmpresaConfig();
+  const { formatCurrency } = useMonedaConfig();
   const [aplicarIVA, setAplicarIVA] = useState(leerIVAStorage);
   const [ticketCfg, setTicketCfg] = useState(readTicketConfigStorage);
   const [factCfg, setFactCfg] = useState(readFacturacionConfigStorage);
@@ -136,6 +133,7 @@ export default function ConfiguracionPOS() {
     () => formatFacturaFolio(factCfg.serie, factCfg.folioActual),
     [factCfg.serie, factCfg.folioActual],
   );
+  const nombreNegocioVisible = String(nombreEmpresa || ticketCfg.businessName || "").trim();
 
   const probarImpresion = () => {
     imprimirTicketVenta({
@@ -406,7 +404,7 @@ export default function ConfiguracionPOS() {
               <button
                 type="button"
                 className="cfg-ticket-test-btn"
-                onClick={() => setFactCfg({ ...DEFAULT_FACTURACION_CONFIG })}
+                onClick={() => setFactCfg(createDefaultFacturacionConfig())}
               >
                 Restablecer
               </button>
@@ -500,8 +498,8 @@ export default function ConfiguracionPOS() {
 
                   {ticketCfg.showBusinessData && (
                     <>
-                      {ticketCfg.businessName?.trim() && (
-                        <div className="cfg-ticket-preview-sub">{ticketCfg.businessName.trim()}</div>
+                      {nombreNegocioVisible && (
+                        <div className="cfg-ticket-preview-sub">{nombreNegocioVisible}</div>
                       )}
                       {ticketCfg.businessAddress?.trim() && (
                         <div className="cfg-ticket-preview-sub">{ticketCfg.businessAddress.trim()}</div>
@@ -552,10 +550,10 @@ export default function ConfiguracionPOS() {
                         <div className="cfg-ticket-preview-item-row">
                           <span>
                             {ticketCfg.showUnitPrice
-                              ? `${cantidad} x ${formatMoney(precio)}`
+                              ? `${cantidad} x ${formatCurrency(precio)}`
                               : `${cantidad} pza`}
                           </span>
-                          <b>{formatMoney(totalLinea)}</b>
+                          <b>{formatCurrency(totalLinea)}</b>
                         </div>
                       </div>
                     );
@@ -586,17 +584,17 @@ export default function ConfiguracionPOS() {
                 <div className="cfg-ticket-preview-section">
                   <div className="cfg-ticket-preview-item-row">
                     <span>Subtotal</span>
-                    <span>{formatMoney(subtotalEjemplo)}</span>
+                    <span>{formatCurrency(subtotalEjemplo)}</span>
                   </div>
                   {aplicarIVA && (
                     <div className="cfg-ticket-preview-item-row">
                       <span>IVA (16%)</span>
-                      <span>{formatMoney(ivaEjemplo)}</span>
+                      <span>{formatCurrency(ivaEjemplo)}</span>
                     </div>
                   )}
                   <div className="cfg-ticket-preview-item-row cfg-ticket-preview-total">
                     <span>Total</span>
-                    <span>{formatMoney(totalEjemplo)}</span>
+                    <span>{formatCurrency(totalEjemplo)}</span>
                   </div>
                 </div>
 
@@ -639,11 +637,10 @@ export default function ConfiguracionPOS() {
             </label>
 
             <label>Nombre del negocio</label>
-            <input
-              value={ticketCfg.businessName}
-              onChange={(e) => actualizarTicket("businessName", e.target.value)}
-              placeholder="Ej. LuisITRepair"
-            />
+            <div className="cfg-company-managed">
+              Se administra desde Configuracion &gt; Empresa.
+              <strong>{nombreNegocioVisible || "LuisITRepair"}</strong>
+            </div>
 
             <label>Direccion</label>
             <input

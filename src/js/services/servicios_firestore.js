@@ -31,7 +31,7 @@ function normalizarStatus(raw) {
 
 function isFinalStatus(status) {
   const s = normalizarStatus(status);
-  return s === "entregado" || s === "cancelado" || s === "no_reparable";
+  return s === "entregado";
 }
 
 function normText(raw) {
@@ -42,6 +42,39 @@ function normText(raw) {
     .replace(/[^a-z0-9 ]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function toMoney(value, fallback = 0) {
+  const n = Number(String(value ?? "").replace(/[^\d.]/g, ""));
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function toInt(value, fallback = 0) {
+  const n = Number(String(value ?? "").replace(/\D/g, ""));
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : fallback;
+}
+
+function normalizeHojaServicioSnapshot(raw = {}) {
+  if (!raw || typeof raw !== "object") return null;
+
+  const terminos = Array.isArray(raw?.terminos)
+    ? raw.terminos
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean)
+    : [];
+
+  return {
+    habilitada: raw?.habilitada !== false,
+    terminos,
+    retardo: {
+      habilitado: !!raw?.retardo?.habilitado,
+      diasTolerancia: toInt(raw?.retardo?.diasTolerancia, 0),
+      cargo: toMoney(raw?.retardo?.cargo, 0),
+      aplicarCadaDias: Math.max(1, toInt(raw?.retardo?.aplicarCadaDias, 1)),
+      abandonoDias: Math.max(1, toInt(raw?.retardo?.abandonoDias, 30)),
+      abandonoSiSuperaCosto: raw?.retardo?.abandonoSiSuperaCosto !== false,
+    },
+  };
 }
 
 function buildDedupeKey(data) {
@@ -105,6 +138,7 @@ async function construirPayload(form) {
 
     entregado: false,
     fechaEntregado: null,
+    hojaServicio: normalizeHojaServicioSnapshot(form?.hojaServicio),
 
     folio: folioFinal,
     status: "pendiente",
@@ -363,10 +397,13 @@ export async function actualizarServicioPorId(id, data) {
     patch.fechaEntregado = null;
   }
 
-  // 🔒 Cualquier estado final queda bloqueado
+  // 🔒 Solo entregado queda bloqueado; cancelado/no reparable siguen pendientes de cobro en POS.
   if (isFinal) {
     patch.locked = true;
     patch.lockedReason = nextStatusNorm;
+  } else {
+    patch.locked = false;
+    patch.lockedReason = null;
   }
 
   await updateDoc(ref, patch);

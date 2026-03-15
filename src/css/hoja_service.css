@@ -1,6 +1,7 @@
 .hoja-page {
+  box-sizing: border-box;
   padding: clamp(10px, 2vw, 24px);
-  min-height: calc(100vh - 64px);
+  min-height: calc(100dvh - var(--navbar-height, 64px));
   background: linear-gradient(135deg, #4f8fb8 0%, #8ab9b6 100%);
 }
 
@@ -233,6 +234,90 @@
   background: #326b84;
 }
 
+.hoja-service-policy-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #bfdaf1;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fcff, #ffffff);
+}
+
+.hoja-service-policy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hoja-service-policy-head h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.hoja-service-policy-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.hoja-service-policy-pill.on {
+  color: #166534;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+}
+
+.hoja-service-policy-pill.off {
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+}
+
+.hoja-service-policy-copy {
+  margin: 0;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.hoja-service-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.hoja-service-policy-box {
+  min-width: 0;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.hoja-service-policy-box strong {
+  display: block;
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+
+.hoja-service-policy-box p,
+.hoja-service-policy-box ul {
+  margin: 0;
+  color: #475569;
+  line-height: 1.55;
+  font-size: 0.92rem;
+}
+
+.hoja-service-policy-box ul {
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
 @media (max-width: 900px) {
   .hoja-page {
     padding: 12px;
@@ -262,6 +347,10 @@
   .hoja-page .costo-row input[type="number"],
   .hoja-page .costo-row #costo {
     width: 100% !important;
+  }
+
+  .hoja-service-policy-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -305,5 +394,10 @@
 
   .hoja-page .cliente-clear {
     align-self: flex-end;
+  }
+
+  .hoja-service-policy-head {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

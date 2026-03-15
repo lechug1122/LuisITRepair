@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../initializer/firebase";
 import { esUsuarioAutorizado } from "../js/services/autorizacion";
+import PageLoader from "./PageLoader";
 
 export default function ProtectedRoute({ children }) {
   const [loading, setLoading] = useState(true);
@@ -24,7 +25,7 @@ export default function ProtectedRoute({ children }) {
     return () => unsub();
   }, []);
 
-  if (loading) return <div style={{ padding: 20 }}>Cargando...</div>;
+  if (loading) return <PageLoader text="Validando acceso..." />;
 
   if (!permitido) return <Navigate to="/login" replace />;
 

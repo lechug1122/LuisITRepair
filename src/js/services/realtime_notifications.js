@@ -1,5 +1,9 @@
 import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
+import {
+  isNotificationEnabled,
+  readNotificacionesConfigCache,
+} from "./configure_notificaciones";
 
 function monedaMXN(valor) {
   return Number(valor || 0).toLocaleString("es-MX", {
@@ -41,7 +45,9 @@ export function suscribirNotificacionesGlobales(onNotify) {
     empleados: false,
   };
 
-  const notificar = (payload) => {
+  const notificar = (configKey, payload) => {
+    const config = readNotificacionesConfigCache();
+    if (!isNotificationEnabled(config, configKey)) return;
     if (typeof onNotify === "function") onNotify(payload);
   };
 
@@ -60,7 +66,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
           const prev = cache.servicios.get(change.doc.id);
 
           if (change.type === "added") {
-            notificar({
+            notificar("servicios_nuevos", {
               tipo: "servicio",
               nivel: "media",
               titulo: "Nuevo servicio",
@@ -77,7 +83,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
 
             if (statusPrev !== statusNow) {
               const fueCobradoEnPos = !cobradoPrev && cobradoNow;
-              notificar({
+              notificar(fueCobradoEnPos ? "servicios_cobrados" : "cambios_estado_servicio", {
                 tipo: "servicio",
                 nivel: statusNow === "entregado" ? "baja" : "media",
                 titulo: fueCobradoEnPos ? "Servicio cobrado en POS" : "Cambio de estado de servicio",
@@ -87,7 +93,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
                 fecha: Date.now(),
               });
             } else if (!cobradoPrev && cobradoNow) {
-              notificar({
+              notificar("servicios_cobrados", {
                 tipo: "servicio",
                 nivel: "baja",
                 titulo: "Servicio cobrado en POS",
@@ -98,7 +104,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
           }
 
           if (change.type === "removed") {
-            notificar({
+            notificar("cambios_estado_servicio", {
               tipo: "servicio",
               nivel: "baja",
               titulo: "Servicio eliminado",
@@ -113,7 +119,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
       (error) => {
         console.warn("Notificaciones de servicios sin permisos:", error?.code || error);
       },
-    )
+    ),
   );
 
   unsubs.push(
@@ -129,7 +135,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
         snap.docChanges().forEach((change) => {
           const data = change.doc.data();
           if (change.type === "added") {
-            notificar({
+            notificar("clientes_nuevos", {
               tipo: "cliente",
               nivel: "baja",
               titulo: "Nuevo cliente",
@@ -143,7 +149,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
       (error) => {
         console.warn("Notificaciones de clientes sin permisos:", error?.code || error);
       },
-    )
+    ),
   );
 
   unsubs.push(
@@ -161,7 +167,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
           const prev = cache.productos.get(change.doc.id);
 
           if (change.type === "added") {
-            notificar({
+            notificar("stock_bajo", {
               tipo: "producto",
               nivel: "baja",
               titulo: "Nuevo producto",
@@ -175,13 +181,24 @@ export function suscribirNotificacionesGlobales(onNotify) {
             const stockNow = Number(data.stock || 0);
             const min = Number(data.stockMinimo || 0);
             const cayoABajoMinimo = min > 0 && stockPrev > min && stockNow <= min;
+            const seAgoto = stockPrev > 0 && stockNow <= 0;
 
             if (cayoABajoMinimo) {
-              notificar({
+              notificar("stock_bajo", {
                 tipo: "producto",
                 nivel: "alta",
                 titulo: "Stock bajo",
                 detalle: `${data?.nombre || "Producto"}: ${stockNow} en stock`,
+                fecha: Date.now(),
+              });
+            }
+
+            if (seAgoto) {
+              notificar("stock_agotado", {
+                tipo: "producto",
+                nivel: "alta",
+                titulo: "Producto agotado",
+                detalle: `${data?.nombre || "Producto"} se quedo sin existencia`,
                 fecha: Date.now(),
               });
             }
@@ -193,7 +210,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
       (error) => {
         console.warn("Notificaciones de productos sin permisos:", error?.code || error);
       },
-    )
+    ),
   );
 
   unsubs.push(
@@ -209,13 +226,23 @@ export function suscribirNotificacionesGlobales(onNotify) {
         snap.docChanges().forEach((change) => {
           const data = change.doc.data();
           if (change.type === "added") {
-            notificar({
+            notificar("ventas_nuevas", {
               tipo: "venta",
               nivel: "media",
               titulo: "Nueva venta registrada",
               detalle: `${monedaMXN(data?.total)} - ${data?.tipoPago || "Sin tipo de pago"}`,
               fecha: Date.now(),
             });
+
+            if (Number(data?.total || 0) >= 1000) {
+              notificar("ventas_altas", {
+                tipo: "venta",
+                nivel: "alta",
+                titulo: "Venta alta registrada",
+                detalle: `${monedaMXN(data?.total)} - ${data?.tipoPago || "Sin tipo de pago"}`,
+                fecha: Date.now(),
+              });
+            }
           }
           cache.ventas.set(change.doc.id, data);
         });
@@ -223,7 +250,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
       (error) => {
         console.warn("Notificaciones de ventas sin permisos:", error?.code || error);
       },
-    )
+    ),
   );
 
   unsubs.push(
@@ -242,10 +269,10 @@ export function suscribirNotificacionesGlobales(onNotify) {
           const nombre = data?.nombre || prev?.nombre || "Empleado";
 
           if (change.type === "added") {
-            notificar({
+            notificar("empleados_nuevos", {
               tipo: "empleado",
-              nivel: "media",
-              titulo: "Nuevo empleado registrado",
+              nivel: data?.superAdmin ? "alta" : "media",
+              titulo: data?.superAdmin ? "Super administrador asignado" : "Nuevo empleado registrado",
               detalle: `${nombre} - ${data?.rol || "Sin rol"}`,
               fecha: Date.now(),
             });
@@ -268,8 +295,22 @@ export function suscribirNotificacionesGlobales(onNotify) {
               cambios.push(`Permisos: ${permisosNow} activos`);
             }
 
+            if (Boolean(prev?.superAdmin) !== Boolean(data?.superAdmin)) {
+              cambios.push(data?.superAdmin ? "Ahora es Super Administrador" : "Ya no es Super Administrador");
+            }
+
+            if ((prev?.passwordResetRequestedAt || null) !== (data?.passwordResetRequestedAt || null)) {
+              notificar("password_reset", {
+                tipo: "empleado",
+                nivel: "media",
+                titulo: "Restablecimiento de contrasena",
+                detalle: `Se solicito restablecer la contrasena de ${nombre}.`,
+                fecha: Date.now(),
+              });
+            }
+
             if (cambios.length > 0) {
-              notificar({
+              notificar("empleados_actualizados", {
                 tipo: "empleado",
                 nivel: "baja",
                 titulo: "Empleado actualizado",
@@ -280,7 +321,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
           }
 
           if (change.type === "removed") {
-            notificar({
+            notificar("empleados_eliminados", {
               tipo: "empleado",
               nivel: "alta",
               titulo: "Empleado eliminado",
@@ -295,7 +336,7 @@ export function suscribirNotificacionesGlobales(onNotify) {
       (error) => {
         console.warn("Notificaciones de empleados sin permisos:", error?.code || error);
       },
-    )
+    ),
   );
 
   return () => {

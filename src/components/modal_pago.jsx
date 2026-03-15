@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect } from "react";
 import "../css/modal_pago.css";
+import useMonedaConfig from "../hooks/useMonedaConfig";
 
 export default function ModalPago({
   mostrar,
@@ -16,6 +17,8 @@ export default function ModalPago({
   cambio,
   confirmarVenta
 }) {
+  const { formatCurrency } = useMonedaConfig();
+
   const confirmarConValidacion = useCallback(() => {
     if (tipoPago === "tarjeta" && !referenciaPago.trim()) {
       alert("Ingresa la referencia de pago de tarjeta");
@@ -73,7 +76,7 @@ export default function ModalPago({
 
         <div className={`contenido-cobro ${tipoPago === "tarjeta" ? "sin-teclado" : ""}`}>
           <div className="lado-izquierdo">
-            <div className="total-grande-pro">${total.toFixed(2)}</div>
+            <div className="total-grande-pro">{formatCurrency(total)}</div>
 
             <div className="metodos">
               <button
@@ -122,7 +125,7 @@ export default function ModalPago({
             )}
 
             <div className={`cambio-pro ${cambio >= 0 ? "ok" : "error"}`}>
-              {cambio >= 0 ? `Su cambio: $${cambio.toFixed(2)}` : "Monto insuficiente"}
+              {cambio >= 0 ? `Su cambio: ${formatCurrency(cambio)}` : "Monto insuficiente"}
             </div>
           </div>
 

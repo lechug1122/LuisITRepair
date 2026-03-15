@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import "../css/pos.css";
 import Layout from "../components/Layout";
 import POSMobileScanner from "../components/POSMobileScanner";
 import ModalPago from "../components/modal_pago";
+import ModalCanjePuntos from "../components/modal_canje_puntos";
 import ModalSelectorProducto from "../components/modal_selector_producto";
 import ModalSelectorServicio from "../components/modal_selector_servicio";
 import ModalComparadorPrecios from "../components/modal_comparador_precios";
@@ -30,6 +31,8 @@ import {
   finalizarScanPos,
 } from "../js/services/pos_sync_firestore";
 import { auth } from "../initializer/firebase";
+import useMonedaConfig from "../hooks/useMonedaConfig";
+import useServiciosConfig from "../hooks/useServiciosConfig";
 
 const MOBILE_POS_BREAKPOINT = 1024;
 const IVA_RATE_DEFAULT = 0.16;
@@ -41,13 +44,40 @@ function detectarVistaMovilPOS() {
   return byWidth || byPointer;
 }
 
+function normalizarProductoCanje(producto, puntosForzados = null) {
+  const precio = Number(producto?.precioVenta ?? producto?.precio ?? 0);
+  const puntosBase = Number(puntosForzados ?? producto?.puntosCanje ?? 0);
+  const puntosRequeridos = puntosBase > 0
+    ? Math.round(puntosBase)
+    : Math.max(100, Math.ceil(precio / 10) * 10);
+
+  return {
+    id: String(producto?.id || "").trim(),
+    nombre:
+      producto?.nombre ||
+      producto?.nombreProducto ||
+      producto?.codigo ||
+      "Producto sin nombre",
+    categoria: producto?.categoria || "General",
+    stock: Number(producto?.stock || 0),
+    precio,
+    puntosRequeridos,
+  };
+}
+
 export default function POS() {
+  const { formatCurrency } = useMonedaConfig();
+  const { habilitarCanjes, catalogoCanjes } = useServiciosConfig();
+  const mostrarProgramaCliente = !habilitarCanjes;
 
   const inputRef = useRef(null);
   const scansProcesandoRef = useRef(new Set());
   const posProcessorIdRef = useRef(
     `pos-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   );
+  const carritoRef = useRef([]);
+  const ultimoScanMovilRef = useRef({ termino: "", at: 0 });
+  const ultimoClienteCanjePromptRef = useRef("");
 
   const [clienteTelefono, setClienteTelefono] = useState("");
   const [clienteData, setClienteData] = useState(null);
@@ -66,6 +96,7 @@ export default function POS() {
 
   // 🔹 Modal Profesional
   const [mostrarPago, setMostrarPago] = useState(false);
+  const [mostrarCanjeModal, setMostrarCanjeModal] = useState(false);
   const [tipoPago, setTipoPago] = useState("efectivo");
 
   const [montoEfectivo, setMontoEfectivo] = useState(0);
@@ -75,6 +106,8 @@ export default function POS() {
 
   const [descuentoManual, setDescuentoManual] = useState(0);
   const [usarPuntos, setUsarPuntos] = useState(false);
+  const [preferenciaCanje, setPreferenciaCanje] = useState("guardar");
+  const [productoCanjeId, setProductoCanjeId] = useState("");
   const [aplicarIVA] = useState(() => {
     try {
       return localStorage.getItem("pos_aplicar_iva") !== "0";
@@ -90,7 +123,7 @@ export default function POS() {
   const [esVistaMovil, setEsVistaMovil] = useState(detectarVistaMovilPOS);
   const uidActual = auth.currentUser?.uid || "";
 
-  const ESTADOS_PERMITIDOS_SERVICIO = new Set(["listo"]);
+  const ESTADOS_PERMITIDOS_SERVICIO = new Set(["listo", "cancelado", "no_reparable"]);
 
   const normalizarEstado = (raw) => {
     return String(raw || "")
@@ -115,6 +148,10 @@ export default function POS() {
 
   const normalizarCodigo = (raw) =>
     String(raw ?? "").trim().toLowerCase();
+
+  useEffect(() => {
+    carritoRef.current = carrito;
+  }, [carrito]);
 
   const resolverProductoBoleta = (item, catalogo = []) => {
     const productoId = String(item?.productoId || "").trim();
@@ -284,7 +321,7 @@ export default function POS() {
     try {
       const pendientes = await listarServiciosPendientes();
       const listos = pendientes
-        .filter((s) => normalizarEstado(s?.status) === "listo")
+        .filter((s) => ESTADOS_PERMITIDOS_SERVICIO.has(normalizarEstado(s?.status)))
         .filter((s) => !Boolean(s?.cobradoEnPOS))
         .filter((s) => parseCosto(s?.costo) > 0)
         .sort((a, b) => toMillis(b?.updatedAt || b?.createdAt) - toMillis(a?.updatedAt || a?.createdAt));
@@ -349,28 +386,34 @@ export default function POS() {
     }
 
     if (!ESTADOS_PERMITIDOS_SERVICIO.has(estado) || costoServicio <= 0) {
-      if (!silencioso) alert("Solo se pueden cobrar servicios en estado Listo con costo valido.");
+      if (!silencioso) {
+        alert("Solo se pueden cobrar servicios en estado Listo, Cancelado o No reparable con costo valido.");
+      }
       return false;
     }
 
-    if (carrito.some((p) => p.id === itemId)) {
+    if (carritoRef.current.some((p) => p.id === itemId)) {
       if (!silencioso) alert("Ese servicio ya esta agregado al carrito.");
       return false;
     }
 
     setCarrito((prev) => [
-      ...prev,
-      {
-        id: itemId,
-        codigo: servicio.folio || "-",
-        nombre: `Servicio ${servicio.folio || ""} - ${servicio.nombre || "Cliente"}`.trim(),
-        precioVenta: costoServicio,
-        cantidad: 1,
-        stock: 1,
-        esServicio: true,
-        servicioId: servicio.id,
-        servicioFolio: servicio.folio || "-",
-      },
+      ...(prev.some((p) => p.id === itemId)
+        ? prev
+        : [
+            ...prev,
+            {
+              id: itemId,
+              codigo: servicio.folio || "-",
+              nombre: `Servicio ${servicio.folio || ""} - ${servicio.nombre || "Cliente"}`.trim(),
+              precioVenta: costoServicio,
+              cantidad: 1,
+              stock: 1,
+              esServicio: true,
+              servicioId: servicio.id,
+              servicioFolio: servicio.folio || "-",
+            },
+          ]),
     ]);
 
     setServiciosPorEntregar((prev) => {
@@ -434,7 +477,7 @@ export default function POS() {
       if (!agregado) {
         return {
           ok: false,
-          message: "El servicio no se pudo agregar. Debe estar en estado Listo y no haberse cobrado.",
+          message: "El servicio no se pudo agregar. Debe estar en estado Listo, Cancelado o No reparable y no haberse cobrado.",
         };
       }
       return {
@@ -626,6 +669,11 @@ export default function POS() {
   const eliminarDelCarrito = (id) => {
     if (cajaCerradaHoy || faltaFondoInicial) return;
 
+    if (itemCanjeVenta?.id === id) {
+      guardarPuntosParaDespues();
+      return;
+    }
+
     const item = carrito.find((p) => p.id === id);
 
     if (item?.esServicio && item?.servicioId) {
@@ -644,6 +692,173 @@ export default function POS() {
     setProductoComparar(item);
     setMostrarComparador(true);
   };
+
+  const puntosCliente = Number(clienteData?.puntos || 0);
+
+  const inventarioReservado = useMemo(() => {
+    const reservados = new Map();
+
+    carrito.forEach((item) => {
+      if (item?.esServicio) return;
+      const productoId = String(item?.id || "").trim();
+      const cantidad = parseCantidad(item?.cantidad);
+      if (!productoId || cantidad <= 0) return;
+      reservados.set(productoId, (reservados.get(productoId) || 0) + cantidad);
+    });
+
+    const consumoBoleta = calcularConsumoBoletaServicios(serviciosPorEntregar, productosDB);
+    consumoBoleta.consumoPorProducto.forEach(({ cantidad }, productoId) => {
+      const qty = parseCantidad(cantidad);
+      if (qty <= 0) return;
+      reservados.set(productoId, (reservados.get(productoId) || 0) + qty);
+    });
+
+    return reservados;
+  }, [carrito, productosDB, serviciosPorEntregar]);
+
+  const productosCanjeables = useMemo(() => {
+    const productosMap = new Map(
+      productosDB.map((producto) => [String(producto?.id || "").trim(), producto]),
+    );
+
+    const normalizarDisponible = (producto, puntosForzados = null) => {
+      const base = normalizarProductoCanje(producto, puntosForzados);
+      if (!base.id) return null;
+
+      const reservados = inventarioReservado.get(base.id) || 0;
+      const stockDisponible = Math.max(0, Number(base.stock || 0) - reservados);
+
+      if (stockDisponible <= 0) return null;
+
+      return {
+        ...base,
+        stockDisponible,
+      };
+    };
+
+    if (Array.isArray(catalogoCanjes) && catalogoCanjes.length > 0) {
+      return catalogoCanjes
+        .filter((item) => item?.activo !== false && item?.productId)
+        .map((item) => {
+          const producto = productosMap.get(String(item?.productId || "").trim());
+          if (!producto) return null;
+
+          return normalizarDisponible(
+            {
+              ...producto,
+              nombre: item?.nombreProducto || producto?.nombre,
+            },
+            item?.puntos,
+          );
+        })
+        .filter(Boolean)
+        .sort((a, b) => a.puntosRequeridos - b.puntosRequeridos || a.precio - b.precio);
+    }
+
+    return productosDB
+      .map((producto) => normalizarDisponible(producto))
+      .filter(Boolean)
+      .sort((a, b) => a.puntosRequeridos - b.puntosRequeridos || a.precio - b.precio)
+      .slice(0, 8);
+  }, [catalogoCanjes, inventarioReservado, productosDB]);
+
+  const canjesDisponibles = useMemo(
+    () => productosCanjeables.filter((producto) => puntosCliente >= producto.puntosRequeridos),
+    [productosCanjeables, puntosCliente],
+  );
+
+  const siguienteCanjeDisponible = useMemo(
+    () =>
+      productosCanjeables.find((producto) => puntosCliente < producto.puntosRequeridos) || null,
+    [productosCanjeables, puntosCliente],
+  );
+
+  const canjeSeleccionado = useMemo(
+    () => canjesDisponibles.find((producto) => producto.id === productoCanjeId) || null,
+    [canjesDisponibles, productoCanjeId],
+  );
+
+  const canjeActivo = Boolean(
+    clienteData && preferenciaCanje === "canjear" && canjeSeleccionado,
+  );
+
+  const puntosCanjeados = canjeActivo ? canjeSeleccionado.puntosRequeridos : 0;
+
+  const itemCanjeVenta = canjeActivo
+    ? {
+        id: `canje-${canjeSeleccionado.id}`,
+        productoId: canjeSeleccionado.id,
+        nombre: `${canjeSeleccionado.nombre} (Canje por puntos)`,
+        precioVenta: 0,
+        cantidad: 1,
+        stock: canjeSeleccionado.stockDisponible,
+        esCanje: true,
+        puntosCanjeados: canjeSeleccionado.puntosRequeridos,
+      }
+    : null;
+
+  const productosVenta = itemCanjeVenta ? [...carrito, itemCanjeVenta] : carrito;
+
+  const seleccionarCanje = (productoId) => {
+    if (!productoId) return;
+    setProductoCanjeId(productoId);
+    setPreferenciaCanje("canjear");
+    setMostrarCanjeModal(false);
+  };
+
+  const guardarPuntosParaDespues = () => {
+    setPreferenciaCanje("guardar");
+    setProductoCanjeId("");
+    setMostrarCanjeModal(false);
+  };
+
+  useEffect(() => {
+    if (!clienteData?.id) return;
+    setPreferenciaCanje("guardar");
+    setProductoCanjeId("");
+  }, [clienteData?.id]);
+
+  useEffect(() => {
+    if (!clienteData) {
+      setPreferenciaCanje("guardar");
+      setProductoCanjeId("");
+      setMostrarCanjeModal(false);
+      ultimoClienteCanjePromptRef.current = "";
+      return;
+    }
+
+    setProductoCanjeId((prev) => {
+      if (!canjesDisponibles.length) return "";
+      return canjesDisponibles.some((producto) => producto.id === prev)
+        ? prev
+        : canjesDisponibles[0].id;
+    });
+
+    if (preferenciaCanje === "canjear" && canjesDisponibles.length === 0) {
+      setPreferenciaCanje("guardar");
+    }
+  }, [canjesDisponibles, clienteData, preferenciaCanje]);
+
+  useEffect(() => {
+    if (!mostrarProgramaCliente || !clienteData?.id) return;
+    if (cajaCerradaHoy || faltaFondoInicial) return;
+    if (canjesDisponibles.length === 0) return;
+    if (ultimoClienteCanjePromptRef.current === clienteData.id) return;
+
+    ultimoClienteCanjePromptRef.current = clienteData.id;
+    setMostrarCanjeModal(true);
+  }, [
+    cajaCerradaHoy,
+    canjesDisponibles.length,
+    clienteData?.id,
+    faltaFondoInicial,
+    mostrarProgramaCliente,
+  ]);
+
+  useEffect(() => {
+    if (!mostrarProgramaCliente || !clienteData || canjesDisponibles.length > 0) return;
+    setMostrarCanjeModal(false);
+  }, [canjesDisponibles.length, clienteData, mostrarProgramaCliente]);
 
   /* ================= TOTALES PROFESIONALES ================= */
 
@@ -684,8 +899,8 @@ export default function POS() {
       return;
     }
 
-    if (carrito.length === 0) {
-      alert("No hay productos en el carrito");
+    if (carrito.length === 0 && !canjeActivo) {
+      alert("No hay productos ni canjes seleccionados");
       return;
     }
 
@@ -697,6 +912,23 @@ export default function POS() {
     if (tipoPago === "tarjeta" && !referenciaPago.trim()) {
       alert("Ingresa la referencia de pago de tarjeta");
       return;
+    }
+
+    if (canjeActivo) {
+      if (!clienteData?.id) {
+        alert("Selecciona un cliente valido para canjear puntos.");
+        return;
+      }
+
+      if (puntosCliente < puntosCanjeados) {
+        alert("El cliente ya no tiene puntos suficientes para este canje.");
+        return;
+      }
+
+      if (Number(canjeSeleccionado?.stockDisponible || 0) <= 0) {
+        alert("El producto seleccionado para canje ya no tiene stock disponible.");
+        return;
+      }
     }
 
     const consumoBoleta = calcularConsumoBoletaServicios(
@@ -733,6 +965,21 @@ export default function POS() {
         });
       }
     });
+
+    if (canjeActivo) {
+      const productoId = String(canjeSeleccionado?.id || "").trim();
+      if (productoId) {
+        const prev = requeridosPorProducto.get(productoId) || 0;
+        requeridosPorProducto.set(productoId, prev + 1);
+
+        if (!stockMetaPorProducto.has(productoId)) {
+          stockMetaPorProducto.set(productoId, {
+            nombre: canjeSeleccionado?.nombre || productoId,
+            stockActual: Number(canjeSeleccionado?.stockDisponible || canjeSeleccionado?.stock || 0),
+          });
+        }
+      }
+    }
 
     consumoBoleta.consumoPorProducto.forEach(({ producto, cantidad }, productoId) => {
       const qty = parseCantidad(cantidad);
@@ -790,11 +1037,19 @@ export default function POS() {
         efectivo: montoEfectivo,
         tarjeta: montoTarjeta,
         transferencia: montoTransferencia,
-        referenciaTarjeta: referenciaPago.trim() || null
+      referenciaTarjeta: referenciaPago.trim() || null
       },
       puntosGenerados,
+      puntosCanjeados,
+      canjeAplicado: canjeActivo
+        ? {
+            productoId: canjeSeleccionado.id,
+            nombre: canjeSeleccionado.nombre,
+            puntos: canjeSeleccionado.puntosRequeridos,
+          }
+        : null,
       fecha: new Date(),
-      productos: carrito
+      productos: productosVenta,
     };
 
     const ventaId = await registrarVenta(ventaPayload);
@@ -816,6 +1071,10 @@ export default function POS() {
 
       if (usarPuntos && descuentoPuntos > 0) {
         await sumarPuntosCliente(clienteData.id, -descuentoPuntos);
+      }
+
+      if (canjeActivo && puntosCanjeados > 0) {
+        await sumarPuntosCliente(clienteData.id, -puntosCanjeados);
       }
 
       await sumarPuntosCliente(clienteData.id, puntosGenerados);
@@ -858,7 +1117,7 @@ export default function POS() {
       },
       tipoPago,
       referenciaTarjeta: referenciaPago.trim() || "",
-      productos: carrito,
+      productos: productosVenta,
       estado: serviciosPorEntregar.length > 0 ? "Entregado" : "Pagado",
       subtotal,
       aplicaIVA: aplicarIVA,
@@ -878,6 +1137,8 @@ export default function POS() {
     setServiciosPorEntregar([]);
     setDescuentoManual(0);
     setUsarPuntos(false);
+    setPreferenciaCanje("guardar");
+    setProductoCanjeId("");
 
     cargarProductos();
     inputRef.current?.focus();
@@ -922,6 +1183,19 @@ export default function POS() {
       return { ok: false, message: "Codigo vacio." };
     }
 
+    const terminoNormalizado = terminoFinal.toLowerCase();
+    const ahora = Date.now();
+    if (
+      ultimoScanMovilRef.current.termino === terminoNormalizado &&
+      ahora - ultimoScanMovilRef.current.at < 2500
+    ) {
+      return {
+        ok: true,
+        tipo: "sync",
+        label: `${terminoFinal} (ya enviado)`,
+      };
+    }
+
     try {
       await enviarScanPosMovil({
         uid,
@@ -929,6 +1203,10 @@ export default function POS() {
         actorUid: uid,
         actorEmail: auth.currentUser?.email || "",
       });
+      ultimoScanMovilRef.current = {
+        termino: terminoNormalizado,
+        at: ahora,
+      };
 
       return {
         ok: true,
@@ -955,7 +1233,7 @@ export default function POS() {
         <POSMobileScanner
           disabled={scannerBloqueado}
           disabledMessage={scannerBloqueadoMsg}
-          itemsCount={carrito.length}
+          itemsCount={productosVenta.length}
           total={total}
           onResolveCode={resolverCodigoMovil}
         />
@@ -1016,29 +1294,73 @@ export default function POS() {
                 <th>Cant</th>
                 <th>Precio</th>
                 <th>Total</th>
-                <th></th>
+                <th>Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {carrito.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.nombre}</td>
-                  <td>{p.cantidad}</td>
-                  <td>${p.precioVenta}</td>
-                  <td>${p.precioVenta * p.cantidad}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn-comparar"
-                      disabled={cajaCerradaHoy || faltaFondoInicial}
-                      onClick={() => abrirComparador(p)}
-                    >
-                      Comparar
-                    </button>
-                    <button disabled={cajaCerradaHoy || faltaFondoInicial} onClick={() => eliminarDelCarrito(p.id)}>X</button>
+              {productosVenta.length === 0 ? (
+                <tr className="tabla-empty-row">
+                  <td colSpan="5">
+                    <div className="tabla-empty-state">
+                      <strong>Aun no hay productos en la venta</strong>
+                      <span>Escanea un codigo, agrega un servicio o selecciona un canje.</span>
+                    </div>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                productosVenta.map((p) => {
+                  const esProductoNormal = !p.esServicio && !p.esCanje;
+                  const meta = p.esCanje
+                    ? `Canje por puntos · ${p.puntosCanjeados || 0} pts`
+                    : p.esServicio
+                      ? `Servicio ${p.servicioFolio || ""}`.trim()
+                      : p.codigo
+                        ? `Codigo: ${p.codigo}`
+                        : "Producto de inventario";
+
+                  return (
+                    <tr
+                      key={p.id}
+                      className={p.esCanje ? "tabla-fila-canje" : p.esServicio ? "tabla-fila-servicio" : ""}
+                    >
+                      <td className="tabla-producto-cell">
+                        <div className="tabla-producto">
+                          <strong className="tabla-producto-nombre">{p.nombre}</strong>
+                          <span className="tabla-producto-meta">{meta}</span>
+                        </div>
+                      </td>
+                      <td className="tabla-num">{p.cantidad}</td>
+                      <td className="tabla-num">{formatCurrency(p.precioVenta)}</td>
+                      <td className="tabla-num tabla-total">{formatCurrency(p.precioVenta * p.cantidad)}</td>
+                      <td className="tabla-acciones">
+                        {p.esCanje ? (
+                          <span className="tabla-tag tabla-tag-canje">Canje $0</span>
+                        ) : p.esServicio ? (
+                          <span className="tabla-tag tabla-tag-servicio">Servicio</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-comparar"
+                            disabled={cajaCerradaHoy || faltaFondoInicial}
+                            onClick={() => abrirComparador(p)}
+                          >
+                            Comparar
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          className="btn-eliminar-item"
+                          disabled={cajaCerradaHoy || faltaFondoInicial}
+                          onClick={() => eliminarDelCarrito(p.id)}
+                        >
+                          {p.esCanje ? "Quitar" : "X"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
 
@@ -1047,7 +1369,10 @@ export default function POS() {
         {/* DERECHA */}
         <div className="panel-derecho">
 
-          <h3>Cliente (Opcional)</h3>
+          {/* El toggle de canjes tambien controla si POS muestra el bloque de cliente/puntos. */}
+          {mostrarProgramaCliente && (
+            <>
+              <h3>Cliente (Opcional)</h3>
 
           <input
             value={clienteTelefono}
@@ -1058,6 +1383,7 @@ export default function POS() {
             className="input"
           />
 
+          {/* El programa de canjes/puntos puede ocultarse desde Configuracion > Servicios. */}
           {clienteData && (
             <div className="cliente-info">
               <p><strong>{clienteData.nombre}</strong></p>
@@ -1066,18 +1392,91 @@ export default function POS() {
             </div>
           )}
 
-          <hr />
+          {clienteData && (
+            <div className="canje-pos-card">
+              <div className="canje-pos-head">
+                <strong>Canje con puntos</strong>
+                <span>
+                  {canjesDisponibles.length > 0
+                    ? `${canjesDisponibles.length} disponible${canjesDisponibles.length === 1 ? "" : "s"}`
+                    : "Sin canje disponible"}
+                </span>
+              </div>
+
+              {canjesDisponibles.length > 0 ? canjeActivo && canjeSeleccionado ? (
+                <>
+                  <div className="canje-pos-preview">
+                    <p><strong>{canjeSeleccionado.nombre}</strong></p>
+                    <p>Canje seleccionado para esta venta.</p>
+                    <p>Puntos a usar: {canjeSeleccionado.puntosRequeridos}</p>
+                    <p>Stock disponible: {canjeSeleccionado.stockDisponible}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn-canje-modal"
+                    disabled={cajaCerradaHoy || faltaFondoInicial}
+                    onClick={() => setMostrarCanjeModal(true)}
+                  >
+                    Cambiar canje
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn-canje-guardar"
+                    disabled={cajaCerradaHoy || faltaFondoInicial}
+                    onClick={guardarPuntosParaDespues}
+                  >
+                    Guardar puntos mejor
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="canje-pos-hint">
+                    Este cliente ya puede canjear un premio en esta visita.
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-canje-modal"
+                    disabled={cajaCerradaHoy || faltaFondoInicial}
+                    onClick={() => setMostrarCanjeModal(true)}
+                  >
+                    Ver productos para canjear
+                  </button>
+                </>
+              ) : siguienteCanjeDisponible ? (
+                <p className="canje-pos-hint">
+                  Le faltan {Math.max(siguienteCanjeDisponible.puntosRequeridos - puntosCliente, 0)} puntos
+                  para canjear <strong>{siguienteCanjeDisponible.nombre}</strong>.
+                </p>
+              ) : (
+                <p className="canje-pos-hint">
+                  No hay productos de canje disponibles en este momento.
+                </p>
+              )}
+            </div>
+          )}
+
+              <hr />
+            </>
+          )}
 
           <div className="resumen">
-            <p>Subtotal: ${subtotal.toFixed(2)}</p>
-            <p>IVA ({aplicarIVA ? "16%" : "0%"}): ${iva.toFixed(2)}</p>
-            <h2>Total: ${total.toFixed(2)}</h2>
+            <p>Subtotal: {formatCurrency(subtotal)}</p>
+            <p>IVA ({aplicarIVA ? "16%" : "0%"}): {formatCurrency(iva)}</p>
+            <h2>Total: {formatCurrency(total)}</h2>
           </div>
 
           <button
             className="btn-venta"
             disabled={cajaCerradaHoy || faltaFondoInicial}
-            onClick={() => setMostrarPago(true)}
+            onClick={() => {
+              if (carrito.length === 0 && !canjeActivo) {
+                alert("Agrega un producto o selecciona un canje antes de continuar.");
+                return;
+              }
+              setMostrarPago(true);
+            }}
           >
             Realizar Venta
           </button>
@@ -1088,6 +1487,8 @@ export default function POS() {
             onClick={() => {
               setCarrito([]);
               setServiciosPorEntregar([]);
+              setPreferenciaCanje("guardar");
+              setProductoCanjeId("");
             }}
           >
             Vaciar
@@ -1103,6 +1504,18 @@ export default function POS() {
         servicios={serviciosListos}
         onClose={() => setMostrarSelectorServicio(false)}
         onSeleccionar={seleccionarServicioListo}
+      />
+
+      <ModalCanjePuntos
+        mostrar={mostrarCanjeModal && mostrarProgramaCliente && !!clienteData && canjesDisponibles.length > 0}
+        onClose={() => setMostrarCanjeModal(false)}
+        cliente={clienteData}
+        puntosCliente={puntosCliente}
+        canjesDisponibles={canjesDisponibles}
+        canjeSeleccionadoId={canjeSeleccionado?.id || ""}
+        formatCurrency={formatCurrency}
+        onSeleccionarCanje={seleccionarCanje}
+        onGuardarPuntos={guardarPuntosParaDespues}
       />
 
       <ModalPago

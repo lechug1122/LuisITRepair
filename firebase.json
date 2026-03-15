@@ -53,6 +53,13 @@
         }
       },
       {
+        "source": "/api/google-image/search",
+        "function": {
+          "functionId": "googleImageSearch",
+          "region": "southamerica-east1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

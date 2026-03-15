@@ -10,6 +10,7 @@ import {
   obtenerSpecsPorModelo,
 } from "../js/models_equipos";
 import { generarPdfHojaServicio } from "../js/services/pdf_hoja_servicio";
+import useServiciosConfig from "../hooks/useServiciosConfig";
 
 // ✅ NUEVO (buscador + create/update cliente)
 import {
@@ -62,6 +63,11 @@ const initialForm = {
 export default function HojaServicio() {
   const navigate = useNavigate();
   const location = useLocation();
+  const {
+    hojaServicioHabilitada,
+    terminosServicio,
+    politicaRetardo,
+  } = useServiciosConfig();
   const [form, setForm] = useState(initialForm);
 
   // ✅ catálogo desde CSV
@@ -160,6 +166,10 @@ export default function HojaServicio() {
     form.tipoDispositivo === "laptop" || form.tipoDispositivo === "pc";
   const showImpresora = form.tipoDispositivo === "impresora";
   const showMonitor = form.tipoDispositivo === "monitor";
+  const terminosHoja = useMemo(
+    () => (Array.isArray(terminosServicio) ? terminosServicio.filter(Boolean) : []),
+    [terminosServicio],
+  );
 
   // ✅ Buscar sugerencias al escribir nombre (debounce)
   useEffect(() => {
@@ -314,16 +324,27 @@ export default function HojaServicio() {
       return;
     }
 
+const hojaServicioSnapshot = {
+  habilitada: hojaServicioHabilitada,
+  terminos: terminosHoja,
+  retardo: politicaRetardo || {},
+};
+
 const res = await guardarServicio({
   ...form,
   clienteId: clienteIdFinal,
+  hojaServicio: hojaServicioSnapshot,
 });
 
-// 🔥 ESTE ES EL CAMBIO CLAVE
-await generarPdfHojaServicio(
-  form,        // datos del formulario
-  res.folio    // ✅ folio real de Firestore
-);
+if (hojaServicioHabilitada) {
+  await generarPdfHojaServicio(
+    {
+      ...form,
+      hojaServicio: hojaServicioSnapshot,
+    },
+    res.folio,
+  );
+}
 
 navigate(`/ticket/${encodeURIComponent(String(res.folio || "").trim())}`);
     // reset
@@ -857,7 +878,11 @@ navigate(`/ticket/${encodeURIComponent(String(res.folio || "").trim())}`);
                   </div>
                 </div>
 
-                <button type="submit">Guardar Registro y Generar PDF</button>
+                <button type="submit">
+                  {hojaServicioHabilitada
+                    ? "Guardar registro y generar PDF"
+                    : "Guardar registro sin PDF"}
+                </button>
               </form>
             </div>
           </div>

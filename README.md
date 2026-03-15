@@ -1,19 +1,32 @@
-# React + Vite
+# hoja_service-app
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicacion de taller/servicio tecnico construida con React + Vite + Firebase.
+El frontend principal vive en `src/`, el backend activo de Cloud Functions vive en
+`functions/`, y hay artefactos legacy/aislados dentro del repo.
 
-Currently, two official plugins are available:
+## Scripts principales
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- `npm run dev`: levanta Vite en desarrollo.
+- `npm run build`: compila el frontend para produccion.
+- `npm run lint`: ejecuta ESLint sobre el frontend principal.
+- `npm run preview`: sirve el build localmente.
 
-## React Compiler
+## Estructura rapida
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- `src/`: frontend principal.
+- `functions/`: Cloud Functions TypeScript activas para proxys/API.
+- `dataconnect/`: esquema y ejemplos de Firebase Data Connect.
+- `public/`: archivos estaticos publicados por Vite/Firebase Hosting.
+- `docs/`: documentacion operativa y auditorias del proyecto.
+- `luisit_repair/`: subproyecto legacy separado del despliegue actual.
 
-## Expanding the ESLint configuration
+## Documentacion agregada
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
-"# LuisITRepair" 
-"# LuisITRepair" 
-"# LuisITRepair" 
+- `docs/INVENTARIO_ARCHIVOS.md`: que hace cada archivo mantenido a mano.
+- `docs/AUDITORIA_CODIGO.md`: hallazgos de codigo inactivo, artefactos legacy y deuda tecnica detectada.
+
+## Nota de mantenimiento
+
+El `lint` raiz ahora ignora codigo generado y subproyectos externos al frontend principal
+(`functions/**`, `luisit_repair/**`, `src/dataconnect-generated/**`) para que los reportes
+apunten al codigo que realmente se mantiene desde esta app.

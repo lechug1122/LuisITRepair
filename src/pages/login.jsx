@@ -1,16 +1,37 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { auth, db } from "../initializer/firebase";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import "../css/login.scss";
 import { useNavigate } from "react-router-dom";
+import { obtenerEmpresa, readEmpresaConfigCache } from "../js/services/configure_empresa";
 
 export default function Login() {
+  const [nombreEmpresa, setNombreEmpresa] = useState(
+    () => readEmpresaConfigCache().nombre || "LuisITRepair",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
+  useEffect(() => {
+    let mounted = true;
+
+    obtenerEmpresa()
+      .then((empresa) => {
+        if (!mounted) return;
+        const nombre = String(empresa?.nombre || "").trim();
+        if (nombre) setNombreEmpresa(nombre);
+      })
+      .catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Valida el acceso y marca al usuario como conectado.
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -55,7 +76,7 @@ export default function Login() {
       // ✅ Redirigir
       navigate("/home", { replace: true });
 
-    } catch (err) {
+    } catch {
       setError("Credenciales incorrectas.");
     }
   };
@@ -79,7 +100,7 @@ export default function Login() {
 
         <form className="log-in" autoComplete="off" onSubmit={handleSubmit}>
           <h4>
-            Bienvenido a <span>LuisITRepairControl</span>
+            Bienvenido a <span>{nombreEmpresa}</span>
           </h4>
 
           <p>
@@ -110,6 +131,7 @@ export default function Login() {
             <label>Contraseña:</label>
           </div>
 
+          {/* Boton principal para iniciar sesion. */}
           <button type="submit">Iniciar Sesión</button>
 
           {error && (

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import "../css/pos_mobile_scanner.css";
+import useMonedaConfig from "../hooks/useMonedaConfig";
 
 const SCANNER_ID = "pos-mobile-reader";
 const REAR_CAMERA_HINTS = ["back", "rear", "environment", "trasera", "posterior"];
@@ -100,9 +101,11 @@ export default function POSMobileScanner({
   onResolveCode,
   onExitToNormal,
 }) {
+  const { formatCurrency } = useMonedaConfig();
   const scannerRef = useRef(null);
   const dedupeRef = useRef({ value: "", at: 0 });
   const resolveRef = useRef(onResolveCode);
+  const processingRef = useRef(false);
 
   const [manualCode, setManualCode] = useState("");
   const [scannerInfo, setScannerInfo] = useState("Escaner listo para leer codigo de barras y QR.");
@@ -162,15 +165,21 @@ export default function POSMobileScanner({
 
       const raw = String(decodedText || "").trim();
       if (!raw) return;
+      if (processingRef.current) return;
 
       const now = Date.now();
-      if (dedupeRef.current.value === raw && now - dedupeRef.current.at < 450) return;
+      if (dedupeRef.current.value === raw && now - dedupeRef.current.at < 2500) return;
 
       dedupeRef.current = { value: raw, at: now };
-      processTerm(raw).catch((err) => {
-        console.error("Error procesando escaneo movil:", err);
-        if (active) setScannerError("No se pudo procesar el codigo escaneado.");
-      });
+      processingRef.current = true;
+      processTerm(raw)
+        .catch((err) => {
+          console.error("Error procesando escaneo movil:", err);
+          if (active) setScannerError("No se pudo procesar el codigo escaneado.");
+        })
+        .finally(() => {
+          processingRef.current = false;
+        });
     };
 
     const start = async () => {
@@ -332,7 +341,7 @@ export default function POSMobileScanner({
 
         <div className="posm-summary">
           <div>Items en carrito: <b>{itemsCount}</b></div>
-          <div>Total actual: <b>${Number(total || 0).toFixed(2)}</b></div>
+          <div>Total actual: <b>{formatCurrency(total)}</b></div>
         </div>
       </div>
     </div>

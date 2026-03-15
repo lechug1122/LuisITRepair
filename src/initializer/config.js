@@ -9,7 +9,7 @@ export function getConfig() {
   try {
     const s = localStorage.getItem('appConfig');
     return s ? JSON.parse(s) : DEFAULT_CONFIG;
-  } catch (e) {
+  } catch {
     return DEFAULT_CONFIG;
   }
 }

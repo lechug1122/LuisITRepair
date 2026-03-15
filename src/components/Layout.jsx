@@ -2,12 +2,15 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import "../css/pos.css";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { puede } = useAutorizacionActual();
+  const { nombreEmpresa } = useEmpresaConfig();
+  const esRutaPOS = String(location.pathname || "").toLowerCase() === "/pos";
 
   useEffect(() => {
     const syncSidebarForViewport = () => {
@@ -21,25 +24,41 @@ export default function Layout({ children }) {
     return () => window.removeEventListener("resize", syncSidebarForViewport);
   }, []);
 
+  useEffect(() => {
+    // El POS necesita un fondo de workspace para no dejar el shell vacio cuando hay poco contenido.
+    document.body.classList.toggle("body-pos-workspace", esRutaPOS);
+    return () => document.body.classList.remove("body-pos-workspace");
+  }, [esRutaPOS]);
+
   const menuItems = [
     { label: "Ventas", path: "/POS", emoji: "🛒", permission: "ventas.pos" },
     { label: "Productos", path: "/productos", emoji: "📦", permission: "productos.ver" },
     { label: "Clientes", path: "/clientes", emoji: "👥", permission: "clientes.ver" },
     { label: "Reportes", path: "/reportes", emoji: "📊", permission: "reportes.ver" },
   ].filter((item) => puede(item.permission));
+  const marcaVisible = nombreEmpresa || "LuisITRepair";
+  const inicialMarca = marcaVisible.trim().charAt(0).toUpperCase() || "L";
 
   return (
-    <div className={`layout ${sidebarOpen ? "sidebar-open" : "sidebar-closed"}`}>
-      <div className={`sidebar ${sidebarOpen ? "open" : "closed"}`}>
-        <div className="sidebar-header">
+    <div
+      className={[
+        "workspace-layout",
+        sidebarOpen ? "workspace-layout-open" : "workspace-layout-closed",
+        esRutaPOS ? "workspace-layout-route-pos" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <div className={`workspace-sidebar ${sidebarOpen ? "open" : "closed"}`}>
+        <div className="workspace-sidebar-header">
           {sidebarOpen && (
-            <div className="sidebar-brand">
-              <span className="brand-icon brand-badge">L</span>
-              <h2>LuisITRepair</h2>
+            <div className="workspace-sidebar-brand">
+              <span className="brand-icon brand-badge">{inicialMarca}</span>
+              <h2>{marcaVisible}</h2>
             </div>
           )}
           <button
-            className="sidebar-toggle"
+            className="workspace-sidebar-toggle"
             onClick={() => setSidebarOpen(!sidebarOpen)}
             title={sidebarOpen ? "Ocultar" : "Mostrar"}
           >
@@ -47,7 +66,7 @@ export default function Layout({ children }) {
           </button>
         </div>
 
-        <ul className="sidebar-menu">
+        <ul className="workspace-sidebar-menu">
           {menuItems.map((item) => (
             <li
               key={item.path}
@@ -62,7 +81,7 @@ export default function Layout({ children }) {
         </ul>
       </div>
 
-      <div className="main-wrapper">{children}</div>
+      <div className="workspace-main">{children}</div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useEffect } from "react";
 import "../css/modal_selector_producto.css";
+import useMonedaConfig from "../hooks/useMonedaConfig";
 
 export default function ModalSelectorProducto({
   mostrar,
@@ -8,6 +9,8 @@ export default function ModalSelectorProducto({
   onClose,
   onSeleccionar
 }) {
+  const { formatCurrency } = useMonedaConfig();
+
   useEffect(() => {
     if (!mostrar) return undefined;
 
@@ -48,7 +51,7 @@ export default function ModalSelectorProducto({
                 <div className="selector-nombre">{producto.nombre}</div>
                 <div className="selector-meta">
                   <span>Codigo: {producto.codigo || "-"}</span>
-                  <span>Precio: ${Number(producto.precioVenta || 0).toFixed(2)}</span>
+                  <span>Precio: {formatCurrency(producto.precioVenta)}</span>
                   <span>Stock: {Number(producto.stock || 0)}</span>
                 </div>
               </button>

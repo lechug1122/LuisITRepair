@@ -1,25 +1,33 @@
+import { readEmpresaConfigCache } from "./configure_empresa";
+
 const TICKET_CONFIG_STORAGE_KEY = "pos_ticket_config_v1";
 
-export const DEFAULT_TICKET_CONFIG = {
-  showLogo: true,
-  showBusinessData: true,
-  businessName: "LuisITRepair",
-  businessAddress: "",
-  businessPhone: "",
-  showUnitPrice: true,
-  fullDescription: true,
-  showProductMeta: true,
-  showClientSection: true,
-  showClientName: true,
-  showClientPhone: true,
-  showPaymentSection: true,
-  showStatusSection: true,
-  showLegend: true,
-  legendText: "Se aceptan cambios con ticket en producto en buen estado.",
-  footerText: "Gracias por tu preferencia.",
-  extraTopLines: "",
-  extraBottomLines: "",
-};
+export function createDefaultTicketConfig() {
+  const empresa = readEmpresaConfigCache();
+
+  return {
+    showLogo: true,
+    showBusinessData: true,
+    businessName: empresa.nombre,
+    businessAddress: "",
+    businessPhone: "",
+    showUnitPrice: true,
+    fullDescription: true,
+    showProductMeta: true,
+    showClientSection: true,
+    showClientName: true,
+    showClientPhone: true,
+    showPaymentSection: true,
+    showStatusSection: true,
+    showLegend: true,
+    legendText: "Se aceptan cambios con ticket en producto en buen estado.",
+    footerText: "Gracias por tu preferencia.",
+    extraTopLines: "",
+    extraBottomLines: "",
+  };
+}
+
+export const DEFAULT_TICKET_CONFIG = createDefaultTicketConfig();
 
 function toBool(value, fallback = false) {
   if (typeof value === "boolean") return value;
@@ -34,66 +42,38 @@ function toText(value, fallback = "") {
 }
 
 export function buildTicketConfig(raw = {}) {
+  const defaults = createDefaultTicketConfig();
+
   return {
-    showLogo: toBool(raw.showLogo, DEFAULT_TICKET_CONFIG.showLogo),
-    showBusinessData: toBool(
-      raw.showBusinessData,
-      DEFAULT_TICKET_CONFIG.showBusinessData,
-    ),
-    businessName: toText(raw.businessName, DEFAULT_TICKET_CONFIG.businessName),
-    businessAddress: toText(
-      raw.businessAddress,
-      DEFAULT_TICKET_CONFIG.businessAddress,
-    ),
-    businessPhone: toText(raw.businessPhone, DEFAULT_TICKET_CONFIG.businessPhone),
-    showUnitPrice: toBool(raw.showUnitPrice, DEFAULT_TICKET_CONFIG.showUnitPrice),
-    fullDescription: toBool(
-      raw.fullDescription,
-      DEFAULT_TICKET_CONFIG.fullDescription,
-    ),
-    showProductMeta: toBool(
-      raw.showProductMeta,
-      DEFAULT_TICKET_CONFIG.showProductMeta,
-    ),
-    showClientSection: toBool(
-      raw.showClientSection,
-      DEFAULT_TICKET_CONFIG.showClientSection,
-    ),
-    showClientName: toBool(
-      raw.showClientName,
-      DEFAULT_TICKET_CONFIG.showClientName,
-    ),
-    showClientPhone: toBool(
-      raw.showClientPhone,
-      DEFAULT_TICKET_CONFIG.showClientPhone,
-    ),
-    showPaymentSection: toBool(
-      raw.showPaymentSection,
-      DEFAULT_TICKET_CONFIG.showPaymentSection,
-    ),
-    showStatusSection: toBool(
-      raw.showStatusSection,
-      DEFAULT_TICKET_CONFIG.showStatusSection,
-    ),
-    showLegend: toBool(raw.showLegend, DEFAULT_TICKET_CONFIG.showLegend),
-    legendText: toText(raw.legendText, DEFAULT_TICKET_CONFIG.legendText),
-    footerText: toText(raw.footerText, DEFAULT_TICKET_CONFIG.footerText),
-    extraTopLines: toText(raw.extraTopLines, DEFAULT_TICKET_CONFIG.extraTopLines),
-    extraBottomLines: toText(
-      raw.extraBottomLines,
-      DEFAULT_TICKET_CONFIG.extraBottomLines,
-    ),
+    showLogo: toBool(raw.showLogo, defaults.showLogo),
+    showBusinessData: toBool(raw.showBusinessData, defaults.showBusinessData),
+    businessName: toText(raw.businessName, defaults.businessName),
+    businessAddress: toText(raw.businessAddress, defaults.businessAddress),
+    businessPhone: toText(raw.businessPhone, defaults.businessPhone),
+    showUnitPrice: toBool(raw.showUnitPrice, defaults.showUnitPrice),
+    fullDescription: toBool(raw.fullDescription, defaults.fullDescription),
+    showProductMeta: toBool(raw.showProductMeta, defaults.showProductMeta),
+    showClientSection: toBool(raw.showClientSection, defaults.showClientSection),
+    showClientName: toBool(raw.showClientName, defaults.showClientName),
+    showClientPhone: toBool(raw.showClientPhone, defaults.showClientPhone),
+    showPaymentSection: toBool(raw.showPaymentSection, defaults.showPaymentSection),
+    showStatusSection: toBool(raw.showStatusSection, defaults.showStatusSection),
+    showLegend: toBool(raw.showLegend, defaults.showLegend),
+    legendText: toText(raw.legendText, defaults.legendText),
+    footerText: toText(raw.footerText, defaults.footerText),
+    extraTopLines: toText(raw.extraTopLines, defaults.extraTopLines),
+    extraBottomLines: toText(raw.extraBottomLines, defaults.extraBottomLines),
   };
 }
 
 export function readTicketConfigStorage() {
   try {
     const raw = localStorage.getItem(TICKET_CONFIG_STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_TICKET_CONFIG };
+    if (!raw) return createDefaultTicketConfig();
     const parsed = JSON.parse(raw);
     return buildTicketConfig(parsed);
   } catch {
-    return { ...DEFAULT_TICKET_CONFIG };
+    return createDefaultTicketConfig();
   }
 }
 
@@ -113,4 +93,3 @@ export function splitTicketLines(text) {
     .map((line) => line.trim())
     .filter(Boolean);
 }
-

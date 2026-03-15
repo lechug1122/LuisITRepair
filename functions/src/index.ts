@@ -365,6 +365,86 @@ export const mlSearch = onRequest({region: "southamerica-east1", invoker: "publi
   
 });
 
+export const googleImageSearch = onRequest({region: "southamerica-east1", invoker: "public"}, async (request, response) => {
+  try {
+    response.set("Access-Control-Allow-Origin", "*");
+    response.set("Access-Control-Allow-Methods", "GET,OPTIONS");
+    response.set("Access-Control-Allow-Headers", "Content-Type");
+
+    if (request.method === "OPTIONS") {
+      response.status(204).send("");
+      return;
+    }
+
+    const q = String(request.query.q || "").trim();
+    const apiKey = String(process.env.GOOGLE_CUSTOM_SEARCH_API_KEY || "").trim();
+    const cx = String(process.env.GOOGLE_CUSTOM_SEARCH_CX || "").trim();
+
+    if (!q) {
+      response.status(400).json({error: "Parametro q requerido."});
+      return;
+    }
+
+    if (!apiKey || !cx) {
+      response.status(503).json({
+        error: "Busqueda de imagen no configurada.",
+        detail: "Faltan GOOGLE_CUSTOM_SEARCH_API_KEY y/o GOOGLE_CUSTOM_SEARCH_CX.",
+      });
+      return;
+    }
+
+    const target =
+      "https://customsearch.googleapis.com/customsearch/v1?" +
+      `key=${encodeURIComponent(apiKey)}` +
+      `&cx=${encodeURIComponent(cx)}` +
+      `&q=${encodeURIComponent(q)}` +
+      "&searchType=image" +
+      "&safe=active" +
+      "&num=1" +
+      "&imgSize=large";
+
+    const googleRes = await fetch(target, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+
+    const payload = await googleRes.json().catch(() => null);
+
+    if (!googleRes.ok) {
+      response.status(googleRes.status).json({
+        error: "No se pudo consultar Google Images.",
+        detail: payload?.error?.message || `status ${googleRes.status}`,
+      });
+      return;
+    }
+
+    const first = Array.isArray(payload?.items) ? payload.items[0] : null;
+    if (!first) {
+      response.status(200).json({
+        result: null,
+        detail: "Sin resultados para el modelo consultado.",
+      });
+      return;
+    }
+
+    response.status(200).json({
+      result: {
+        title: String(first.title || "").trim(),
+        imageUrl: String(first.link || "").trim(),
+        contextLink: String(first.image?.contextLink || first.displayLink || "").trim(),
+        thumbnailUrl: String(first.image?.thumbnailLink || "").trim(),
+      },
+    });
+  } catch (error) {
+    logger.error("googleImageSearch error", error);
+    response.status(502).json({
+      error: "No se pudo consultar Google Images.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
 
 
 

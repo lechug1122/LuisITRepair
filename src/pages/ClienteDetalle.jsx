@@ -1,12 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import "../css/clientes.css";
+import PageLoader from "../components/PageLoader";
+import useServiciosConfig from "../hooks/useServiciosConfig";
 
 import {
   actualizarCliente,
   obtenerClientePorId,
 } from "../js/services/clientes_firestore";
+import { obtenerProductos } from "../js/services/POS_firebase";
 import { listarServiciosPorClienteId } from "../js/services/servicios_firestore";
+
+const METAS_PUNTOS = [
+  { puntos: 100, nivel: "Bronce", premio: "Accesorio rapido o descuento base" },
+  { puntos: 250, nivel: "Plata", premio: "Canjes medianos y prioridad de promo" },
+  { puntos: 500, nivel: "Oro", premio: "Canjes premium y beneficios frecuentes" },
+  { puntos: 1000, nivel: "Elite", premio: "Beneficios completos del programa" },
+];
 
 function fmtFecha(ts) {
   if (!ts?.seconds) return "-";
@@ -24,9 +34,40 @@ function phoneToWhatsapp(raw) {
   return cleaned.startsWith("52") ? cleaned : `52${cleaned}`;
 }
 
+function formatMoney(value) {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+}
+
+function normalizarProductoCanje(producto, puntosForzados = null) {
+  const precio = Number(producto?.precioVenta ?? producto?.precio ?? 0);
+  const puntosBase = Number(puntosForzados ?? producto?.puntosCanje ?? 0);
+  const puntosRequeridos = puntosBase > 0
+    ? Math.round(puntosBase)
+    : Math.max(100, Math.ceil(precio / 10) * 10);
+
+  return {
+    id: producto?.id,
+    nombre:
+      producto?.nombre ||
+      producto?.nombreProducto ||
+      producto?.codigo ||
+      "Producto sin nombre",
+    categoria: producto?.categoria || "General",
+    stock: Number(producto?.stock || 0),
+    precio,
+    puntosRequeridos,
+  };
+}
+
 export default function ClienteDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { catalogoCanjes, habilitarCanjes } = useServiciosConfig();
+  const mostrarProgramaCanjes = !habilitarCanjes;
   const goToServicio = (folioRaw) => {
     const folioSafe = encodeURIComponent(String(folioRaw || "").trim());
     navigate(`/servicios/${folioSafe}`);
@@ -39,6 +80,7 @@ export default function ClienteDetalle() {
   const [tab, setTab] = useState("pendientes");
   const [notasInternas, setNotasInternas] = useState("");
   const [guardandoNotas, setGuardandoNotas] = useState(false);
+  const [productos, setProductos] = useState([]);
 
   useEffect(() => {
     let alive = true;
@@ -46,18 +88,23 @@ export default function ClienteDetalle() {
     (async () => {
       try {
         setError("");
-        const c = await obtenerClientePorId(id);
-        const s = await listarServiciosPorClienteId(id);
+        const [c, s, inventario] = await Promise.all([
+          obtenerClientePorId(id),
+          listarServiciosPorClienteId(id),
+          obtenerProductos(),
+        ]);
 
         if (!alive) return;
         setCliente(c);
         setServicios(Array.isArray(s) ? s : []);
+        setProductos(Array.isArray(inventario) ? inventario : []);
         setNotasInternas(String(c?.notasInternas || ""));
       } catch (e) {
         console.error("Error cargando detalle del cliente:", e);
         if (!alive) return;
         setCliente(null);
         setServicios([]);
+        setProductos([]);
         setError("No se pudo cargar la informacion del cliente.");
       } finally {
         if (alive) setLoading(false);
@@ -87,6 +134,7 @@ export default function ClienteDetalle() {
   );
 
   const clienteFrecuente = servicios.length >= 5;
+  const puntosCliente = Number(cliente?.puntos || 0);
 
   // Ultimo servicio ya entregado para mostrar resumen de valor.
   const ultimoServicio = useMemo(() => {
@@ -139,6 +187,94 @@ export default function ClienteDetalle() {
     return `mailto:${email}?subject=${subject}&body=${body}`;
   }, [cliente?.email, cliente?.nombre]);
 
+  const metasPuntos = useMemo(
+    () =>
+      METAS_PUNTOS.map((meta) => {
+        const faltan = Math.max(meta.puntos - puntosCliente, 0);
+        return {
+          ...meta,
+          alcanzada: faltan === 0,
+          faltan,
+          progreso: Math.min((puntosCliente / meta.puntos) * 100, 100),
+        };
+      }),
+    [puntosCliente],
+  );
+
+  const siguienteMeta = useMemo(
+    () => metasPuntos.find((meta) => !meta.alcanzada) || metasPuntos[metasPuntos.length - 1],
+    [metasPuntos],
+  );
+
+  const metasStepper = useMemo(() => {
+    const indiceActivo = metasPuntos.findIndex((meta) => !meta.alcanzada);
+
+    return metasPuntos.map((meta, index) => {
+      let estado = "pending";
+
+      if (meta.alcanzada) {
+        estado = "completed";
+      } else if (index === indiceActivo) {
+        estado = "active";
+      }
+
+      return {
+        ...meta,
+        estado,
+        titulo: `${meta.nivel} - ${meta.puntos} pts`,
+        estadoTexto:
+          estado === "completed"
+            ? "Meta alcanzada"
+            : estado === "active"
+              ? "Meta actual"
+              : "Pendiente",
+        detalle:
+          estado === "completed"
+            ? `Premio listo: ${meta.premio}`
+            : estado === "active"
+              ? `Le faltan ${meta.faltan} puntos para desbloquear ${meta.premio}`
+              : `Canje futuro: ${meta.premio}`,
+      };
+    });
+  }, [metasPuntos]);
+
+  const productosCanjeables = useMemo(
+    () => {
+      const productosMap = new Map(productos.map((producto) => [producto.id, producto]));
+
+      if (Array.isArray(catalogoCanjes) && catalogoCanjes.length > 0) {
+        return catalogoCanjes
+          .filter((item) => item?.activo !== false && item?.productId)
+          .map((item) => {
+            const producto = productosMap.get(item.productId);
+            if (!producto) return null;
+            return normalizarProductoCanje(
+              {
+                ...producto,
+                nombre: item?.nombreProducto || producto?.nombre,
+              },
+              item?.puntos,
+            );
+          })
+          .filter((producto) => producto && producto.stock > 0)
+          .sort((a, b) => a.puntosRequeridos - b.puntosRequeridos || a.precio - b.precio)
+          .slice(0, 6);
+      }
+
+      return productos
+        .map((producto) => normalizarProductoCanje(producto))
+        .filter((producto) => producto.stock > 0)
+        .sort((a, b) => a.puntosRequeridos - b.puntosRequeridos || a.precio - b.precio)
+        .slice(0, 6);
+    },
+    [catalogoCanjes, productos],
+  );
+
+  const canjesDisponibles = useMemo(
+    () => productosCanjeables.filter((producto) => puntosCliente >= producto.puntosRequeridos),
+    [productosCanjeables, puntosCliente],
+  );
+
   const handleGuardarNotas = async () => {
     if (!cliente || guardandoNotas) return;
     try {
@@ -180,7 +316,7 @@ export default function ClienteDetalle() {
     URL.revokeObjectURL(href);
   };
 
-  if (loading) return <div className="clientes-page">Cargando...</div>;
+  if (loading) return <PageLoader text="Cargando cliente..." />;
   if (error) return <div className="clientes-page">{error}</div>;
   if (!cliente) {
     return <div className="clientes-page">Cliente no encontrado</div>;
@@ -209,9 +345,11 @@ export default function ClienteDetalle() {
                     <div className="badge-vip">Cliente frecuente</div>
                   )}
 
-                  <div className="badge-puntos">
-                    {cliente.puntos || 0} puntos acumulados
-                  </div>
+                  {mostrarProgramaCanjes && (
+                    <div className="badge-puntos">
+                      {puntosCliente} puntos acumulados
+                    </div>
+                  )}
                 </div>
 
                 <div className="hero-metricas">
@@ -258,6 +396,136 @@ export default function ClienteDetalle() {
             </div>
           </div>
         </div>
+
+        {mostrarProgramaCanjes && (
+          <>
+            {/* Este bloque solo aparece cuando la vista de canjes esta habilitada para clientes. */}
+            <section className="puntos-board">
+              <div className="puntos-board-copy">
+                <span className="puntos-board-chip">Programa de fidelidad</span>
+                <h2>Puntos, metas y canjes del cliente</h2>
+                <p>
+                  El saldo actual define las metas alcanzadas y los productos que ya puede
+                  canjear sin esperar otra visita.
+                </p>
+
+                <div className="puntos-board-stats">
+                  <div className="puntos-board-stat">
+                    <span>Saldo actual</span>
+                    <strong>{puntosCliente} pts</strong>
+                  </div>
+
+                  <div className="puntos-board-stat">
+                    <span>Siguiente meta</span>
+                    <strong>{siguienteMeta?.puntos || 0} pts</strong>
+                    <small>
+                      {siguienteMeta?.faltan > 0
+                        ? `Faltan ${siguienteMeta.faltan} puntos`
+                        : "Ya alcanzo la meta mas alta"}
+                    </small>
+                  </div>
+
+                  <div className="puntos-board-stat">
+                    <span>Canjes listos</span>
+                    <strong>{canjesDisponibles.length}</strong>
+                    <small>
+                      {canjesDisponibles.length
+                        ? "Productos que ya puede reclamar"
+                        : "Aun no llega a un canje disponible"}
+                    </small>
+                  </div>
+                </div>
+              </div>
+
+              <div className="stepper-box">
+                {metasStepper.map((meta, index) => (
+                  <div
+                    key={meta.puntos}
+                    className={`stepper-step stepper-${meta.estado}`}
+                  >
+                    <div className="stepper-circle">
+                      {meta.estado === "completed" ? (
+                        <svg
+                          viewBox="0 0 16 16"
+                          fill="currentColor"
+                          height="16"
+                          width="16"
+                          aria-hidden="true"
+                        >
+                          <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z" />
+                        </svg>
+                      ) : (
+                        index + 1
+                      )}
+                    </div>
+                    <div className="stepper-line"></div>
+                    <div className="stepper-content">
+                      <div className="stepper-title">{meta.titulo}</div>
+                      <div className="stepper-status">{meta.estadoTexto}</div>
+                      <div className="stepper-time">{meta.detalle}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="canje-section">
+              <div className="canje-section-head">
+                <div>
+                  <p className="detalle-title">Productos para canjear con puntos</p>
+                  <h3>Canjes sugeridos para este cliente</h3>
+                </div>
+                <div className="canje-section-head-actions">
+                  <button
+                    type="button"
+                    className="btn-light"
+                    onClick={() => navigate("/configuracion/servicios#canjes")}
+                  >
+                    Configurar canjes
+                  </button>
+                  <div className="canje-head-badge">
+                    {canjesDisponibles.length} disponibles ahora
+                  </div>
+                </div>
+              </div>
+
+              <div className="canje-grid">
+                {productosCanjeables.map((producto) => {
+                  const desbloqueado = puntosCliente >= producto.puntosRequeridos;
+
+                  return (
+                    <article
+                      key={producto.id}
+                      className={`canje-card ${desbloqueado ? "is-available" : ""}`}
+                    >
+                      <div className="canje-card-top">
+                        <span className="canje-category">{producto.categoria}</span>
+                        <span className={`canje-status ${desbloqueado ? "ready" : "locked"}`}>
+                          {desbloqueado ? "Canjeable" : `Faltan ${producto.puntosRequeridos - puntosCliente}`}
+                        </span>
+                      </div>
+
+                      <h4>{producto.nombre}</h4>
+                      <p>Valor comercial {formatMoney(producto.precio)}</p>
+
+                      <div className="canje-card-meta">
+                        <strong>{producto.puntosRequeridos} pts</strong>
+                        <span>Stock {producto.stock}</span>
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {productosCanjeables.length === 0 && (
+                  <article className="canje-card canje-card-empty">
+                    <h4>Sin productos para canje</h4>
+                    <p>Cuando haya productos con stock en inventario apareceran aqui.</p>
+                  </article>
+                )}
+              </div>
+            </section>
+          </>
+        )}
 
         <section className="detalle-grid">
           <article className="detalle-card">

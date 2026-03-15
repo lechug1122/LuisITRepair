@@ -12,6 +12,7 @@ import {
   where,
 } from "firebase/firestore";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import { auth, db } from "../initializer/firebase";
 
 function formatoHora(fechaMs) {
@@ -36,6 +37,7 @@ export default function Navbar({
   const navigate = useNavigate();
   const location = useLocation();
   const { puede } = useAutorizacionActual();
+  const { nombreEmpresa } = useEmpresaConfig();
   const [usuarioNombre, setUsuarioNombre] = useState("Usuario");
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
   const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false);
@@ -152,7 +154,7 @@ export default function Navbar({
           to="/home"
           onClick={() => setMenuMovilAbierto(false)}
         >
-          LuisITRepair
+          {nombreEmpresa || "LuisITRepair"}
         </NavLink>
 
         <button

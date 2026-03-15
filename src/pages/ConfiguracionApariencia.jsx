@@ -6,6 +6,7 @@ import {
   saveAparienciaConfigStorage,
 } from "../js/services/apariencia_config";
 import { auth } from "../initializer/firebase";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
 
 const COLOR_OPTIONS = [
   { key: "azul", label: "Azul", color: "#2563eb" },
@@ -15,6 +16,7 @@ const COLOR_OPTIONS = [
 ];
 
 export default function ConfiguracionApariencia() {
+  const { nombreEmpresa } = useEmpresaConfig();
   const [userId, setUserId] = useState(() => auth.currentUser?.uid || null);
   const [cfg, setCfg] = useState(() => readAparienciaConfigStorage(auth.currentUser?.uid || null));
   const [guardado, setGuardado] = useState(false);
@@ -160,7 +162,7 @@ export default function ConfiguracionApariencia() {
         <div className="cfg-appearance-preview">
           <h4>Vista previa</h4>
           <div className="cfg-appearance-preview-card" style={{ borderColor: colorPreview }}>
-            <strong style={{ color: colorPreview }}>LuisITRepair</strong>
+            <strong style={{ color: colorPreview }}>{nombreEmpresa || "LuisITRepair"}</strong>
             <p>
               Esta vista previa muestra el color principal y el estilo de apariencia aplicado.
             </p>

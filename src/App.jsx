@@ -18,8 +18,12 @@ import POS from "./pages/POS";
 import Productos from "./pages/productos";
 import Reportes from "./pages/reportes";
 import Configuracion from "./pages/Configuracion";
+import ConfiguracionEmpresa from "./pages/ConfiguracionEmpresa";
 import ConfiguracionPOS from "./pages/ConfiguracionPOS";
 import ConfiguracionApariencia from "./pages/ConfiguracionApariencia";
+import ConfiguracionServicios from "./pages/ConfiguracionServicios";
+import ConfiguracionMetodosPago from "./pages/ConfiguracionMetodosPago";
+import ConfiguracionNotificaciones from "./pages/ConfiguracionNotificaciones";
 import Empleados from "./pages/empleados";
 import PanelGeneral from "./pages/panelgeneralCon";
 
@@ -116,6 +120,7 @@ export default function App() {
           }
         >
           <Route index element={<PanelGeneral />} />
+          <Route path="empresa" element={<ConfiguracionEmpresa />} />
           <Route
             path="empleados"
             element={
@@ -125,7 +130,10 @@ export default function App() {
             }
           />
           <Route path="pos" element={<ConfiguracionPOS />} />
+          <Route path="servicios" element={<ConfiguracionServicios />} />
+          <Route path="metodos" element={<ConfiguracionMetodosPago />} />
           <Route path="apariencia" element={<ConfiguracionApariencia />} />
+          <Route path="notificaciones" element={<ConfiguracionNotificaciones />} />
         </Route>
       </Route>
 

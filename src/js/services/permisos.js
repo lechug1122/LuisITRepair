@@ -77,22 +77,45 @@ const ROL_BASE = {
     "configuracion.ver": false,
     "empleados.gestionar": false,
   },
+  Vendedor: {
+    "servicios.crear": false,
+    "servicios.ver": false,
+    "clientes.ver": true,
+    "ventas.pos": true,
+    "productos.ver": true,
+    "reportes.ver": true,
+    "configuracion.ver": false,
+    "empleados.gestionar": false,
+  },
 };
 
 function bool(v) {
   return v === true;
 }
 
-function normalizarRol(raw = "") {
-  const key = String(raw || "")
+function normalizarTextoRol(raw = "") {
+  return String(raw || "")
+    .replace(/Ã¡|á|à|ä|â/gi, "a")
+    .replace(/Ã©|é|è|ë|ê/gi, "e")
+    .replace(/Ã­|í|ì|ï|î/gi, "i")
+    .replace(/Ã³|ó|ò|ö|ô/gi, "o")
+    .replace(/Ãº|ú|ù|ü|û/gi, "u")
+    .replace(/Ã±|ñ/gi, "n")
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
+}
 
-  if (key === "administrador") return "Administrador";
-  if (key === "tecnico") return "Tecnico";
-  if (key === "cajero") return "Cajero";
+function normalizarRol(raw = "") {
+  const key = normalizarTextoRol(raw);
+
+  if (key.includes("admin")) return "Administrador";
+  if (key.includes("tecn")) return "Tecnico";
+  if (key.includes("cajer")) return "Cajero";
+  if (key.includes("vend")) return "Vendedor";
   return "";
 }
 
