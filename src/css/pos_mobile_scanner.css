@@ -20,10 +20,82 @@
   padding: 14px;
 }
 
+.posm-page-embedded {
+  min-height: auto;
+  padding: 0;
+  background: transparent;
+  display: block;
+}
+
+.posm-card-embedded {
+  width: 100%;
+}
+
+.posm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .posm-title {
   margin: 0;
   color: #f8fafc;
   font-size: 1.55rem;
+}
+
+.posm-switch-btn {
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.55);
+  color: #e2e8f0;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.posm-switch-btn:hover {
+  border-color: rgba(96, 165, 250, 0.6);
+  background: rgba(30, 41, 59, 0.9);
+}
+
+.posm-mode-switch {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.posm-mode-btn {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.4);
+  color: #cbd5e1;
+  padding: 10px 12px;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.posm-mode-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(30, 41, 59, 0.8);
+}
+
+.posm-mode-btn.active {
+  border-color: rgba(96, 165, 250, 0.9);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.9), rgba(2, 132, 199, 0.9));
+  color: #ffffff;
+}
+
+.posm-mode-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .posm-subtitle {
@@ -149,6 +221,10 @@
   gap: 4px;
 }
 
+.posm-extra {
+  margin-top: 12px;
+}
+
 @media (max-width: 560px) {
   .posm-page {
     padding: 8px;
@@ -169,5 +245,14 @@
 
   .posm-manual {
     grid-template-columns: 1fr;
+  }
+
+  .posm-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .posm-switch-btn {
+    width: 100%;
   }
 }

@@ -13,7 +13,7 @@ function getNextGoal(points) {
   return "Siguiente meta: 100 pts";
 }
 
-export default function Clientes() {
+export function ClientesPanel({ embedded = false, onSelectCliente = null } = {}) {
   const navigate = useNavigate();
   const { habilitarCanjes } = useServiciosConfig();
   const mostrarProgramaCanjes = !habilitarCanjes;
@@ -72,18 +72,29 @@ export default function Clientes() {
     navigate("/home");
   };
 
-  return (
-    <div className="clientes-page">
-      <div className="clientes-container">
-        <button
-          type="button"
-          className="clientes-back-btn"
-          onClick={volverPantallaAnterior}
-        >
-          Volver
-        </button>
+  const abrirCliente = (cliente) => {
+    if (typeof onSelectCliente === "function") {
+      onSelectCliente(cliente);
+      return;
+    }
 
-        <div className="clientes-header">
+    navigate(`/clientes/${cliente.id}`);
+  };
+
+  return (
+    <div className={`clientes-page ${embedded ? "clientes-page-embedded" : ""}`}>
+      <div className={`clientes-container ${embedded ? "clientes-container-embedded" : ""}`}>
+        {!embedded && (
+          <button
+            type="button"
+            className="clientes-back-btn"
+            onClick={volverPantallaAnterior}
+          >
+            Volver
+          </button>
+        )}
+
+        <div className={`clientes-header ${embedded ? "clientes-header-embedded" : ""}`}>
           <div className="clientes-hero-animated">
             <div className="bubbles">
               <span />
@@ -94,14 +105,16 @@ export default function Clientes() {
             <div className="clientes-hero-content">
               <div className="clientes-hero-top">
                 <div>
-                  <h1>Clientes</h1>
+                  <h1>{embedded ? "Clientes en caja" : "Clientes"}</h1>
                   <p>
-                    {mostrarProgramaCanjes
-                      ? "Gestion y seguimiento con enfoque en fidelidad y recompensas."
-                      : "Gestion y seguimiento del historial, contacto y actividad de clientes."}
+                    {embedded
+                      ? "Busca, revisa y carga un cliente sin salir del punto de venta."
+                      : mostrarProgramaCanjes
+                        ? "Gestion y seguimiento con enfoque en fidelidad y recompensas."
+                        : "Gestion y seguimiento del historial, contacto y actividad de clientes."}
                   </p>
                 </div>
-                {mostrarProgramaCanjes && (
+                {mostrarProgramaCanjes && !embedded && (
                   <button
                     type="button"
                     className="btn-hero"
@@ -110,12 +123,17 @@ export default function Clientes() {
                     Configurar canjes
                   </button>
                 )}
+                {embedded && (
+                  <span className="clientes-embed-pill">
+                    Toca un cliente para usarlo en la venta
+                  </span>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="clientes-search">
+        <div className={`clientes-search ${embedded ? "clientes-search-embedded" : ""}`}>
           <input
             placeholder="Buscar cliente por nombre o telefono..."
             value={q}
@@ -123,9 +141,8 @@ export default function Clientes() {
           />
         </div>
 
-        {/* Cuando el toggle esta activo, se oculta la capa visual de canjes/metas en clientes. */}
         {mostrarProgramaCanjes && (
-          <section className="clientes-loyalty-strip">
+          <section className={`clientes-loyalty-strip ${embedded ? "clientes-loyalty-strip-embedded" : ""}`}>
             <article className="clientes-loyalty-card">
               <span>Clientes con puntos</span>
               <strong>{clientesConPuntos}</strong>
@@ -140,7 +157,11 @@ export default function Clientes() {
 
             <article className="clientes-loyalty-card highlight">
               <span>Meta sugerida</span>
-              <strong>{clienteTop ? `${clienteTop.nombre}: ${Number(clienteTop.puntos || 0)} pts` : "100 / 250 / 500 / 1000 pts"}</strong>
+              <strong>
+                {clienteTop
+                  ? `${clienteTop.nombre}: ${Number(clienteTop.puntos || 0)} pts`
+                  : "100 / 250 / 500 / 1000 pts"}
+              </strong>
               <small>
                 {clienteTop
                   ? getNextGoal(clienteTop.puntos)
@@ -156,12 +177,12 @@ export default function Clientes() {
         )}
 
         {!loading && filtrados.length > 0 && (
-          <div className="clientes-grid">
+          <div className={`clientes-grid ${embedded ? "clientes-grid-embedded" : ""}`}>
             {filtrados.map((cliente) => (
               <div
                 key={cliente.id}
-                className="cliente-card"
-                onClick={() => navigate(`/clientes/${cliente.id}`)}
+                className={`cliente-card ${embedded ? "cliente-card-embedded" : ""}`}
+                onClick={() => abrirCliente(cliente)}
               >
                 <div className="cliente-left">
                   <div className="cliente-avatar">
@@ -196,7 +217,9 @@ export default function Clientes() {
                   </div>
                 </div>
 
-                <div className="cliente-arrow">{">"}</div>
+                <div className="cliente-arrow">
+                  {embedded ? "Usar" : ">"}
+                </div>
               </div>
             ))}
           </div>
@@ -204,4 +227,8 @@ export default function Clientes() {
       </div>
     </div>
   );
+}
+
+export default function Clientes() {
+  return <ClientesPanel />;
 }

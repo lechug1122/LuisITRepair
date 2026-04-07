@@ -1,7 +1,12 @@
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
+import { getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  allowLegacyTenantFallback,
+  buildTenantStorageKey,
+  getLegacyConfigDocRef,
+  getTenantConfigDocRef,
+  withTenantData,
+} from "./tenant";
 
-const notificacionesRef = doc(db, "configuracion", "notificaciones");
 const NOTIFICACIONES_STORAGE_KEY = "notificaciones_config_cache_v1";
 
 export const NOTIFICACIONES_CATALOGO = [
@@ -129,7 +134,7 @@ function saveNotificacionesConfigCache(config) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(
-      NOTIFICACIONES_STORAGE_KEY,
+      buildTenantStorageKey(NOTIFICACIONES_STORAGE_KEY),
       JSON.stringify(normalizeNotificacionesConfig(config)),
     );
   } catch {
@@ -142,12 +147,35 @@ export function readNotificacionesConfigCache() {
   if (typeof window === "undefined") return { ...DEFAULT_NOTIFICACIONES_CONFIG };
 
   try {
-    const raw = localStorage.getItem(NOTIFICACIONES_STORAGE_KEY);
+    const raw = localStorage.getItem(buildTenantStorageKey(NOTIFICACIONES_STORAGE_KEY));
     if (!raw) return { ...DEFAULT_NOTIFICACIONES_CONFIG };
     return normalizeNotificacionesConfig(JSON.parse(raw));
   } catch {
     return { ...DEFAULT_NOTIFICACIONES_CONFIG };
   }
+}
+
+async function hydrateNotificacionesDoc(ref) {
+  if (allowLegacyTenantFallback()) {
+    const legacySnap = await getDoc(getLegacyConfigDocRef("notificaciones"));
+    if (legacySnap.exists()) {
+      const normalizedLegacy = normalizeNotificacionesConfig(legacySnap.data());
+      await setDoc(
+        ref,
+        { ...withTenantData(normalizedLegacy), updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      return normalizedLegacy;
+    }
+  }
+
+  const defaults = { ...DEFAULT_NOTIFICACIONES_CONFIG };
+  await setDoc(
+    ref,
+    { ...withTenantData(defaults), updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+  return defaults;
 }
 
 // Consulta rapida para saber si una notificacion especifica esta activa.
@@ -160,16 +188,12 @@ export function isNotificationEnabled(config = {}, key = "") {
 // Lee la configuracion remota y la inicializa con defaults si hace falta.
 export async function obtenerNotificacionesConfig() {
   try {
+    const notificacionesRef = getTenantConfigDocRef("notificaciones");
     const snap = await getDoc(notificacionesRef);
     if (!snap.exists()) {
-      const defaults = { ...DEFAULT_NOTIFICACIONES_CONFIG };
-      saveNotificacionesConfigCache(defaults);
-      await setDoc(
-        notificacionesRef,
-        { ...defaults, updatedAt: serverTimestamp() },
-        { merge: true },
-      );
-      return defaults;
+      const hydrated = await hydrateNotificacionesDoc(notificacionesRef);
+      saveNotificacionesConfigCache(hydrated);
+      return hydrated;
     }
 
     const normalized = normalizeNotificacionesConfig(snap.data());
@@ -183,17 +207,19 @@ export async function obtenerNotificacionesConfig() {
 
 // Escucha cambios remotos y cae a cache si el snapshot falla.
 export function escucharNotificacionesConfig(callback, onError) {
+  const notificacionesRef = getTenantConfigDocRef("notificaciones");
   return onSnapshot(
     notificacionesRef,
     (snap) => {
       if (!snap.exists()) {
         const defaults = readNotificacionesConfigCache();
         callback(defaults);
-        setDoc(
-          notificacionesRef,
-          { ...defaults, updatedAt: serverTimestamp() },
-          { merge: true },
-        ).catch(() => {});
+        hydrateNotificacionesDoc(notificacionesRef)
+          .then((normalized) => {
+            saveNotificacionesConfigCache(normalized);
+            callback(normalized);
+          })
+          .catch(() => {});
         return;
       }
 
@@ -211,11 +237,12 @@ export function escucharNotificacionesConfig(callback, onError) {
 
 // Persiste la configuracion actualizada en local y remoto.
 export async function actualizarNotificacionesConfig(config) {
+  const notificacionesRef = getTenantConfigDocRef("notificaciones");
   const normalized = normalizeNotificacionesConfig(config);
   saveNotificacionesConfigCache(normalized);
   await setDoc(
     notificacionesRef,
-    { ...normalized, updatedAt: serverTimestamp() },
+    { ...withTenantData(normalized), updatedAt: serverTimestamp() },
     { merge: true },
   );
   return normalized;

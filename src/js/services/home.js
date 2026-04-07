@@ -1,10 +1,10 @@
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
+import { getDocs } from "firebase/firestore";
 import {
   isNotificationEnabled,
   obtenerNotificacionesConfig,
 } from "./configure_notificaciones";
 import { buildSystemUpdateNotification } from "./system_updates";
+import { filterItemsByTenant, getTenantCollectionQuery } from "./tenant";
 
 /* =========================
    Helpers
@@ -63,9 +63,9 @@ function calcularUtilidadVenta(venta) {
 ========================= */
 export async function obtenerKPIsDashboard() {
   const [clientesSnap, serviciosSnap, ventasSnap] = await Promise.all([
-    getDocs(collection(db, "clientes")),
-    getDocs(collection(db, "servicios")),
-    getDocs(collection(db, "ventas")),
+    getDocs(getTenantCollectionQuery("clientes")),
+    getDocs(getTenantCollectionQuery("servicios")),
+    getDocs(getTenantCollectionQuery("ventas")),
   ]);
 
   const ahora = new Date();
@@ -78,14 +78,19 @@ export async function obtenerKPIsDashboard() {
     ...d.data(),
   }));
 
-  const ventas = ventasSnap.docs.map((d) => ({
+  const ventas = filterItemsByTenant(ventasSnap.docs.map((d) => ({
     id: d.id,
     ...d.data(),
-  }));
+  })));
+  const clientes = filterItemsByTenant(clientesSnap.docs.map((d) => ({
+    id: d.id,
+    ...d.data(),
+  })));
+  const serviciosFiltrados = filterItemsByTenant(servicios);
 
-  const activos = servicios.filter((s) => !isFinalStatus(s.status)).length;
+  const activos = serviciosFiltrados.filter((s) => !isFinalStatus(s.status)).length;
 
-  const entregadosHoy = servicios.filter((s) => {
+  const entregadosHoy = serviciosFiltrados.filter((s) => {
     if (normalizarStatus(s.status) !== "entregado") return false;
 
     const fecha = toDate(s.fechaEntregado);
@@ -98,7 +103,7 @@ export async function obtenerKPIsDashboard() {
     );
   }).length;
 
-  const ingresosServiciosMes = servicios.reduce((acc, s) => {
+  const ingresosServiciosMes = serviciosFiltrados.reduce((acc, s) => {
     if (normalizarStatus(s.status) !== "entregado") return acc;
 
     const fecha = toDate(s.fechaEntregado);
@@ -120,7 +125,7 @@ export async function obtenerKPIsDashboard() {
     utilidadProductosMes,
     activos,
     entregados: entregadosHoy,
-    totalClientes: clientesSnap.size,
+    totalClientes: clientes.length,
   };
 }
 
@@ -128,12 +133,11 @@ export async function obtenerKPIsDashboard() {
    Servicios Pendientes
 ========================= */
 export async function obtenerServiciosPendientes() {
-  const serviciosSnap = await getDocs(collection(db, "servicios"));
-
-  const servicios = serviciosSnap.docs.map((doc) => ({
+  const serviciosSnap = await getDocs(getTenantCollectionQuery("servicios"));
+  const servicios = filterItemsByTenant(serviciosSnap.docs.map((doc) => ({
     id: doc.id,
     ...doc.data(),
-  }));
+  })));
 
   return servicios.filter((s) => !isFinalStatus(s.status));
 }
@@ -143,12 +147,11 @@ export async function obtenerServiciosPendientes() {
    (Para calendario fechaAprox)
 ========================= */
 export async function obtenerTodosServicios() {
-  const serviciosSnap = await getDocs(collection(db, "servicios"));
-
-  return serviciosSnap.docs.map((doc) => ({
+  const serviciosSnap = await getDocs(getTenantCollectionQuery("servicios"));
+  return filterItemsByTenant(serviciosSnap.docs.map((doc) => ({
     id: doc.id,
     ...doc.data(),
-  }));
+  })));
 }
 
 /* =========================
@@ -157,14 +160,14 @@ export async function obtenerTodosServicios() {
 export async function obtenerNotificacionesHome() {
   const config = await obtenerNotificacionesConfig();
   const [serviciosSnap, productosSnap, ventasSnap] = await Promise.all([
-    getDocs(collection(db, "servicios")),
-    getDocs(collection(db, "productos")),
-    getDocs(collection(db, "ventas")),
+    getDocs(getTenantCollectionQuery("servicios")),
+    getDocs(getTenantCollectionQuery("productos")),
+    getDocs(getTenantCollectionQuery("ventas")),
   ]);
 
-  const servicios = serviciosSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const productos = productosSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const ventas = ventasSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const servicios = filterItemsByTenant(serviciosSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const productos = filterItemsByTenant(productosSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const ventas = filterItemsByTenant(ventasSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
 
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
@@ -199,7 +202,7 @@ export async function obtenerNotificacionesHome() {
     return (
       ["listo", "finalizado", "cancelado", "no_reparable"].includes(st)
       && Number(s.costo || 0) > 0
-      && !Boolean(s.cobradoEnPOS)
+      && s.cobradoEnPOS !== true
     );
   });
 

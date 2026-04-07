@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import useServiciosConfig from "../hooks/useServiciosConfig";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import {
   actualizarServiciosConfig,
   DEFAULT_TERMINOS_SERVICIO,
@@ -32,6 +33,7 @@ function createTermRow(text = "") {
 }
 
 export default function ConfiguracionServicios() {
+  const { serviciosHabilitados } = useEmpresaConfig();
   const {
     precioRevision,
     catalogoCanjes,
@@ -232,183 +234,203 @@ export default function ConfiguracionServicios() {
   return (
     <section className="cfg-pos-wrap">
       <div className="cfg-pos-page-head">
-        <h2>Servicios</h2>
-        <p>Configura precio, hojas de servicio, terminos, retardo y catalogo de canjes.</p>
+        <h2>{serviciosHabilitados ? "Servicios" : "Canjes y fidelidad"}</h2>
+        <p>
+          {serviciosHabilitados
+            ? "Configura precio, hojas de servicio, terminos, retardo y catalogo de canjes."
+            : "Administra el programa de puntos y canjes mientras el modulo de servicios permanece oculto."}
+        </p>
       </div>
 
-      <div className="cfg-pos-card cfg-empresa-card">
-        <div className="cfg-ticket-block cfg-ticket-block-wide">
-          <h4>Precio de revision</h4>
-          <label htmlFor="servicios-precio-revision">Costo automatico al cancelar</label>
-          <input
-            id="servicios-precio-revision"
-            type="text"
-            inputMode="decimal"
-            value={precio}
-            onChange={(e) => setPrecio(moneyInput(e.target.value))}
-            placeholder="Ej. 150"
-            maxLength={12}
-          />
+      {!serviciosHabilitados && (
+        <div className="cfg-pos-card cfg-empresa-card">
+          <div className="cfg-ticket-block cfg-ticket-block-wide">
+            <h4>Modo tienda de abarrotes</h4>
+            <p className="cfg-pos-help">
+              La hoja de servicio, su PDF y el seguimiento tecnico estan ocultos porque el tipo de
+              negocio activo no usa el modulo de servicios.
+            </p>
+          </div>
+        </div>
+      )}
 
-          <div className="cfg-empresa-preview">
-            <strong>Vista previa:</strong> ${Number(precio || 0).toFixed(2)}
+      {serviciosHabilitados && (
+        <>
+          <div className="cfg-pos-card cfg-empresa-card">
+            <div className="cfg-ticket-block cfg-ticket-block-wide">
+              <h4>Precio de revision</h4>
+              <label htmlFor="servicios-precio-revision">Costo automatico al cancelar</label>
+              <input
+                id="servicios-precio-revision"
+                type="text"
+                inputMode="decimal"
+                value={precio}
+                onChange={(e) => setPrecio(moneyInput(e.target.value))}
+                placeholder="Ej. 150"
+                maxLength={12}
+              />
+
+              <div className="cfg-empresa-preview">
+                <strong>Vista previa:</strong> ${Number(precio || 0).toFixed(2)}
+              </div>
+
+              <small className="cfg-pos-help">
+                Cuando un servicio se marque como cancelado, este precio se cargara automaticamente.
+              </small>
+            </div>
           </div>
 
-          <small className="cfg-pos-help">
-            Cuando un servicio se marque como cancelado, este precio se cargara automaticamente.
-          </small>
-        </div>
-      </div>
+          <div className="cfg-pos-card cfg-servicios-card" id="hoja-servicio">
+            <div className="cfg-servicios-head">
+              <div>
+                <h3>Hojas de servicio</h3>
+                <p>Activa el PDF automatico, define terminos editables y la politica de retardo.</p>
+              </div>
+              <button
+                type="button"
+                className="cfg-ticket-test-btn"
+                onClick={addTerm}
+                disabled={!hojaServicioActiva}
+              >
+                + Agregar termino
+              </button>
+            </div>
 
-      <div className="cfg-pos-card cfg-servicios-card" id="hoja-servicio">
-        <div className="cfg-servicios-head">
-          <div>
-            <h3>Hojas de servicio</h3>
-            <p>Activa el PDF automatico, define terminos editables y la politica de retardo.</p>
-          </div>
-          <button
-            type="button"
-            className="cfg-ticket-test-btn"
-            onClick={addTerm}
-            disabled={!hojaServicioActiva}
-          >
-            + Agregar termino
-          </button>
-        </div>
+            <div className="cfg-ticket-block cfg-ticket-block-wide">
+              <h4>PDF de hoja de servicio</h4>
+              <label className="cfg-check-row">
+                <input
+                  type="checkbox"
+                  checked={hojaServicioActiva}
+                  onChange={(e) => setEmitirHojaServicio(e.target.checked)}
+                />
+                <span>Generar y descargar la hoja de servicio en PDF al guardar un servicio</span>
+              </label>
 
-        <div className="cfg-ticket-block cfg-ticket-block-wide">
-          <h4>PDF de hoja de servicio</h4>
-          <label className="cfg-check-row">
-            <input
-              type="checkbox"
-              checked={hojaServicioActiva}
-              onChange={(e) => setEmitirHojaServicio(e.target.checked)}
-            />
-            <span>Generar y descargar la hoja de servicio en PDF al guardar un servicio</span>
-          </label>
+              <div className="cfg-empresa-preview">
+                <strong>Estado actual:</strong>{" "}
+                {hojaServicioActiva ? "PDF activo en Hoja de servicio" : "PDF deshabilitado"}
+              </div>
 
-          <div className="cfg-empresa-preview">
-            <strong>Estado actual:</strong>{" "}
-            {hojaServicioActiva ? "PDF activo en Hoja de servicio" : "PDF deshabilitado"}
-          </div>
+              <small className="cfg-pos-help">
+                Si apagas esta opcion, el servicio se guarda sin generar PDF. La politica de retardo
+                y abandono se conserva activa por separado.
+              </small>
+            </div>
 
-          <small className="cfg-pos-help">
-            Si apagas esta opcion, el servicio se guarda sin generar PDF. La politica de retardo
-            y abandono se conserva activa por separado.
-          </small>
-        </div>
+            <div className="cfg-servicios-canje-summary cfg-servicios-summary">
+              <span>{terminos.filter((item) => item.text.trim()).length} terminos activos</span>
+              <span>{hojaServicioActiva ? "PDF automatico activo" : "PDF automatico apagado"}</span>
+            </div>
 
-        <div className="cfg-servicios-canje-summary cfg-servicios-summary">
-          <span>{terminos.filter((item) => item.text.trim()).length} terminos activos</span>
-          <span>{hojaServicioActiva ? "PDF automatico activo" : "PDF automatico apagado"}</span>
-        </div>
+            <div className="cfg-servicios-terms-list">
+              {terminos.map((item, index) => (
+                <div key={item.id} className="cfg-servicios-term-row">
+                  <div className="cfg-servicios-canje-order">{index + 1}</div>
 
-        <div className="cfg-servicios-terms-list">
-          {terminos.map((item, index) => (
-            <div key={item.id} className="cfg-servicios-term-row">
-              <div className="cfg-servicios-canje-order">{index + 1}</div>
+                  <div className="cfg-servicios-term-fields">
+                    <label>
+                      Termino o condicion
+                      <textarea
+                        value={item.text}
+                        onChange={(e) => updateTerm(item.id, e.target.value)}
+                        placeholder="Escribe la condicion del servicio"
+                        disabled={!hojaServicioActiva}
+                      />
+                    </label>
+                  </div>
 
-              <div className="cfg-servicios-term-fields">
-                <label>
-                  Termino o condicion
-                  <textarea
-                    value={item.text}
-                    onChange={(e) => updateTerm(item.id, e.target.value)}
-                    placeholder="Escribe la condicion del servicio"
+                  <button
+                    type="button"
+                    className="cfg-servicios-remove-btn"
+                    onClick={() => removeTerm(item.id)}
                     disabled={!hojaServicioActiva}
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="cfg-ticket-block cfg-ticket-block-wide">
+              <h4>Retardo y abandono</h4>
+              <label className="cfg-check-row">
+                <input
+                  type="checkbox"
+                  checked={retardoHabilitado}
+                  onChange={(e) => setRetardoHabilitado(e.target.checked)}
+                />
+                <span>Aplicar politica automatica de retardo y abandono</span>
+              </label>
+
+              <div className="cfg-servicios-policy-grid">
+                <label>
+                  Dias de tolerancia
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={retardoDias}
+                    onChange={(e) => setRetardoDias(integerInput(e.target.value))}
+                    disabled={!retardoHabilitado}
+                  />
+                </label>
+
+                <label>
+                  Cargo por retardo
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={retardoCargo}
+                    onChange={(e) => setRetardoCargo(moneyInput(e.target.value))}
+                    disabled={!retardoHabilitado}
+                  />
+                </label>
+
+                <label>
+                  Aplicar cargo cada
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={retardoCadaDias}
+                    onChange={(e) => setRetardoCadaDias(integerInput(e.target.value))}
+                    disabled={!retardoHabilitado}
+                  />
+                </label>
+
+                <label>
+                  Abandono a los
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={abandonoDias}
+                    onChange={(e) => setAbandonoDias(integerInput(e.target.value))}
+                    disabled={!retardoHabilitado}
                   />
                 </label>
               </div>
 
-              <button
-                type="button"
-                className="cfg-servicios-remove-btn"
-                onClick={() => removeTerm(item.id)}
-                disabled={!hojaServicioActiva}
-              >
-                Quitar
-              </button>
+              <label className="cfg-check-row">
+                <input
+                  type="checkbox"
+                  checked={abandonoSiSuperaCosto}
+                  onChange={(e) => setAbandonoSiSuperaCosto(e.target.checked)}
+                  disabled={!retardoHabilitado}
+                />
+                <span>Tambien considerar abandono si el cargo acumulado supera el costo del servicio</span>
+              </label>
+
+              <div className="cfg-servicios-policy-preview">
+                <strong>Vista previa automatica</strong>
+                <p>{politicaRetardoPreview}</p>
+              </div>
+
+              <small className="cfg-pos-help">
+                Esta politica se mostrara automaticamente en la Hoja de servicio y tambien en el PDF.
+              </small>
             </div>
-          ))}
-        </div>
-
-        <div className="cfg-ticket-block cfg-ticket-block-wide">
-          <h4>Retardo y abandono</h4>
-          <label className="cfg-check-row">
-            <input
-              type="checkbox"
-              checked={retardoHabilitado}
-              onChange={(e) => setRetardoHabilitado(e.target.checked)}
-            />
-            <span>Aplicar politica automatica de retardo y abandono</span>
-          </label>
-
-          <div className="cfg-servicios-policy-grid">
-            <label>
-              Dias de tolerancia
-              <input
-                type="text"
-                inputMode="numeric"
-                value={retardoDias}
-                onChange={(e) => setRetardoDias(integerInput(e.target.value))}
-                disabled={!retardoHabilitado}
-              />
-            </label>
-
-            <label>
-              Cargo por retardo
-              <input
-                type="text"
-                inputMode="decimal"
-                value={retardoCargo}
-                onChange={(e) => setRetardoCargo(moneyInput(e.target.value))}
-                disabled={!retardoHabilitado}
-              />
-            </label>
-
-            <label>
-              Aplicar cargo cada
-              <input
-                type="text"
-                inputMode="numeric"
-                value={retardoCadaDias}
-                onChange={(e) => setRetardoCadaDias(integerInput(e.target.value))}
-                disabled={!retardoHabilitado}
-              />
-            </label>
-
-            <label>
-              Abandono a los
-              <input
-                type="text"
-                inputMode="numeric"
-                value={abandonoDias}
-                onChange={(e) => setAbandonoDias(integerInput(e.target.value))}
-                disabled={!retardoHabilitado}
-              />
-            </label>
           </div>
-
-          <label className="cfg-check-row">
-            <input
-              type="checkbox"
-              checked={abandonoSiSuperaCosto}
-              onChange={(e) => setAbandonoSiSuperaCosto(e.target.checked)}
-              disabled={!retardoHabilitado}
-            />
-            <span>Tambien considerar abandono si el cargo acumulado supera el costo del servicio</span>
-          </label>
-
-          <div className="cfg-servicios-policy-preview">
-            <strong>Vista previa automatica</strong>
-            <p>{politicaRetardoPreview}</p>
-          </div>
-
-          <small className="cfg-pos-help">
-            Esta politica se mostrara automaticamente en la Hoja de servicio y tambien en el PDF.
-          </small>
-        </div>
-      </div>
+        </>
+      )}
 
       <div className="cfg-pos-card cfg-servicios-card" id="canjes">
         <div className="cfg-servicios-head">

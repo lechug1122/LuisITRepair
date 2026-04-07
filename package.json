@@ -1,13 +1,17 @@
 {
   "name": "hoja_service-app",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.8.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --force",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "manual:pdf": "node scripts/generar_manual_sistema.mjs",
+    "printer-bridge": "node scripts/printer_bridge.mjs",
+    "printer-bridge:install-startup": "powershell -ExecutionPolicy RemoteSigned -File scripts/install_printer_bridge_startup.ps1",
+    "printer-bridge:remove-startup": "powershell -ExecutionPolicy RemoteSigned -File scripts/remove_printer_bridge_startup.ps1"
   },
   "dependencies": {
     "@dataconnect/generated": "file:src/dataconnect-generated",
@@ -16,13 +20,14 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "file-saver": "^2.0.5",
-    "firebase": "^12.8.0",
+    "firebase": "^12.11.0",
     "firebase-admin": "^13.6.1",
     "firebase-functions": "^7.0.5",
     "html2canvas": "^1.4.1",
     "html5-qrcode": "^2.3.8",
     "jspdf": "^4.0.0",
     "papaparse": "^5.5.3",
+    "pdfjs-dist": "^5.6.205",
     "react": "^19.2.0",
     "react-calendar": "^6.0.0",
     "react-dom": "^19.2.0",

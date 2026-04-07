@@ -6,6 +6,7 @@ export default function ModalPago({
   mostrar,
   onClose,
   total,
+  imprimirAlCobrar = true,
   tipoPago,
   setTipoPago,
   montoEfectivo,
@@ -162,7 +163,7 @@ export default function ModalPago({
 
         <div className="acciones-pro">
           <button className="btn-confirmar-pro" onClick={confirmarConValidacion}>
-            F1 - Cobrar e Imprimir
+            {imprimirAlCobrar ? "F1 - Cobrar e Imprimir" : "F1 - Cobrar"}
           </button>
 
           <button className="btn-cancelar-pro" onClick={onClose}>

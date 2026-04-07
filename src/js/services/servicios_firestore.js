@@ -1,10 +1,7 @@
 import {
   collection,
-  query,
-  where,
   getDocs,
   getDoc,
-  orderBy,
   doc,
   updateDoc,
   serverTimestamp,
@@ -13,6 +10,18 @@ import {
 
 import { db } from "../../initializer/firebase";
 import { generarFolio } from "../utils_folio";
+import {
+  buildCamposPersonalizados,
+  buildLegacyBlocksFromCampos,
+  inferTipoNegocioServicio,
+  normalizeTipoNegocio,
+} from "./tipos_negocio";
+import {
+  dataBelongsToTenant,
+  filterItemsByTenant,
+  getTenantCollectionQuery,
+  withTenantData,
+} from "./tenant";
 
 /* =========================
    Helpers status
@@ -86,14 +95,21 @@ function buildDedupeKey(data) {
 }
 
 /* =========================
-   ✅ Folio helpers (índice único)
+   Folio helpers
 ========================= */
 function folioToKey(folio) {
-  return (folio || "").trim().replace(/\//g, "-"); // Firestore NO permite "/" en IDs
+  return (folio || "").trim().replace(/\//g, "-");
 }
 
 function throwNice(msg) {
   throw new Error(msg);
+}
+
+function buildCodeError(message, code, extra = {}) {
+  const err = new Error(message);
+  err.code = code;
+  Object.assign(err, extra);
+  return err;
 }
 
 function throwDuplicate(duplicado) {
@@ -106,18 +122,26 @@ function throwDuplicate(duplicado) {
 }
 
 /* =========================
-   ✅ arma un payload LIMPIO según tipoDispositivo
-   ✅ IMPORTANTE: folio estable (no se regenera si ya existe)
+   Construir payload
 ========================= */
-async function construirPayload(form) {
+async function construirPayload(form, folioOverride = "") {
   const tipo = form.tipoDispositivo;
+  const tipoNegocioSnapshot = normalizeTipoNegocio(
+    form?.tipoNegocioSnapshot || inferTipoNegocioServicio(form),
+  );
+  const camposPersonalizados = buildCamposPersonalizados(
+    tipoNegocioSnapshot,
+    form?.camposPersonalizados,
+    form,
+  );
+  const legacyBlocks = buildLegacyBlocksFromCampos(tipo, camposPersonalizados);
 
-  // ✅ Folio estable (await OBLIGATORIO)
   const folioFinal = (
-    form.folio || (await generarFolio(form.marca)) || ""
+    folioOverride || form.folio || (await generarFolio(form.marca)) || ""
   ).trim();
 
   const payload = {
+    ...withTenantData({}),
     clienteId: form.clienteId || null,
     nombre: form.nombre || "",
     direccion: form.direccion || "",
@@ -139,6 +163,10 @@ async function construirPayload(form) {
     entregado: false,
     fechaEntregado: null,
     hojaServicio: normalizeHojaServicioSnapshot(form?.hojaServicio),
+    tipoNegocioId: tipoNegocioSnapshot?.id || "",
+    tipoNegocioNombre: tipoNegocioSnapshot?.nombre || "",
+    tipoNegocioSnapshot,
+    camposPersonalizados,
 
     folio: folioFinal,
     status: "pendiente",
@@ -146,37 +174,41 @@ async function construirPayload(form) {
     updatedAt: serverTimestamp(),
   };
 
-  if (tipo === "laptop" || tipo === "pc") {
-    payload.laptopPc = {
-      procesador: form.procesador || "",
-      ram: form.ram || "",
-      disco: form.disco || "",
-      estadoPantalla: form.estadoPantalla || "",
-      estadoTeclado: form.estadoTeclado || "",
-      estadoMouse: form.estadoMouse || "",
-      funciona: form.funciona || "",
-      enciendeEquipo: form.enciendeEquipo || "",
-      contrasenaEquipo: form.contrasenaEquipo || "",
-    };
-  }
-
-  if (tipo === "impresora") {
-    payload.impresora = {
-      tipoImpresora: form.tipoImpresora || "",
-      imprime: form.imprime || "",
-      condicionesImpresora: form.condicionesImpresora || "",
-    };
-  }
-
-  if (tipo === "monitor") {
-    payload.monitor = {
-      tamanoMonitor: form.tamanoMonitor || "",
-      colores: form.colores || "",
-      condicionesMonitor: form.condicionesMonitor || "",
-    };
-  }
+  payload.laptopPc = legacyBlocks.laptopPc;
+  payload.impresora = legacyBlocks.impresora;
+  payload.monitor = legacyBlocks.monitor;
 
   return payload;
+}
+
+async function crearServicioConFolioReservado(payload) {
+  const folio = (payload.folio || "").trim();
+  if (!folio) throwNice("No se pudo generar folio.");
+
+  const folioKey = folioToKey(folio);
+  const folioRef = doc(db, "folios", folioKey);
+  const servicioRef = doc(collection(db, "servicios"));
+
+  await runTransaction(db, async (tx) => {
+    const folioSnap = await tx.get(folioRef);
+    if (folioSnap.exists()) {
+      throw buildCodeError(
+        `Ya existe un servicio con el folio ${folio}.`,
+        "FOLIO_ALREADY_EXISTS",
+        { folio },
+      );
+    }
+
+    tx.set(folioRef, {
+      folio,
+      servicioId: servicioRef.id,
+      createdAt: serverTimestamp(),
+    });
+
+    tx.set(servicioRef, payload);
+  });
+
+  return { id: servicioRef.id, folio };
 }
 
 export async function buscarServicioDuplicadoActivo(formLike) {
@@ -186,15 +218,12 @@ export async function buscarServicioDuplicadoActivo(formLike) {
 
   if (!telefono || !normalizarStatus(formLike?.tipoDispositivo)) return null;
 
-  // 1) Registros nuevos (con dedupeKey)
-  const qKey = query(collection(db, "servicios"), where("dedupeKey", "==", key));
-  const snapKey = await getDocs(qKey);
-  const porKey = snapKey.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-  // 2) Fallback para registros viejos sin dedupeKey
-  const qTel = query(collection(db, "servicios"), where("telefono", "==", telefono));
-  const snapTel = await getDocs(qTel);
-  const porTelefono = snapTel.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const tenantServiciosSnap = await getDocs(getTenantCollectionQuery("servicios"));
+  const tenantServicios = filterItemsByTenant(
+    tenantServiciosSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+  );
+  const porKey = tenantServicios.filter((item) => item?.dedupeKey === key);
+  const porTelefono = tenantServicios.filter((item) => item?.telefono === telefono);
 
   const candidatos = [...porKey, ...porTelefono].filter(
     (s, i, arr) => arr.findIndex((x) => x.id === s.id) === i
@@ -214,10 +243,8 @@ export async function buscarServicioDuplicadoActivo(formLike) {
 
     if (!mismoEquipo) return false;
 
-    // Si no hay descripción en ninguno, ya lo consideramos duplicado.
     if (!trabajoNorm || !normText(s?.trabajo)) return true;
 
-    // Misma descripción de falla => duplicado fuerte.
     return normText(s?.trabajo) === trabajoNorm;
   });
 
@@ -225,51 +252,52 @@ export async function buscarServicioDuplicadoActivo(formLike) {
 }
 
 /* =========================
-   ✅ CREAR (BLOQUEA duplicado por folio)
+   Crear
 ========================= */
 export async function guardarServicio(form) {
-  // 🔥 AQUÍ EL CAMBIO
-  const payload = await construirPayload(form);
+  const manualFolio = String(form?.folio || "").trim();
+  let dedupeChecked = false;
 
-  const duplicado = await buscarServicioDuplicadoActivo(payload);
-  if (duplicado) throwDuplicate(duplicado);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const folioCandidate = manualFolio || (await generarFolio(form?.marca));
+    const payload = await construirPayload(form, folioCandidate);
 
-  const folio = (payload.folio || "").trim();
-  if (!folio) throwNice("No se pudo generar folio.");
-
-  const folioKey = folioToKey(folio);
-
-  const folioRef = doc(db, "folios", folioKey);
-  const servicioRef = doc(collection(db, "servicios")); // id nuevo
-
-  await runTransaction(db, async (tx) => {
-    const folioSnap = await tx.get(folioRef);
-    if (folioSnap.exists()) {
-      throwNice(`⚠️ Ya existe un servicio con el folio ${folio}.`);
+    if (!dedupeChecked) {
+      const duplicado = await buscarServicioDuplicadoActivo(payload);
+      if (duplicado) throwDuplicate(duplicado);
+      dedupeChecked = true;
     }
 
-    // Reservar folio (único)
-    tx.set(folioRef, {
-      folio,
-      servicioId: servicioRef.id,
-      createdAt: serverTimestamp(),
-    });
+    const servicioExistente = await buscarServicioPorFolio(folioCandidate);
+    if (servicioExistente) {
+      if (manualFolio) {
+        throw buildCodeError(
+          `Ya existe un servicio con el folio ${folioCandidate}.`,
+          "FOLIO_ALREADY_EXISTS",
+          { folio: folioCandidate, servicioExistente },
+        );
+      }
+      continue;
+    }
 
-    // Crear servicio
-    tx.set(servicioRef, payload);
-  });
+    try {
+      return await crearServicioConFolioReservado(payload);
+    } catch (error) {
+      if (error?.code === "FOLIO_ALREADY_EXISTS" && !manualFolio) {
+        continue;
+      }
+      throw error;
+    }
+  }
 
-  return { id: servicioRef.id, folio };
+  throwNice("No se pudo asignar un folio unico. Intenta crear el servicio otra vez.");
 }
 
-
 /* =========================
-   ✅ UPSERT por FOLIO (ANTI-DUPLICADOS)
-   - si existe => actualiza
-   - si no existe => crea
+   Upsert por folio
 ========================= */
 export async function guardarOActualizarPorFolio(form) {
-  const payload = construirPayload(form);
+  const payload = await construirPayload(form);
 
   const folio = (payload.folio || "").trim();
   if (!folio) throwNice("No se pudo generar folio.");
@@ -283,7 +311,6 @@ export async function guardarOActualizarPorFolio(form) {
     const folioSnap = await tx.get(folioRef);
 
     if (!folioSnap.exists()) {
-      // no existe => crear
       tx.set(folioRef, {
         folio,
         servicioId: nuevoServicioRef.id,
@@ -294,13 +321,15 @@ export async function guardarOActualizarPorFolio(form) {
       return { id: nuevoServicioRef.id, folio, mode: "created" };
     }
 
-    // existe => actualizar el doc existente (NO duplica)
     const { servicioId } = folioSnap.data() || {};
-    if (!servicioId) throwNice("Índice de folio inválido (sin servicioId).");
+    if (!servicioId) throwNice("Indice de folio invalido (sin servicioId).");
 
     const servRef = doc(db, "servicios", servicioId);
+    const servSnap = await tx.get(servRef);
+    if (servSnap.exists() && !dataBelongsToTenant(servSnap.data())) {
+      throwNice("El servicio pertenece a otra cuenta.");
+    }
 
-    // no sobreescribas createdAt al actualizar
     const patch = { ...payload };
     delete patch.createdAt;
     patch.updatedAt = serverTimestamp();
@@ -313,7 +342,7 @@ export async function guardarOActualizarPorFolio(form) {
 }
 
 /* =========================
-   ✅ Buscar por folio (usa índice)
+   Buscar por folio
 ========================= */
 export async function buscarServicioPorFolio(folio) {
   const folioLimpio = (folio || "").trim();
@@ -330,48 +359,54 @@ export async function buscarServicioPorFolio(folio) {
     const servRef = doc(db, "servicios", servicioId);
     const servSnap = await getDoc(servRef);
     if (!servSnap.exists()) return null;
+    if (!dataBelongsToTenant(servSnap.data())) return null;
 
     return { id: servSnap.id, ...servSnap.data() };
   }
 
-  // fallback (registros viejos sin índice)
-  const q = query(collection(db, "servicios"), where("folio", "==", folioLimpio));
-  const snap = await getDocs(q);
-  if (snap.empty) return null;
-
-  const d = snap.docs[0];
+  const snap = await getDocs(getTenantCollectionQuery("servicios"));
+  const d = snap.docs.find((item) => String(item.data()?.folio || "").trim() === folioLimpio);
+  if (!d) return null;
   return { id: d.id, ...d.data() };
 }
 
 /* =========================
-   ✅ Pendientes (NO finales)
+   Pendientes
 ========================= */
 export async function listarServiciosPendientes() {
-  const qy = query(collection(db, "servicios"), orderBy("createdAt", "desc"));
-  const snap = await getDocs(qy);
-  const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const snap = await getDocs(getTenantCollectionQuery("servicios"));
+  const all = filterItemsByTenant(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  all.sort((a, b) => {
+    const left = a?.createdAt?.seconds || 0;
+    const right = b?.createdAt?.seconds || 0;
+    return right - left;
+  });
   return all.filter((s) => !isFinalStatus(s.status));
 }
 
 /* =========================
-   ✅ Historial (finales)
+   Historial
 ========================= */
 export async function listarServiciosHistorial() {
-  const qyAll = query(collection(db, "servicios"), orderBy("createdAt", "desc"));
-  const snapAll = await getDocs(qyAll);
-  const all = snapAll.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const snapAll = await getDocs(getTenantCollectionQuery("servicios"));
+  const all = filterItemsByTenant(snapAll.docs.map((d) => ({ id: d.id, ...d.data() })));
+  all.sort((a, b) => {
+    const left = a?.createdAt?.seconds || 0;
+    const right = b?.createdAt?.seconds || 0;
+    return right - left;
+  });
   return all.filter((s) => isFinalStatus(s.status));
 }
 
 /* =========================
-   ✅ Actualizar por ID (NO crea, NO duplica)
-   - Bloquea cambiar folio
+   Actualizar por ID
 ========================= */
 export async function actualizarServicioPorId(id, data) {
   const ref = doc(db, "servicios", id);
 
   const before = await getDoc(ref);
   if (!before.exists()) throwNice("Servicio no encontrado.");
+  if (!dataBelongsToTenant(before.data())) throwNice("Servicio fuera del alcance de la cuenta.");
 
   const current = before.data() || {};
 
@@ -384,12 +419,10 @@ export async function actualizarServicioPorId(id, data) {
   const nextStatusNorm = normalizarStatus(nextStatus);
   const isFinal = isFinalStatus(nextStatusNorm);
 
-  // 🔥 SI CAMBIA STATUS A ENTREGADO → GUARDA FECHA
   if (nextStatusNorm === "entregado") {
     patch.fechaEntregado = serverTimestamp();
   }
 
-  // 🔥 SI DEJA DE SER ENTREGADO → BORRA FECHA
   if (
     data?.status &&
     nextStatusNorm !== "entregado"
@@ -397,7 +430,6 @@ export async function actualizarServicioPorId(id, data) {
     patch.fechaEntregado = null;
   }
 
-  // 🔒 Solo entregado queda bloqueado; cancelado/no reparable siguen pendientes de cobro en POS.
   if (isFinal) {
     patch.locked = true;
     patch.lockedReason = nextStatusNorm;
@@ -413,22 +445,17 @@ export async function actualizarServicioPorId(id, data) {
 }
 
 /* =========================
-   ✅ Servicios por clienteId
-   (para ClienteDetalle)
+   Servicios por clienteId
 ========================= */
 export async function listarServiciosPorClienteId(clienteId) {
   if (!clienteId) return [];
 
-  const q = query(
-    collection(db, "servicios"),
-    where("clienteId", "==", clienteId), // 🔴 ESTE CAMPO ES CLAVE
-    orderBy("createdAt", "desc")
-  );
+  const snapshot = await getDocs(getTenantCollectionQuery("servicios"));
 
-  const snapshot = await getDocs(q);
-
-  return snapshot.docs.map((doc) => ({
-    id: doc.id,
-    ...doc.data(),
-  }));
+  return filterItemsByTenant(snapshot.docs.map((docItem) => ({
+    id: docItem.id,
+    ...docItem.data(),
+  })))
+    .filter((item) => item?.clienteId === clienteId)
+    .sort((a, b) => (b?.createdAt?.seconds || 0) - (a?.createdAt?.seconds || 0));
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import "../css/pos.css";
 import Layout from "../components/Layout";
 import POSMobileScanner from "../components/POSMobileScanner";
@@ -9,12 +10,23 @@ import ModalSelectorServicio from "../components/modal_selector_servicio";
 import ModalComparadorPrecios from "../components/modal_comparador_precios";
 import ModalAperturaCaja from "../components/modal_apertura_caja";
 import { imprimirTicketVenta } from "../components/print_ticket_venta";
+import { ClientesPanel } from "./Clientes";
 import {
   buscarServicioPorFolio,
   actualizarServicioPorId,
   listarServiciosPendientes,
+  listarServiciosPorClienteId,
 } from "../js/services/servicios_firestore";
-import { obtenerClientePorId } from "../js/services/clientes_firestore";
+import {
+  crearCliente,
+  obtenerClientePorId,
+  listarVentasPorCliente,
+} from "../js/services/clientes_firestore";
+import {
+  construirResumenComprasCliente,
+  construirResumenServiciosCliente,
+  fmtFechaCliente,
+} from "../js/services/cliente_resumen";
 
 import {
   obtenerProductos,
@@ -31,17 +43,35 @@ import {
   finalizarScanPos,
 } from "../js/services/pos_sync_firestore";
 import { auth } from "../initializer/firebase";
+import useImpresorasConfig from "../hooks/useImpresorasConfig";
 import useMonedaConfig from "../hooks/useMonedaConfig";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useServiciosConfig from "../hooks/useServiciosConfig";
 
-const MOBILE_POS_BREAKPOINT = 1024;
 const IVA_RATE_DEFAULT = 0.16;
 
 function detectarVistaMovilPOS() {
-  if (typeof window === "undefined") return false;
-  const byWidth = window.matchMedia(`(max-width: ${MOBILE_POS_BREAKPOINT}px)`).matches;
-  const byPointer = window.matchMedia("(pointer: coarse)").matches;
-  return byWidth || byPointer;
+  if (typeof navigator === "undefined") return false;
+
+  const ua = String(navigator.userAgent || navigator.vendor || "");
+  const platform = String(navigator.userAgentData?.platform || navigator.platform || "").toLowerCase();
+  const maxTouchPoints = Number(navigator.maxTouchPoints || 0);
+  const esIPadOS = platform === "macintel" && maxTouchPoints > 1;
+  const esAndroid = /android/i.test(ua);
+  const esIOS = /iphone|ipod|ipad/i.test(ua) || esIPadOS;
+  const esWindowsPhone = /windows phone|iemobile/i.test(ua);
+  const esEscritorio =
+    /win32|win64|windows|macintel|macppc|mac68k|linux x86_64|linux arm|cros/i.test(platform)
+    && !esIPadOS;
+
+  if (esEscritorio) return false;
+  if (typeof navigator.userAgentData?.mobile === "boolean") {
+    if (!navigator.userAgentData.mobile && !esAndroid && !esIOS && !esWindowsPhone) {
+      return false;
+    }
+  }
+
+  return esAndroid || esIOS || esWindowsPhone;
 }
 
 function normalizarProductoCanje(producto, puntosForzados = null) {
@@ -65,10 +95,27 @@ function normalizarProductoCanje(producto, puntosForzados = null) {
   };
 }
 
+function normalizarTelefonoCliente(raw = "") {
+  return String(raw || "").replace(/\D/g, "").slice(0, 10);
+}
+
+function createClienteDraft(telefono = "") {
+  return {
+    nombre: "",
+    telefono: normalizarTelefonoCliente(telefono),
+    direccion: "",
+  };
+}
+
 export default function POS() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { formatCurrency } = useMonedaConfig();
+  const { serviciosHabilitados } = useEmpresaConfig();
   const { habilitarCanjes, catalogoCanjes } = useServiciosConfig();
+  const { imprimirAlCobrar } = useImpresorasConfig();
   const mostrarProgramaCliente = !habilitarCanjes;
+  const vistaPOS = searchParams.get("vista") === "clientes" ? "clientes" : "ventas";
+  const mostrandoClientesPOS = vistaPOS === "clientes";
 
   const inputRef = useRef(null);
   const scansProcesandoRef = useRef(new Set());
@@ -81,6 +128,13 @@ export default function POS() {
 
   const [clienteTelefono, setClienteTelefono] = useState("");
   const [clienteData, setClienteData] = useState(null);
+  const [clienteBuscado, setClienteBuscado] = useState(false);
+  const [mostrarAltaCliente, setMostrarAltaCliente] = useState(false);
+  const [guardandoCliente, setGuardandoCliente] = useState(false);
+  const [nuevoCliente, setNuevoCliente] = useState(() => createClienteDraft(""));
+  const [clienteVentasHistorial, setClienteVentasHistorial] = useState([]);
+  const [clienteServiciosHistorial, setClienteServiciosHistorial] = useState([]);
+  const [clienteResumenLoading, setClienteResumenLoading] = useState(false);
 
   const [productosDB, setProductosDB] = useState([]);
   const [carrito, setCarrito] = useState([]);
@@ -121,6 +175,11 @@ export default function POS() {
   const [fondoInicialApertura, setFondoInicialApertura] = useState("0");
   const [faltaFondoInicial, setFaltaFondoInicial] = useState(false);
   const [esVistaMovil, setEsVistaMovil] = useState(detectarVistaMovilPOS);
+  const modoMovilPOS = esVistaMovil
+    ? (searchParams.get("modo") === "pos" ? "pos" : "scanner")
+    : "desktop";
+  const mostrandoEscanerMovil = esVistaMovil && modoMovilPOS === "scanner";
+  const mostrandoPOSMovil = esVistaMovil && modoMovilPOS === "pos";
   const uidActual = auth.currentUser?.uid || "";
 
   const ESTADOS_PERMITIDOS_SERVICIO = new Set(["listo", "cancelado", "no_reparable"]);
@@ -148,6 +207,35 @@ export default function POS() {
 
   const normalizarCodigo = (raw) =>
     String(raw ?? "").trim().toLowerCase();
+
+  const actualizarQueryPOS = (mutator) => {
+    const params = new URLSearchParams(searchParams);
+    mutator(params);
+    setSearchParams(params);
+  };
+
+  const cambiarModoMovil = (modo) => {
+    actualizarQueryPOS((params) => {
+      params.set("modo", modo === "pos" ? "pos" : "scanner");
+    });
+  };
+
+  const opcionesModoMovil = esVistaMovil
+    ? [
+        {
+          key: "scanner",
+          label: "Escaner",
+          active: modoMovilPOS === "scanner",
+          onClick: () => cambiarModoMovil("scanner"),
+        },
+        {
+          key: "pos",
+          label: "POS movil",
+          active: modoMovilPOS === "pos",
+          onClick: () => cambiarModoMovil("pos"),
+        },
+      ]
+    : [];
 
   useEffect(() => {
     carritoRef.current = carrito;
@@ -262,11 +350,7 @@ export default function POS() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const sync = () => setEsVistaMovil(detectarVistaMovilPOS());
-    sync();
-    window.addEventListener("resize", sync);
-    return () => window.removeEventListener("resize", sync);
+    setEsVistaMovil(detectarVistaMovilPOS());
   }, []);
 
   useEffect(() => {
@@ -297,6 +381,11 @@ export default function POS() {
     setCarrito([]);
     setServiciosPorEntregar([]);
     setBusqueda("");
+    setClienteTelefono("");
+    setClienteData(null);
+    setClienteBuscado(false);
+    setMostrarAltaCliente(false);
+    setNuevoCliente(createClienteDraft(""));
   }, [cajaCerradaHoy]);
 
   const cargarProductos = async () => {
@@ -306,14 +395,128 @@ export default function POS() {
 
   /* ================= CLIENTE ================= */
 
+  const actualizarTelefonoCliente = (raw) => {
+    const telefono = normalizarTelefonoCliente(raw);
+    setClienteTelefono(telefono);
+    setClienteData(null);
+    setClienteBuscado(false);
+
+    if (mostrarAltaCliente) {
+      setNuevoCliente((prev) => ({
+        ...prev,
+        telefono,
+      }));
+    }
+  };
+
   const verificarCliente = async () => {
-    if (!clienteTelefono) {
+    const telefono = normalizarTelefonoCliente(clienteTelefono);
+    if (!telefono) {
+      setClienteTelefono("");
       setClienteData(null);
+      setClienteBuscado(false);
+      setMostrarAltaCliente(false);
       return;
     }
 
-    const cliente = await buscarClientePorTelefono(clienteTelefono);
-    setClienteData(cliente);
+    try {
+      setClienteTelefono(telefono);
+      const cliente = await buscarClientePorTelefono(telefono);
+      setClienteData(cliente);
+      setClienteBuscado(true);
+      if (cliente) {
+        setMostrarAltaCliente(false);
+      }
+    } catch (error) {
+      console.error("No se pudo buscar el cliente:", error);
+      alert("No se pudo verificar el cliente.");
+    }
+  };
+
+  const abrirAltaCliente = () => {
+    setNuevoCliente(createClienteDraft(clienteTelefono));
+    setMostrarAltaCliente(true);
+  };
+
+  const cerrarAltaCliente = () => {
+    setMostrarAltaCliente(false);
+    setNuevoCliente(createClienteDraft(clienteTelefono));
+  };
+
+  const seleccionarClienteDesdePanel = (cliente) => {
+    const telefono = normalizarTelefonoCliente(cliente?.telefono || "");
+    setClienteTelefono(telefono);
+    setClienteData(cliente || null);
+    setClienteBuscado(Boolean(cliente));
+    setMostrarAltaCliente(false);
+    setNuevoCliente(createClienteDraft(telefono));
+    actualizarQueryPOS((params) => {
+      params.delete("vista");
+      if (!esVistaMovil) {
+        params.delete("modo");
+      }
+    });
+  };
+
+  const actualizarNuevoCliente = (key, value) => {
+    setNuevoCliente((prev) => ({
+      ...prev,
+      [key]: key === "telefono" ? normalizarTelefonoCliente(value) : value,
+    }));
+  };
+
+  const guardarNuevoCliente = async () => {
+    const nombre = String(nuevoCliente.nombre || "").trim();
+    const telefono = normalizarTelefonoCliente(nuevoCliente.telefono);
+    const direccion = String(nuevoCliente.direccion || "").trim();
+
+    if (!nombre || !telefono || !direccion) {
+      alert("Completa nombre, telefono y direccion del cliente.");
+      return;
+    }
+
+    if (telefono.length < 10) {
+      alert("Captura un telefono valido de 10 digitos.");
+      return;
+    }
+
+    try {
+      setGuardandoCliente(true);
+
+      const existente = await buscarClientePorTelefono(telefono);
+      if (existente) {
+        setClienteTelefono(existente.telefono || telefono);
+        setClienteData(existente);
+        setClienteBuscado(true);
+        setMostrarAltaCliente(false);
+        alert("Ya existe un cliente con ese telefono. Se selecciono ese registro.");
+        return;
+      }
+
+      const nuevo = await crearCliente({
+        nombre,
+        telefono,
+        direccion,
+      });
+
+      setClienteTelefono(telefono);
+      setClienteData({
+        id: nuevo.id,
+        nombre,
+        telefono,
+        direccion,
+        puntos: 0,
+      });
+      setClienteBuscado(true);
+      setMostrarAltaCliente(false);
+      setNuevoCliente(createClienteDraft(""));
+      alert("Cliente creado correctamente.");
+    } catch (error) {
+      console.error("No se pudo crear el cliente desde POS:", error);
+      alert("No se pudo crear el cliente.");
+    } finally {
+      setGuardandoCliente(false);
+    }
   };
 
   const cargarServiciosListosParaCobro = async () => {
@@ -322,7 +525,7 @@ export default function POS() {
       const pendientes = await listarServiciosPendientes();
       const listos = pendientes
         .filter((s) => ESTADOS_PERMITIDOS_SERVICIO.has(normalizarEstado(s?.status)))
-        .filter((s) => !Boolean(s?.cobradoEnPOS))
+        .filter((s) => !s?.cobradoEnPOS)
         .filter((s) => parseCosto(s?.costo) > 0)
         .sort((a, b) => toMillis(b?.updatedAt || b?.createdAt) - toMillis(a?.updatedAt || a?.createdAt));
 
@@ -336,6 +539,7 @@ export default function POS() {
   };
 
   const abrirSelectorServiciosListos = async () => {
+    if (!serviciosHabilitados) return;
     if (cajaCerradaHoy || faltaFondoInicial) {
       if (cajaCerradaHoy) {
         alert("La caja de hoy ya esta cerrada. Las ventas se habilitan de nuevo manana.");
@@ -368,6 +572,8 @@ export default function POS() {
 
     setClienteTelefono(cliente?.telefono || telefonoServicio);
     setClienteData(cliente || null);
+    setClienteBuscado(Boolean(cliente || telefonoServicio));
+    setMostrarAltaCliente(false);
   };
 
   const agregarServicioAlCarrito = async (
@@ -467,28 +673,35 @@ export default function POS() {
       };
     }
 
-    const servicio = await buscarServicioPorFolio(termino);
+    if (serviciosHabilitados) {
+      const servicio = await buscarServicioPorFolio(termino);
 
-    if (servicio) {
-      const agregado = await agregarServicioAlCarrito(servicio, {
-        autocompletarCliente: true,
-        silencioso: !mostrarAlertas,
-      });
-      if (!agregado) {
+      if (servicio) {
+        const agregado = await agregarServicioAlCarrito(servicio, {
+          autocompletarCliente: true,
+          silencioso: !mostrarAlertas,
+        });
+        if (!agregado) {
+          return {
+            ok: false,
+            message: "El servicio no se pudo agregar. Debe estar en estado Listo, Cancelado o No reparable y no haberse cobrado.",
+          };
+        }
         return {
-          ok: false,
-          message: "El servicio no se pudo agregar. Debe estar en estado Listo, Cancelado o No reparable y no haberse cobrado.",
+          ok: true,
+          tipo: "servicio",
+          label: servicio?.folio || termino,
         };
       }
-      return {
-        ok: true,
-        tipo: "servicio",
-        label: servicio?.folio || termino,
-      };
     }
 
     if (!permitirBusquedaNombre) {
-      return { ok: false, message: "No se encontro un producto o servicio con ese codigo." };
+      return {
+        ok: false,
+        message: serviciosHabilitados
+          ? "No se encontro un producto o servicio con ese codigo."
+          : "No se encontro un producto con ese codigo.",
+      };
     }
 
     const coincidencias = productosDB.filter((p) =>
@@ -497,7 +710,12 @@ export default function POS() {
 
     if (coincidencias.length === 0) {
       if (mostrarAlertas) alert("Producto no encontrado");
-      return { ok: false, message: "No se encontro un producto o servicio con ese codigo." };
+      return {
+        ok: false,
+        message: serviciosHabilitados
+          ? "No se encontro un producto o servicio con ese codigo."
+          : "No se encontro un producto con ese codigo.",
+      };
     }
 
     if (coincidencias.length === 1) {
@@ -860,6 +1078,51 @@ export default function POS() {
     setMostrarCanjeModal(false);
   }, [canjesDisponibles.length, clienteData, mostrarProgramaCliente]);
 
+  useEffect(() => {
+    let cancelado = false;
+
+    const cargarResumenCliente = async () => {
+      if (!clienteData?.id) {
+        setClienteVentasHistorial([]);
+        setClienteServiciosHistorial([]);
+        setClienteResumenLoading(false);
+        return;
+      }
+
+      setClienteResumenLoading(true);
+      try {
+        const [ventas, servicios] = await Promise.all([
+          listarVentasPorCliente({
+            clienteId: clienteData.id,
+            telefono: clienteData.telefono || clienteTelefono || "",
+          }),
+          serviciosHabilitados
+            ? listarServiciosPorClienteId(clienteData.id)
+            : Promise.resolve([]),
+        ]);
+
+        if (cancelado) return;
+        setClienteVentasHistorial(Array.isArray(ventas) ? ventas : []);
+        setClienteServiciosHistorial(Array.isArray(servicios) ? servicios : []);
+      } catch (error) {
+        if (cancelado) return;
+        console.error("No se pudo cargar el resumen del cliente en POS:", error);
+        setClienteVentasHistorial([]);
+        setClienteServiciosHistorial([]);
+      } finally {
+        if (!cancelado) {
+          setClienteResumenLoading(false);
+        }
+      }
+    };
+
+    cargarResumenCliente();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [clienteData?.id, clienteData?.telefono, clienteTelefono, serviciosHabilitados]);
+
   /* ================= TOTALES PROFESIONALES ================= */
 
   const subtotal = carrito.reduce(
@@ -887,6 +1150,14 @@ export default function POS() {
   const cambio = totalPagado - total;
 
   const puntosGenerados = Math.floor(total / 10);
+  const clienteComprasResumen = useMemo(
+    () => construirResumenComprasCliente(clienteVentasHistorial),
+    [clienteVentasHistorial],
+  );
+  const clienteServiciosResumen = useMemo(
+    () => construirResumenServiciosCliente(clienteServiciosHistorial),
+    [clienteServiciosHistorial],
+  );
 
   /* ================= VENTA PROFESIONAL ================= */
 
@@ -1024,6 +1295,8 @@ export default function POS() {
     }
 
     const ventaPayload = {
+      clienteId: clienteData?.id || null,
+      clienteNombre: clienteData?.nombre || null,
       clienteTelefono: clienteTelefono || null,
       subtotal,
       descuentoManual,
@@ -1037,7 +1310,7 @@ export default function POS() {
         efectivo: montoEfectivo,
         tarjeta: montoTarjeta,
         transferencia: montoTransferencia,
-      referenciaTarjeta: referenciaPago.trim() || null
+        referenciaTarjeta: referenciaPago.trim() || null,
       },
       puntosGenerados,
       puntosCanjeados,
@@ -1107,28 +1380,31 @@ export default function POS() {
       String(auth.currentUser?.email || "").trim() ||
       "Sin asignar";
 
-    imprimirTicketVenta({
-      ventaId,
-      fecha: ventaPayload.fecha,
-      atendio: atendioVenta,
-      cliente: {
-        nombre: clienteData?.nombre || "Publico general",
-        telefono: clienteTelefono || "-"
-      },
-      tipoPago,
-      referenciaTarjeta: referenciaPago.trim() || "",
-      productos: productosVenta,
-      estado: serviciosPorEntregar.length > 0 ? "Entregado" : "Pagado",
-      subtotal,
-      aplicaIVA: aplicarIVA,
-      ivaPorcentaje: ivaRate,
-      iva,
-      total
-    });
+    if (imprimirAlCobrar) {
+      imprimirTicketVenta({
+        ventaId,
+        fecha: ventaPayload.fecha,
+        atendio: atendioVenta,
+        cliente: {
+          nombre: clienteData?.nombre || "Publico general",
+          telefono: clienteTelefono || "-",
+        },
+        tipoPago,
+        referenciaTarjeta: referenciaPago.trim() || "",
+        productos: productosVenta,
+        estado: serviciosPorEntregar.length > 0 ? "Entregado" : "Pagado",
+        subtotal,
+        aplicaIVA: aplicarIVA,
+        ivaPorcentaje: ivaRate,
+        iva,
+        total,
+      });
+    }
 
     setCarrito([]);
     setClienteTelefono("");
     setClienteData(null);
+    setClienteBuscado(false);
     setMostrarPago(false);
     setMontoEfectivo(0);
     setMontoTarjeta(0);
@@ -1139,6 +1415,8 @@ export default function POS() {
     setUsarPuntos(false);
     setPreferenciaCanje("guardar");
     setProductoCanjeId("");
+    setMostrarAltaCliente(false);
+    setNuevoCliente(createClienteDraft(""));
 
     cargarProductos();
     inputRef.current?.focus();
@@ -1222,12 +1500,25 @@ export default function POS() {
     }
   };
 
+  const resolverCodigoPosMovil = async (termino) => {
+    const result = await buscarYAgregarPorTermino(termino, {
+      mostrarAlertas: false,
+      permitirBusquedaNombre: false,
+    });
+
+    if (result?.ok && result.tipo !== "selector") {
+      setBusqueda("");
+    }
+
+    return result;
+  };
+
   const scannerBloqueado = cajaCerradaHoy || faltaFondoInicial;
   const scannerBloqueadoMsg = cajaCerradaHoy
     ? "Caja cerrada. El escaner se habilitara manana."
     : "Captura el fondo inicial para habilitar el escaner.";
 
-  if (esVistaMovil) {
+  if (mostrandoEscanerMovil) {
     return (
       <>
         <POSMobileScanner
@@ -1235,6 +1526,10 @@ export default function POS() {
           disabledMessage={scannerBloqueadoMsg}
           itemsCount={productosVenta.length}
           total={total}
+          serviciosHabilitados={serviciosHabilitados}
+          title="Escaner POS"
+          subtitle="Escanea productos o servicios y envialos al POS de escritorio."
+          modeOptions={opcionesModoMovil}
           onResolveCode={resolverCodigoMovil}
         />
 
@@ -1254,6 +1549,28 @@ export default function POS() {
       <div className="pos-container">
         {/* IZQUIERDA */}
         <div className="main">
+          {mostrandoClientesPOS ? (
+            <ClientesPanel
+              embedded
+              onSelectCliente={seleccionarClienteDesdePanel}
+            />
+          ) : (
+            <>
+          {mostrandoPOSMovil && (
+            <POSMobileScanner
+              embedded
+              disabled={scannerBloqueado}
+              disabledMessage={scannerBloqueadoMsg}
+              itemsCount={productosVenta.length}
+              total={total}
+              serviciosHabilitados={serviciosHabilitados}
+              title="POS movil"
+              subtitle="Usa el mismo escaner para agregar al carrito y cobrar desde este celular."
+              overlayLabel="POS MOVIL"
+              modeOptions={opcionesModoMovil}
+              onResolveCode={resolverCodigoPosMovil}
+            />
+          )}
 
           <h1>Punto de Venta</h1>
           {cajaCerradaHoy && (
@@ -1263,16 +1580,18 @@ export default function POS() {
             </div>
           )}
 
-          <div className="pos-actions">
-            <button
-              type="button"
-              className="btn-servicio-listo"
-              disabled={cajaCerradaHoy || faltaFondoInicial}
-              onClick={abrirSelectorServiciosListos}
-            >
-              Pagar servicio
-            </button>
-          </div>
+          {serviciosHabilitados && (
+            <div className="pos-actions">
+              <button
+                type="button"
+                className="btn-servicio-listo"
+                disabled={cajaCerradaHoy || faltaFondoInicial}
+                onClick={abrirSelectorServiciosListos}
+              >
+                Pagar servicio
+              </button>
+            </div>
+          )}
 
           <input
             ref={inputRef}
@@ -1303,13 +1622,16 @@ export default function POS() {
                   <td colSpan="5">
                     <div className="tabla-empty-state">
                       <strong>Aun no hay productos en la venta</strong>
-                      <span>Escanea un codigo, agrega un servicio o selecciona un canje.</span>
+                      <span>
+                        {serviciosHabilitados
+                          ? "Escanea un codigo, agrega un servicio o selecciona un canje."
+                          : "Escanea un codigo o selecciona un canje."}
+                      </span>
                     </div>
                   </td>
                 </tr>
               ) : (
                 productosVenta.map((p) => {
-                  const esProductoNormal = !p.esServicio && !p.esCanje;
                   const meta = p.esCanje
                     ? `Canje por puntos · ${p.puntosCanjeados || 0} pts`
                     : p.esServicio
@@ -1323,16 +1645,18 @@ export default function POS() {
                       key={p.id}
                       className={p.esCanje ? "tabla-fila-canje" : p.esServicio ? "tabla-fila-servicio" : ""}
                     >
-                      <td className="tabla-producto-cell">
+                      <td className="tabla-producto-cell" data-label="Producto">
                         <div className="tabla-producto">
                           <strong className="tabla-producto-nombre">{p.nombre}</strong>
                           <span className="tabla-producto-meta">{meta}</span>
                         </div>
                       </td>
-                      <td className="tabla-num">{p.cantidad}</td>
-                      <td className="tabla-num">{formatCurrency(p.precioVenta)}</td>
-                      <td className="tabla-num tabla-total">{formatCurrency(p.precioVenta * p.cantidad)}</td>
-                      <td className="tabla-acciones">
+                      <td className="tabla-num" data-label="Cantidad">{p.cantidad}</td>
+                      <td className="tabla-num" data-label="Precio">{formatCurrency(p.precioVenta)}</td>
+                      <td className="tabla-num tabla-total" data-label="Total">
+                        {formatCurrency(p.precioVenta * p.cantidad)}
+                      </td>
+                      <td className="tabla-acciones" data-label="Acciones">
                         {p.esCanje ? (
                           <span className="tabla-tag tabla-tag-canje">Canje $0</span>
                         ) : p.esServicio ? (
@@ -1364,6 +1688,9 @@ export default function POS() {
             </tbody>
           </table>
 
+            </>
+          )}
+
         </div>
 
         {/* DERECHA */}
@@ -1375,19 +1702,207 @@ export default function POS() {
               <h3>Cliente (Opcional)</h3>
 
           <input
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
             value={clienteTelefono}
             disabled={cajaCerradaHoy || faltaFondoInicial}
-            onChange={(e) => setClienteTelefono(e.target.value)}
+            onChange={(e) => actualizarTelefonoCliente(e.target.value)}
             onBlur={verificarCliente}
             placeholder="Teléfono cliente"
             className="input"
           />
 
+          <div className="pos-cliente-actions">
+            <button
+              type="button"
+              className="btn-cliente-secundario"
+              disabled={cajaCerradaHoy || faltaFondoInicial || !clienteTelefono}
+              onClick={verificarCliente}
+            >
+              Buscar
+            </button>
+            {!clienteData && (
+              <button
+                type="button"
+                className="btn-cliente-primario"
+                disabled={cajaCerradaHoy || faltaFondoInicial}
+                onClick={abrirAltaCliente}
+              >
+                + Crear cliente
+              </button>
+            )}
+          </div>
+
+          {clienteBuscado && !clienteData && !mostrarAltaCliente && (
+            <p className="pos-cliente-hint">
+              No se encontro un cliente con ese telefono. Puedes crearlo desde aqui.
+            </p>
+          )}
+
+          {mostrarAltaCliente && (
+            <div className="pos-cliente-form">
+              <div className="pos-cliente-form-head">
+                <strong>Nuevo cliente</strong>
+                <span>Alta rapida desde caja</span>
+              </div>
+
+              <input
+                type="text"
+                className="input"
+                placeholder="Nombre del cliente"
+                value={nuevoCliente.nombre}
+                disabled={guardandoCliente || cajaCerradaHoy || faltaFondoInicial}
+                onChange={(e) => actualizarNuevoCliente("nombre", e.target.value)}
+              />
+
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                className="input"
+                placeholder="Telefono"
+                value={nuevoCliente.telefono}
+                disabled={guardandoCliente || cajaCerradaHoy || faltaFondoInicial}
+                onChange={(e) => actualizarNuevoCliente("telefono", e.target.value)}
+              />
+
+              <input
+                type="text"
+                className="input"
+                placeholder="Direccion"
+                value={nuevoCliente.direccion}
+                disabled={guardandoCliente || cajaCerradaHoy || faltaFondoInicial}
+                onChange={(e) => actualizarNuevoCliente("direccion", e.target.value)}
+              />
+
+              <div className="pos-cliente-form-actions">
+                <button
+                  type="button"
+                  className="btn-cliente-secundario"
+                  disabled={guardandoCliente}
+                  onClick={cerrarAltaCliente}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="btn-cliente-primario"
+                  disabled={guardandoCliente || cajaCerradaHoy || faltaFondoInicial}
+                  onClick={guardarNuevoCliente}
+                >
+                  {guardandoCliente ? "Guardando..." : "Guardar cliente"}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* El programa de canjes/puntos puede ocultarse desde Configuracion > Servicios. */}
           {clienteData && (
+            <div className="cliente-info cliente-info-rich">
+              <div className="cliente-info-head">
+                <div className="cliente-info-copy">
+                  <strong className="cliente-info-name">{clienteData.nombre}</strong>
+                  <span className="cliente-info-subline">
+                    Tel: {clienteData.telefono || clienteTelefono || "-"}
+                  </span>
+                  {clienteData.direccion ? (
+                    <span className="cliente-info-subline">
+                      Dir: {clienteData.direccion}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="cliente-info-badges">
+                  <span className="cliente-pos-badge badge-points">
+                    {clienteData.puntos || 0} pts
+                  </span>
+                  <span className="cliente-pos-badge badge-earned">
+                    +{puntosGenerados} ahora
+                  </span>
+                </div>
+              </div>
+
+              {clienteResumenLoading ? (
+                <p className="cliente-pos-muted">Cargando resumen del cliente...</p>
+              ) : (
+                <>
+                  <div className="cliente-pos-stats">
+                    <div className="cliente-pos-stat">
+                      <span>Compras</span>
+                      <strong>{clienteComprasResumen.totalTickets}</strong>
+                    </div>
+                    <div className="cliente-pos-stat">
+                      <span>Total</span>
+                      <strong>{formatCurrency(clienteComprasResumen.totalCompras)}</strong>
+                    </div>
+                    <div className="cliente-pos-stat">
+                      <span>Ultima</span>
+                      <strong>
+                        {clienteComprasResumen.ultimaCompra
+                          ? fmtFechaCliente(
+                              clienteComprasResumen.ultimaCompra.fecha
+                              || clienteComprasResumen.ultimaCompra.createdAt,
+                            )
+                          : "-"}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {serviciosHabilitados ? (
+                    <div className="cliente-pos-stats cliente-pos-stats-servicios">
+                      <div className="cliente-pos-stat">
+                        <span>Servicios</span>
+                        <strong>{clienteServiciosResumen.totalServicios}</strong>
+                      </div>
+                      <div className="cliente-pos-stat">
+                        <span>Abiertos</span>
+                        <strong>{clienteServiciosResumen.pendientes}</strong>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="cliente-pos-summary">
+                    <span className="cliente-pos-summary-label">Frecuentes</span>
+                    {clienteComprasResumen.productosFrecuentes.length > 0 ? (
+                      <div className="cliente-pos-tags">
+                        {clienteComprasResumen.productosFrecuentes.map((producto) => (
+                          <span
+                            key={`${producto.nombre}-${producto.cantidad}`}
+                            className="cliente-pos-tag"
+                          >
+                            {producto.nombre}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="cliente-pos-muted">Sin compras registradas todavia.</p>
+                    )}
+                  </div>
+
+                  {serviciosHabilitados && clienteServiciosResumen.ultimoServicio ? (
+                    <div className="cliente-pos-row">
+                      <span>Ultimo servicio</span>
+                      <strong>
+                        {clienteServiciosResumen.ultimoServicio.folio || "Sin folio"} ·{" "}
+                        {fmtFechaCliente(
+                          clienteServiciosResumen.ultimoServicio.updatedAt
+                          || clienteServiciosResumen.ultimoServicio.createdAt,
+                        )}
+                      </strong>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          )}
+
+          {false && clienteData && (
             <div className="cliente-info">
               <p><strong>{clienteData.nombre}</strong></p>
-              <p>⭐ Puntos actuales: {clienteData.puntos}</p>
+              <p>Telefono: {clienteData.telefono || clienteTelefono || "-"}</p>
+              {clienteData.direccion ? <p>Direccion: {clienteData.direccion}</p> : null}
+              <p>⭐ Puntos actuales: {clienteData.puntos || 0}</p>
               <p>⭐ Esta compra genera: {puntosGenerados}</p>
             </div>
           )}
@@ -1487,8 +2002,13 @@ export default function POS() {
             onClick={() => {
               setCarrito([]);
               setServiciosPorEntregar([]);
+              setClienteTelefono("");
+              setClienteData(null);
+              setClienteBuscado(false);
               setPreferenciaCanje("guardar");
               setProductoCanjeId("");
+              setMostrarAltaCliente(false);
+              setNuevoCliente(createClienteDraft(""));
             }}
           >
             Vaciar
@@ -1498,13 +2018,15 @@ export default function POS() {
       </div>
 
       {/* 🔹 MODAL SEPARADO */}
-      <ModalSelectorServicio
-        mostrar={mostrarSelectorServicio}
-        cargando={cargandoServiciosListos}
-        servicios={serviciosListos}
-        onClose={() => setMostrarSelectorServicio(false)}
-        onSeleccionar={seleccionarServicioListo}
-      />
+      {serviciosHabilitados && (
+        <ModalSelectorServicio
+          mostrar={mostrarSelectorServicio}
+          cargando={cargandoServiciosListos}
+          servicios={serviciosListos}
+          onClose={() => setMostrarSelectorServicio(false)}
+          onSeleccionar={seleccionarServicioListo}
+        />
+      )}
 
       <ModalCanjePuntos
         mostrar={mostrarCanjeModal && mostrarProgramaCliente && !!clienteData && canjesDisponibles.length > 0}
@@ -1522,6 +2044,7 @@ export default function POS() {
         mostrar={mostrarPago && !cajaCerradaHoy && !faltaFondoInicial}
         onClose={() => setMostrarPago(false)}
         total={total}
+        imprimirAlCobrar={imprimirAlCobrar}
         clienteData={clienteData}
         usarPuntos={usarPuntos}
         setUsarPuntos={setUsarPuntos}

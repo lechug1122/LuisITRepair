@@ -554,10 +554,17 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
+  padding-top: calc(20px + env(safe-area-inset-top));
+  padding-right: calc(20px + env(safe-area-inset-right));
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  padding-left: calc(20px + env(safe-area-inset-left));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .abandono-modal{
   width: min(720px, 100%);
+  max-height: calc(100vh - 40px);
   background:
     radial-gradient(circle at top right, rgba(255, 255, 255, .92), transparent 28%),
     linear-gradient(180deg, #fff4f4, #ffe7e7);
@@ -569,6 +576,8 @@
   border: 1px solid rgba(239, 68, 68, .26);
   display: grid;
   gap: 18px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .abandono-modal.is-retraso{
@@ -691,6 +700,7 @@
   color: #0f172a;
   font-size: 1.18rem;
   line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
 .abandono-modal-message{
@@ -1228,10 +1238,15 @@
   .abandono-modal{
     padding: 18px;
     border-radius: 22px;
+    max-height: calc(100vh - 28px);
   }
   .abandono-modal-head{
-    grid-template-columns: 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: start;
+  }
+  .abandono-modal-badge{
+    grid-column: 1 / -1;
+    justify-self: start;
   }
   .abandono-modal-summary{
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1294,6 +1309,14 @@
 
 .equipo-modal-grid--general{
   margin-bottom: 10px;
+}
+
+.equipo-modal-grid--embedded{
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #dbe7f7;
+  background: #f8fbff;
 }
 
 .equipo-field{
@@ -1426,19 +1449,95 @@
   }
 
   .abandono-modal-overlay{
-    padding: 12px;
+    align-items: flex-start;
+    padding: 10px;
+    padding-top: calc(10px + env(safe-area-inset-top));
+    padding-right: calc(10px + env(safe-area-inset-right));
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    padding-left: calc(10px + env(safe-area-inset-left));
+  }
+
+  .abandono-modal{
+    width: 100%;
+    max-height: none;
+    border-radius: 20px;
+    padding: 14px;
+    gap: 14px;
   }
 
   .abandono-modal-head{
     gap: 12px;
   }
 
+  .abandono-modal-icon-wrap{
+    width: 58px;
+    height: 58px;
+    border-radius: 18px;
+  }
+
+  .abandono-modal-icon{
+    width: 46px;
+    height: 46px;
+    border-radius: 15px;
+    font-size: 1.65rem;
+  }
+
+  .abandono-modal-kicker{
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    font-size: .72rem;
+  }
+
+  .abandono-modal-copy h3{
+    font-size: clamp(1.6rem, 8.6vw, 2rem);
+    line-height: 1.08;
+  }
+
+  .abandono-modal-copy p{
+    font-size: .98rem;
+    line-height: 1.55;
+  }
+
   .abandono-modal-summary{
     grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .abandono-modal-stat{
+    gap: 6px;
+    padding: 12px 13px;
+    border-radius: 16px;
+  }
+
+  .abandono-modal-stat strong{
+    font-size: 1.08rem;
+  }
+
+  .abandono-modal-message{
+    gap: 8px;
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .abandono-modal-message p{
+    font-size: .98rem;
+    line-height: 1.65;
+  }
+
+  .abandono-modal-actions{
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 
   .abandono-modal-actions .btn{
     width: 100%;
+  }
+
+  .abandono-modal-btn-primary,
+  .abandono-modal-btn-secondary{
+    min-height: 50px;
+    padding-inline: 16px;
   }
 
   .obs-fotos-grid{

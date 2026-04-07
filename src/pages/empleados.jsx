@@ -3,20 +3,37 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDoc,
   onSnapshot,
+  query,
   updateDoc,
+  where,
   writeBatch,
 } from "firebase/firestore";
-import { createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
-import { auth, db } from "../initializer/firebase";
+import { createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "firebase/auth";
+import { auth, createSecondaryAuthClient, db } from "../initializer/firebase";
 import "../css/empleados.css";
+import {
+  getCreateAccountErrorMessage,
+  getStoredEmailValue,
+  normalizeEmailValue,
+} from "../js/services/account_identity";
 import {
   PERMISOS_CATALOGO,
   normalizarPermisos,
   permisosBasePorRol,
-  tienePermiso,
 } from "../js/services/permisos";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
+
+const ROLE_OPTIONS = ["Administrador", "Tecnico", "Vendedor", "Cajero"];
+
+function esRolTecnico(raw = "") {
+  return String(raw || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .includes("tecn");
+}
 
 // Crea la estructura base del formulario para altas y ediciones.
 function createInitialForm() {
@@ -33,15 +50,21 @@ function createInitialForm() {
 }
 
 function Empleados() {
+  const { serviciosHabilitados } = useEmpresaConfig();
+  const {
+    cuentaPrincipalUid,
+    puede,
+    superAdmin: esSuperAdminActual,
+    suscripcionControlada: suscripcionControladaActual,
+  } = useAutorizacionActual();
   const [empleados, setEmpleados] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [puedeGestionarActual, setPuedeGestionarActual] = useState(false);
-  const [esSuperAdminActual, setEsSuperAdminActual] = useState(false);
   const [showPermisosModal, setShowPermisosModal] = useState(false);
   const [form, setForm] = useState(createInitialForm());
   const [permisosDraft, setPermisosDraft] = useState(permisosBasePorRol(""));
   const currentUid = auth.currentUser?.uid || null;
+  const puedeGestionarActual = puede("empleados.gestionar");
   const empleadoEditado = useMemo(
     () => empleados.find((e) => e.id === editingId) || null,
     [empleados, editingId],
@@ -51,12 +74,12 @@ function Empleados() {
     [empleados],
   );
   // Calcula si el usuario actual puede asignar o transferir el rol de Super Admin.
-  const puedeAsignarSuperAdmin = (() => {
-    if (form.rol !== "Administrador") return false;
+  const puedeAsignarSuperAdmin = useMemo(() => {
+    if (!esSuperAdminActual || form.rol !== "Administrador") return false;
     if (!superAdminAsignado?.uid) return true;
     if (empleadoEditado?.uid && superAdminAsignado.uid === empleadoEditado.uid) return true;
-    return esSuperAdminActual;
-  })();
+    return true;
+  }, [empleadoEditado?.uid, esSuperAdminActual, form.rol, superAdminAsignado?.uid]);
   const editaSuPropioCargoSuperAdmin = useMemo(
     () =>
       !!empleadoEditado?.uid &&
@@ -74,39 +97,49 @@ function Empleados() {
     () => PERMISOS_CATALOGO.filter((p) => !!permisosDraft?.[p.key]),
     [permisosDraft],
   );
+  const rolesDisponibles = useMemo(
+    () => ROLE_OPTIONS.filter((rol) => serviciosHabilitados || rol !== "Tecnico"),
+    [serviciosHabilitados],
+  );
+  const rolBloqueadoPorTipoNegocio = useMemo(
+    () => !serviciosHabilitados && esRolTecnico(form.rol),
+    [form.rol, serviciosHabilitados],
+  );
 
-  useEffect(() => {
-    const obtenerRol = async () => {
-      const uid = auth.currentUser?.uid;
-      if (!uid) return;
+  const empleadosVisibles = useMemo(() => {
+    const ownerBase = cuentaPrincipalUid || currentUid;
+    if (!ownerBase) return [];
 
-      const snap = await getDoc(doc(db, "autorizados", uid));
-      if (!snap.exists()) return;
-
-      const data = snap.data();
-      setPuedeGestionarActual(
-        tienePermiso(data.rol || "", data.permisos || {}, "empleados.gestionar"),
-      );
-      setEsSuperAdminActual(data?.superAdmin === true);
-    };
-
-    obtenerRol();
-  }, []);
-
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "empleados"), (snapshot) => {
-      const lista = snapshot.docs.map((row) => ({ id: row.id, ...row.data() }));
-      setEmpleados(lista);
-    }, (error) => {
-      console.warn(
-        "[empleados] No se pudo suscribir a la coleccion empleados:",
-        error?.code || error,
-      );
-      setEmpleados([]);
+    return empleados.filter((emp) => {
+      const owner = String(emp?.cuentaPrincipalUid || emp?.uid || "").trim();
+      return owner === ownerBase;
     });
+  }, [cuentaPrincipalUid, currentUid, empleados]);
+
+  useEffect(() => {
+    const ownerBase = cuentaPrincipalUid || currentUid;
+    if (!ownerBase) {
+      setEmpleados([]);
+      return () => {};
+    }
+
+    const unsub = onSnapshot(
+      query(collection(db, "empleados"), where("cuentaPrincipalUid", "==", ownerBase)),
+      (snapshot) => {
+        const lista = snapshot.docs.map((row) => ({ id: row.id, ...row.data() }));
+        setEmpleados(lista);
+      },
+      (error) => {
+        console.warn(
+          "[empleados] No se pudo suscribir a la coleccion empleados:",
+          error?.code || error,
+        );
+        setEmpleados([]);
+      },
+    );
 
     return () => unsub();
-  }, []);
+  }, [cuentaPrincipalUid, currentUid]);
 
   // Restablece el formulario y cierra el modal principal.
   const cerrarFormulario = () => {
@@ -185,14 +218,37 @@ function Empleados() {
 
   // Guarda un empleado nuevo o actualiza uno existente con sus permisos.
   const handleSubmit = async () => {
+    const adminSesion = auth.currentUser;
+    const correoNormalizado = normalizeEmailValue(form.correo);
+
     try {
       if (!form.nombre || !form.correo || !form.rol || (!editingId && !form.password)) {
         alert("Completa los campos obligatorios");
         return;
       }
 
+      if (rolBloqueadoPorTipoNegocio) {
+        alert("El rol Tecnico no esta disponible cuando la empresa esta en modo abarrotes.");
+        return;
+      }
+
+      if (!correoNormalizado) {
+        alert("Debes capturar un correo valido.");
+        return;
+      }
+
       const permisosFinal = normalizarPermisos(form.rol, form.permisos || {});
       const quiereSuperAdmin = form.rol === "Administrador" && form.superAdmin === true;
+      const cuentaPrincipalDestino =
+        empleadoEditado?.cuentaPrincipalUid ||
+        cuentaPrincipalUid ||
+        empleadoEditado?.uid ||
+        currentUid ||
+        "";
+      const suscripcionControladaDestino =
+        empleadoEditado?.suscripcionControlada === true ||
+        (suscripcionControladaActual === true && !esSuperAdminActual);
+      const esCuentaPrincipalDestino = empleadoEditado?.esCuentaPrincipal === true;
 
       if (editingId) {
         if (!empleadoEditado?.uid) {
@@ -221,10 +277,15 @@ function Empleados() {
         batch.update(doc(db, "empleados", editingId), {
           nombre: form.nombre,
           telefono: form.telefono,
+          correo: form.correo,
+          correoNormalizado,
           rol: form.rol,
           estado: form.estado,
           permisos: permisosFinal,
           superAdmin: quiereSuperAdmin,
+          cuentaPrincipalUid: cuentaPrincipalDestino || empleadoEditado.uid,
+          suscripcionControlada: suscripcionControladaDestino,
+          esCuentaPrincipal: esCuentaPrincipalDestino,
         });
 
         batch.update(doc(db, "autorizados", empleadoEditado.uid), {
@@ -233,6 +294,11 @@ function Empleados() {
           permisos: permisosFinal,
           superAdmin: quiereSuperAdmin,
           nombre: form.nombre,
+          correo: form.correo,
+          correoNormalizado,
+          cuentaPrincipalUid: cuentaPrincipalDestino || empleadoEditado.uid,
+          suscripcionControlada: suscripcionControladaDestino,
+          esCuentaPrincipal: esCuentaPrincipalDestino,
         });
 
         if (quiereSuperAdmin) {
@@ -246,16 +312,32 @@ function Empleados() {
 
         await batch.commit();
       } else {
-        const adminActual = auth.currentUser;
-        const userCredential = await createUserWithEmailAndPassword(
-          auth,
-          form.correo,
-          form.password,
+        const existingEmployee = empleados.find(
+          (emp) => getStoredEmailValue(emp) === correoNormalizado,
         );
-        const uid = userCredential.user.uid;
+
+        if (existingEmployee) {
+          alert("Ese correo ya pertenece a un empleado registrado en este negocio.");
+          return;
+        }
+
+        const secondaryClient = createSecondaryAuthClient();
+        let uid = "";
+
+        try {
+          const userCredential = await createUserWithEmailAndPassword(
+            secondaryClient.auth,
+            form.correo,
+            form.password,
+          );
+          uid = userCredential.user.uid;
+        } finally {
+          await signOut(secondaryClient.auth).catch(() => {});
+          await secondaryClient.dispose();
+        }
 
         if (quiereSuperAdmin && superAdminAsignado?.uid && !esSuperAdminActual) {
-          await auth.updateCurrentUser(adminActual);
+          if (adminSesion) await auth.updateCurrentUser(adminSesion);
           alert("Ya existe un Super Administrador. Solo el actual puede transferir ese cargo.");
           return;
         }
@@ -268,10 +350,14 @@ function Empleados() {
           nombre: form.nombre,
           telefono: form.telefono,
           correo: form.correo,
+          correoNormalizado,
           rol: form.rol,
           estado: form.estado,
           permisos: permisosFinal,
           superAdmin: quiereSuperAdmin,
+          cuentaPrincipalUid: cuentaPrincipalUid || currentUid || uid,
+          suscripcionControlada: suscripcionControladaActual === true && !esSuperAdminActual,
+          esCuentaPrincipal: false,
           createdAt: new Date(),
         });
 
@@ -281,6 +367,11 @@ function Empleados() {
           permisos: permisosFinal,
           superAdmin: quiereSuperAdmin,
           nombre: form.nombre,
+          correo: form.correo,
+          correoNormalizado,
+          cuentaPrincipalUid: cuentaPrincipalUid || currentUid || uid,
+          suscripcionControlada: suscripcionControladaActual === true && !esSuperAdminActual,
+          esCuentaPrincipal: false,
         });
 
         if (quiereSuperAdmin) {
@@ -293,13 +384,15 @@ function Empleados() {
         }
 
         await batch.commit();
-
-        await auth.updateCurrentUser(adminActual);
       }
 
       cerrarFormulario();
     } catch (error) {
-      alert(error.message);
+      alert(getCreateAccountErrorMessage(error, "empleado"));
+    } finally {
+      if (adminSesion && auth.currentUser?.uid !== adminSesion.uid) {
+        await auth.updateCurrentUser(adminSesion).catch(() => {});
+      }
     }
   };
 
@@ -314,6 +407,11 @@ function Empleados() {
 
     if (emp.superAdmin) {
       alert("No puedes eliminar al Super Administrador. Transfiere el cargo primero.");
+      return;
+    }
+
+    if (emp.esCuentaPrincipal === true) {
+      alert("La cuenta principal no se elimina desde empleados. Administrala desde Suscripciones.");
       return;
     }
 
@@ -348,7 +446,9 @@ function Empleados() {
         <div>
           <h1>Gestion de Empleados</h1>
           <p className="emp-subtitle">
-            Administra usuarios, roles y accesos del sistema.
+            {esSuperAdminActual
+              ? "Administra usuarios, roles y accesos del sistema."
+              : "Administra los usuarios y accesos de tu cuenta principal."}
           </p>
         </div>
 
@@ -418,11 +518,22 @@ function Empleados() {
               <span>Rol</span>
               <select value={form.rol} onChange={(e) => handleRolChange(e.target.value)}>
                 <option value="">Seleccionar rol</option>
-                <option>Administrador</option>
-                <option>Tecnico</option>
-                <option>Vendedor</option>
-                <option>Cajero</option>
+                {rolBloqueadoPorTipoNegocio && (
+                  <option value={form.rol} disabled>
+                    {form.rol} (no disponible en abarrotes)
+                  </option>
+                )}
+                {rolesDisponibles.map((rol) => (
+                  <option key={rol} value={rol}>
+                    {rol}
+                  </option>
+                ))}
               </select>
+              {!serviciosHabilitados && (
+                <small className="emp-field-help">
+                  En modo abarrotes el rol tecnico queda oculto y ya no se puede asignar.
+                </small>
+              )}
             </label>
 
             <label className="emp-field">
@@ -436,27 +547,29 @@ function Empleados() {
               </select>
             </label>
 
-            <label className="emp-field">
-              <span>Super Administrador</span>
-              <div className="emp-super-admin-box">
-                <input
-                  type="checkbox"
-                  checked={form.superAdmin === true}
-                  disabled={!puedeAsignarSuperAdmin || editaSuPropioCargoSuperAdmin}
-                  onChange={(e) => setForm({ ...form, superAdmin: e.target.checked })}
-                />
-                <div>
-                  <strong>Asignar como jefe del sistema</strong>
-                  <small>
-                    Solo puede existir uno a la vez.
-                    {superAdminAsignado?.nombre ? ` Actual: ${superAdminAsignado.nombre}.` : ""}
-                    {editaSuPropioCargoSuperAdmin
-                      ? " Para cambiarlo debes transferir el cargo editando a otro administrador."
-                      : ""}
-                  </small>
+            {esSuperAdminActual && (
+              <label className="emp-field">
+                <span>Super Administrador</span>
+                <div className="emp-super-admin-box">
+                  <input
+                    type="checkbox"
+                    checked={form.superAdmin === true}
+                    disabled={!puedeAsignarSuperAdmin || editaSuPropioCargoSuperAdmin}
+                    onChange={(e) => setForm({ ...form, superAdmin: e.target.checked })}
+                  />
+                  <div>
+                    <strong>Asignar como jefe del sistema</strong>
+                    <small>
+                      Solo puede existir uno a la vez.
+                      {superAdminAsignado?.nombre ? ` Actual: ${superAdminAsignado.nombre}.` : ""}
+                      {editaSuPropioCargoSuperAdmin
+                        ? " Para cambiarlo debes transferir el cargo editando a otro administrador."
+                        : ""}
+                    </small>
+                  </div>
                 </div>
-              </div>
-            </label>
+              </label>
+            )}
           </div>
 
           <div className="emp-permisos-summary">
@@ -554,13 +667,14 @@ function Empleados() {
             </thead>
 
             <tbody>
-              {empleados.map((emp) => (
+              {empleadosVisibles.map((emp) => (
                 <tr key={emp.id}>
                   <td>{emp.nombre}</td>
                   <td>
                     <div className="emp-rol-stack">
                       <span>{emp.rol}</span>
                       {emp.superAdmin ? <span className="emp-super-chip">Super Admin</span> : null}
+                      {emp.esCuentaPrincipal ? <span className="emp-super-chip">Cuenta principal</span> : null}
                     </div>
                   </td>
                   <td>{emp.correo}</td>
@@ -587,7 +701,7 @@ function Empleados() {
                 </tr>
               ))}
 
-              {empleados.length === 0 && (
+              {empleadosVisibles.length === 0 && (
                 <tr>
                   <td colSpan={5} className="emp-empty-row">
                     No hay empleados registrados.

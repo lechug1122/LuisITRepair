@@ -1,5 +1,4 @@
 import {
-  collection,
   doc,
   getDoc,
   getDocs,
@@ -7,6 +6,13 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
+import {
+  allowLegacyTenantFallback,
+  filterItemsByTenant,
+  getTenantCollectionQuery,
+  resolveTenantId,
+  withTenantData,
+} from "./tenant";
 
 function toDate(value) {
   if (!value) return null;
@@ -16,11 +22,21 @@ function toDate(value) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+function normalizeSalidaManualTipo(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "vale" ? "vale" : "egreso";
+}
+
 export function getDateKeyLocal(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function buildCorteCajaDocId(fechaKey = getDateKeyLocal()) {
+  const tenantId = resolveTenantId();
+  return tenantId ? `${tenantId}__${fechaKey}` : fechaKey;
 }
 
 export function calcularResumenVentasDia(ventasDia = []) {
@@ -75,19 +91,26 @@ export function calcularResumenVentasDia(ventasDia = []) {
 }
 
 export async function obtenerVentasDia(fechaKey = getDateKeyLocal()) {
-  const ventasSnap = await getDocs(collection(db, "ventas"));
-  return ventasSnap.docs
+  const ventasSnap = await getDocs(getTenantCollectionQuery("ventas"));
+  return filterItemsByTenant(ventasSnap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .filter((v) => {
       const f = toDate(v.fecha);
       return f && getDateKeyLocal(f) === fechaKey;
-    });
+    }));
 }
 
 export async function obtenerCorteCajaDia(fechaKey = getDateKeyLocal()) {
-  const ref = doc(db, "cortes_caja", fechaKey);
+  const ref = doc(db, "cortes_caja", buildCorteCajaDocId(fechaKey));
   const snap = await getDoc(ref);
-  if (!snap.exists()) return null;
+  if (!snap.exists()) {
+    if (allowLegacyTenantFallback()) {
+      const legacySnap = await getDoc(doc(db, "cortes_caja", fechaKey));
+      if (!legacySnap.exists()) return null;
+      return { id: legacySnap.id, ...legacySnap.data() };
+    }
+    return null;
+  }
   return { id: snap.id, ...snap.data() };
 }
 
@@ -104,7 +127,7 @@ export async function registrarAperturaCaja(fondoInicialCaja = 0, cajero = {}) {
     aperturaEn: serverTimestamp(),
   };
 
-  await setDoc(doc(db, "cortes_caja", fechaKey), payload, { merge: true });
+  await setDoc(doc(db, "cortes_caja", buildCorteCajaDocId(fechaKey)), withTenantData(payload), { merge: true });
   return obtenerCorteCajaDia(fechaKey);
 }
 
@@ -148,7 +171,7 @@ export async function cerrarCajaHoy(ventasFuente = null, meta = {}) {
   const retiros = Array.isArray(meta?.retiros)
     ? meta.retiros
         .map((r) => ({
-          tipo: String(r?.tipo || "retiro"),
+          tipo: normalizeSalidaManualTipo(r?.tipo),
           monto: Number(r?.monto || 0),
           motivo: String(r?.motivo || "").trim(),
           usuario: String(r?.usuario || "").trim(),
@@ -224,27 +247,30 @@ export async function cerrarCajaHoy(ventasFuente = null, meta = {}) {
     ventasIds: ventasDia.map((v) => v.id),
   };
 
-  await setDoc(doc(db, "cortes_caja", fechaKey), payload, { merge: true });
+  await setDoc(doc(db, "cortes_caja", buildCorteCajaDocId(fechaKey)), withTenantData(payload), { merge: true });
   return { yaCerrado: false, corte: payload };
 }
 
 export async function listarCortesCaja() {
-  const snap = await getDocs(collection(db, "cortes_caja"));
-  return snap.docs
+  const snap = await getDocs(getTenantCollectionQuery("cortes_caja"));
+  return filterItemsByTenant(snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => String(b.fechaKey || "").localeCompare(String(a.fechaKey || "")));
+    .sort((a, b) => String(b.fechaKey || "").localeCompare(String(a.fechaKey || ""))));
 }
 
 export async function autoCerrarCortesPendientes() {
   const hoyKey = getDateKeyLocal();
   const [ventasSnap, cortesSnap] = await Promise.all([
-    getDocs(collection(db, "ventas")),
-    getDocs(collection(db, "cortes_caja")),
+    getDocs(getTenantCollectionQuery("ventas")),
+    getDocs(getTenantCollectionQuery("cortes_caja")),
   ]);
 
-  const ventas = ventasSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const ventas = filterItemsByTenant(ventasSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
   const cortesMap = new Map(
-    cortesSnap.docs.map((d) => [String(d.id), { id: d.id, ...d.data() }])
+    filterItemsByTenant(cortesSnap.docs.map((d) => ({ id: d.id, ...d.data() }))).map((item) => [
+      String(item.fechaKey || item.id || ""),
+      item,
+    ])
   );
 
   const ventasPorFecha = new Map();
@@ -285,7 +311,9 @@ export async function autoCerrarCortesPendientes() {
       ventasIds: ventasDia.map((v) => v.id),
     };
 
-    tareas.push(setDoc(doc(db, "cortes_caja", fechaKey), payload, { merge: true }));
+    tareas.push(
+      setDoc(doc(db, "cortes_caja", buildCorteCajaDocId(fechaKey)), withTenantData(payload), { merge: true }),
+    );
   }
 
   if (tareas.length > 0) {

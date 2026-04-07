@@ -21,7 +21,13 @@ export default function useMonedaConfig() {
       },
     );
 
-    return () => unsubscribe?.();
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch (error) {
+        console.warn("[moneda] No se pudo cerrar el listener:", error?.code || error);
+      }
+    };
   }, []);
 
   return {

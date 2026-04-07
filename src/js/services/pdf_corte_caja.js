@@ -254,7 +254,7 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   const retiros = Array.isArray(corte?.retiros) ? corte.retiros : [];
   retiros.forEach((r, idx) => {
     filasMovimientos.push([
-      String(r?.tipo || "Gasto").toUpperCase(),
+      String(r?.tipo || "Egreso").toUpperCase(),
       "CAJA",
       `R${idx + 1}`,
       `${dateShort(now)} ${timeShort(now)}`,
@@ -290,7 +290,7 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   y += 5;
   setPdfFont(doc, "normal");
   doc.setFontSize(8.5);
-  const usuario = corte?.cajero?.email || corte?.cajero?.nombre || "Todos";
+  const usuario = corte?.cajero?.nombre || "Cajero sin nombre";
   doc.text(`Periodo de corte: ${hoyStr} - ${hoyStr} | Usuario: ${usuario}`, 12, y);
   y += 4;
   doc.text("Moneda: Pesos (MXN)", 12, y);
@@ -333,7 +333,7 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   drawKeyValueRow(doc, 74, y, 38, 24, 6, "IVA", money(resumen.iva));
   drawKeyValueRow(doc, 136, y, 38, 24, 6, "Otros", money(resumen.otros));
   y += 7;
-  drawKeyValueRow(doc, 12, y, 38, 24, 6, "Retiros/Gastos", money(totalCargos));
+  drawKeyValueRow(doc, 12, y, 38, 24, 6, "Salidas de caja", money(totalCargos));
   drawKeyValueRow(doc, 74, y, 38, 24, 6, "Neto", money(resumen.total - totalCargos));
   drawKeyValueRow(doc, 136, y, 38, 24, 6, "Total final", money(resumen.total));
 
@@ -361,7 +361,7 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   doc.setFontSize(8.5);
   doc.text("Responsable de caja general:", 12, y2);
   setPdfFont(doc, "normal");
-  doc.text(corte?.cajero?.email || corte?.cajero?.nombre || "-", 58, y2);
+  doc.text(corte?.cajero?.nombre || "Cajero sin nombre", 58, y2);
   doc.line(57, y2 + 1, 145, y2 + 1);
   y2 += 8;
 

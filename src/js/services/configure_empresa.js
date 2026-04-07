@@ -1,12 +1,19 @@
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
-
-const empresaRef = doc(db, "configuracion", "empresa");
+import { getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { getTiposNegocioPreset, normalizeTiposNegocio } from "./tipos_negocio";
+import {
+  allowLegacyTenantFallback,
+  buildTenantStorageKey,
+  getLegacyConfigDocRef,
+  getTenantConfigDocRef,
+  withTenantData,
+} from "./tenant";
 const EMPRESA_STORAGE_KEY = "empresa_config_cache_v1";
 
 export const DEFAULT_EMPRESA_CONFIG = {
   nombre: import.meta.env.VITE_NEGOCIO_NOMBRE || "LuisITRepair",
   subtitulo: import.meta.env.VITE_NEGOCIO_SUBTITULO || "Servicios tecnicos y punto de venta",
+  tipoNegocioId: "soporte-computo",
+  tiposNegocio: getTiposNegocioPreset(),
 };
 
 // Limpia campos de texto antes de persistirlos o mostrarlos.
@@ -17,9 +24,18 @@ function toText(value, fallback = "") {
 
 // Mantiene estable la estructura de configuracion de empresa.
 export function normalizeEmpresaConfig(raw = {}) {
+  const tiposNegocio = normalizeTiposNegocio(raw?.tiposNegocio);
+  const tipoNegocioId =
+    String(raw?.tipoNegocioId || "").trim() &&
+    tiposNegocio.some((item) => item.id === String(raw?.tipoNegocioId || "").trim())
+      ? String(raw?.tipoNegocioId || "").trim()
+      : tiposNegocio[0]?.id || DEFAULT_EMPRESA_CONFIG.tipoNegocioId;
+
   return {
     nombre: toText(raw?.nombre, DEFAULT_EMPRESA_CONFIG.nombre) || DEFAULT_EMPRESA_CONFIG.nombre,
     subtitulo: toText(raw?.subtitulo, DEFAULT_EMPRESA_CONFIG.subtitulo) || DEFAULT_EMPRESA_CONFIG.subtitulo,
+    tipoNegocioId,
+    tiposNegocio,
   };
 }
 
@@ -37,7 +53,7 @@ function saveEmpresaConfigCache(config) {
 
   try {
     const normalized = normalizeEmpresaConfig(config);
-    localStorage.setItem(EMPRESA_STORAGE_KEY, JSON.stringify(normalized));
+    localStorage.setItem(buildTenantStorageKey(EMPRESA_STORAGE_KEY), JSON.stringify(normalized));
     syncEmpresaDocumentTitle(normalized);
   } catch {
     // noop
@@ -47,35 +63,57 @@ function saveEmpresaConfigCache(config) {
 // Recupera la configuracion cacheada para render inicial u offline.
 export function readEmpresaConfigCache() {
   if (typeof window === "undefined") {
-    return { ...DEFAULT_EMPRESA_CONFIG };
+    return normalizeEmpresaConfig(DEFAULT_EMPRESA_CONFIG);
   }
 
   try {
-    const raw = localStorage.getItem(EMPRESA_STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_EMPRESA_CONFIG };
+    const raw = localStorage.getItem(buildTenantStorageKey(EMPRESA_STORAGE_KEY));
+    if (!raw) return normalizeEmpresaConfig(DEFAULT_EMPRESA_CONFIG);
     return normalizeEmpresaConfig(JSON.parse(raw));
   } catch {
-    return { ...DEFAULT_EMPRESA_CONFIG };
+    return normalizeEmpresaConfig(DEFAULT_EMPRESA_CONFIG);
   }
+}
+
+async function hydrateEmpresaDoc(empresaRef) {
+  if (allowLegacyTenantFallback()) {
+    const legacySnap = await getDoc(getLegacyConfigDocRef("empresa"));
+    if (legacySnap.exists()) {
+      const normalizedLegacy = normalizeEmpresaConfig(legacySnap.data());
+      await setDoc(
+        empresaRef,
+        {
+          ...withTenantData(normalizedLegacy),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      return normalizedLegacy;
+    }
+  }
+
+  const defaults = normalizeEmpresaConfig(DEFAULT_EMPRESA_CONFIG);
+  await setDoc(
+    empresaRef,
+    {
+      ...withTenantData(defaults),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+  return defaults;
 }
 
 // Obtiene la configuracion remota y crea defaults cuando el documento no existe.
 export const obtenerEmpresa = async () => {
   try {
+    const empresaRef = getTenantConfigDocRef("empresa");
     const snap = await getDoc(empresaRef);
 
     if (!snap.exists()) {
-      const defaults = { ...DEFAULT_EMPRESA_CONFIG };
-      saveEmpresaConfigCache(defaults);
-      await setDoc(
-        empresaRef,
-        {
-          ...defaults,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      return defaults;
+      const hydrated = await hydrateEmpresaDoc(empresaRef);
+      saveEmpresaConfigCache(hydrated);
+      return hydrated;
     }
 
     const normalized = normalizeEmpresaConfig(snap.data());
@@ -89,20 +127,19 @@ export const obtenerEmpresa = async () => {
 
 // Suscribe la configuracion de empresa para mantener la UI actualizada.
 export const escucharEmpresa = (callback, onError) => {
+  const empresaRef = getTenantConfigDocRef("empresa");
   return onSnapshot(
     empresaRef,
     (snap) => {
       if (!snap.exists()) {
         const defaults = readEmpresaConfigCache();
         callback(defaults);
-        setDoc(
-          empresaRef,
-          {
-            ...defaults,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        ).catch(() => {});
+        hydrateEmpresaDoc(empresaRef)
+          .then((normalized) => {
+            saveEmpresaConfigCache(normalized);
+            callback(normalized);
+          })
+          .catch(() => {});
         return;
       }
 
@@ -121,6 +158,7 @@ export const escucharEmpresa = (callback, onError) => {
 // Actualiza solo el nombre del negocio preservando el resto de la configuracion.
 export const actualizarNombreEmpresa = async (nombre) => {
   const empresaActual = await obtenerEmpresa();
+  const empresaRef = getTenantConfigDocRef("empresa");
   const normalized = normalizeEmpresaConfig({
     ...empresaActual,
     nombre,
@@ -130,7 +168,28 @@ export const actualizarNombreEmpresa = async (nombre) => {
   await setDoc(
     empresaRef,
     {
-      ...normalized,
+      ...withTenantData(normalized),
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+
+  return normalized;
+};
+
+export const actualizarEmpresaConfig = async (config) => {
+  const empresaActual = await obtenerEmpresa();
+  const empresaRef = getTenantConfigDocRef("empresa");
+  const normalized = normalizeEmpresaConfig({
+    ...empresaActual,
+    ...config,
+  });
+
+  saveEmpresaConfigCache(normalized);
+  await setDoc(
+    empresaRef,
+    {
+      ...withTenantData(normalized),
       updatedAt: serverTimestamp(),
     },
     { merge: true },

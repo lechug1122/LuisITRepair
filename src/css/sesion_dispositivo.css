@@ -1,0 +1,95 @@
+.device-session-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.68);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.device-session-card {
+  width: min(560px, 100%);
+  background: #ffffff;
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.28);
+  display: grid;
+  gap: 16px;
+}
+
+.device-session-kicker {
+  display: inline-flex;
+  width: fit-content;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.device-session-card h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: clamp(1.35rem, 2.6vw, 1.8rem);
+}
+
+.device-session-card p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.device-session-list {
+  display: grid;
+  gap: 12px;
+}
+
+.device-session-item {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: #f8fafc;
+  border: 1px solid #dbeafe;
+  display: grid;
+  gap: 4px;
+}
+
+.device-session-item strong {
+  color: #0f172a;
+}
+
+.device-session-item span {
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+.device-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.device-session-actions .emp-btn {
+  min-width: 190px;
+}
+
+@media (max-width: 640px) {
+  .device-session-overlay {
+    padding: 14px;
+  }
+
+  .device-session-card {
+    padding: 22px 18px;
+    border-radius: 18px;
+  }
+
+  .device-session-actions .emp-btn {
+    width: 100%;
+    min-width: 0;
+  }
+}

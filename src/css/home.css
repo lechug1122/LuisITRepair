@@ -20,15 +20,18 @@
 
 /* ================= HEADER ================= */
 .home-header {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-start;
   gap: 14px;
   margin-bottom: 18px;
+  z-index: 20;
 }
 
 .home-hero-panel {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.9fr);
   align-items: end;
@@ -54,6 +57,15 @@
   font-weight: 700;
 }
 
+.home-action-anchor {
+  position: relative;
+  min-width: 0;
+}
+
+.admin-actions .home-action-anchor {
+  width: 100%;
+}
+
 .btn-home-notif {
   font-weight: 700;
 }
@@ -65,8 +77,9 @@
 .home-info-popover {
   position: absolute;
   top: calc(100% + 10px);
-  right: 0;
-  width: min(560px, 92vw);
+  left: 0;
+  right: auto;
+  width: min(560px, calc(100vw - 48px));
   max-height: 78vh;
   overflow: auto;
   background: var(--app-surface);
@@ -80,8 +93,9 @@
 .home-corte-popover {
   position: absolute;
   top: calc(100% + 10px);
-  right: 0;
-  width: min(420px, 92vw);
+  left: 0;
+  right: auto;
+  width: min(420px, calc(100vw - 48px));
   max-height: 78vh;
   overflow: auto;
   background: var(--app-surface);
@@ -90,6 +104,11 @@
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.2);
   padding: 12px;
   z-index: 2000;
+}
+
+.home-action-anchor-right .home-corte-popover {
+  left: auto;
+  right: 0;
 }
 
 .home-info-block {
@@ -1003,6 +1022,15 @@ body.ui-theme-light .home-info-block {
   min-width: 0;
 }
 
+.home-alert-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
 .home-list-main span,
 .home-list-side small,
 .home-priority-item p,
@@ -1334,7 +1362,15 @@ body.ui-theme-light .home-info-block {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   margin-bottom: 12px;
+}
+
+.notifications-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .notifications-header span {
@@ -1372,6 +1408,14 @@ body.ui-theme-light .home-info-block {
   min-width: 0;
 }
 
+.notification-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .notification-title {
   margin: 0 0 4px 0;
   font-weight: 700;
@@ -1388,6 +1432,29 @@ body.ui-theme-light .home-info-block {
 .notification-item .btn-light {
   align-self: center;
   white-space: nowrap;
+}
+
+.notifications-close-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  background: var(--app-surface);
+  color: var(--app-text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.notifications-close-btn:hover {
+  background: var(--app-accent-soft);
+  border-color: var(--app-accent-soft-2);
+  transform: translateY(-1px);
 }
 
 .notification-item.alta .notification-title {
@@ -1408,8 +1475,20 @@ body.ui-theme-light .home-info-block {
     align-items: start;
   }
 
-  .notification-item .btn-light {
+  .notification-actions,
+  .home-alert-actions {
     width: 100%;
+    justify-content: flex-start;
+  }
+
+  .notification-item .btn-light,
+  .home-alert-actions .btn-light {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  .notifications-close-btn {
+    flex: 0 0 34px;
   }
 }
 

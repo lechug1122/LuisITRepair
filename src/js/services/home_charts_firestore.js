@@ -1,5 +1,5 @@
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
+import { getDocs } from "firebase/firestore";
+import { filterItemsByTenant, getTenantCollectionQuery } from "./tenant";
 
 /* =========================
    Helpers
@@ -53,8 +53,8 @@ function calcularUtilidadVenta(venta) {
 ========================= */
 export async function obtenerIngresosPorDia() {
   const [serviciosSnap, ventasSnap] = await Promise.all([
-    getDocs(collection(db, "servicios")),
-    getDocs(collection(db, "ventas")),
+    getDocs(getTenantCollectionQuery("servicios")),
+    getDocs(getTenantCollectionQuery("ventas")),
   ]);
 
   const ahora = new Date();
@@ -62,8 +62,8 @@ export async function obtenerIngresosPorDia() {
   const anioActual = ahora.getFullYear();
   const diasDelMes = new Date(anioActual, mesActual + 1, 0).getDate();
 
-  const servicios = serviciosSnap.docs.map((d) => d.data());
-  const ventas = ventasSnap.docs.map((d) => d.data());
+  const servicios = filterItemsByTenant(serviciosSnap.docs.map((d) => d.data()));
+  const ventas = filterItemsByTenant(ventasSnap.docs.map((d) => d.data()));
   const ingresosPorDia = {};
 
   servicios.forEach((servicio) => {
@@ -112,13 +112,13 @@ export async function obtenerIngresosPorDia() {
    Pastel - Ingresos por tipo
 ========================= */
 export async function obtenerIngresosPorTipo() {
-  const serviciosSnap = await getDocs(collection(db, "servicios"));
+  const serviciosSnap = await getDocs(getTenantCollectionQuery("servicios"));
 
   const ahora = new Date();
   const mesActual = ahora.getMonth();
   const anioActual = ahora.getFullYear();
 
-  const servicios = serviciosSnap.docs.map((d) => d.data());
+  const servicios = filterItemsByTenant(serviciosSnap.docs.map((d) => d.data()));
   const ingresosPorTipo = {};
 
   servicios.forEach((servicio) => {

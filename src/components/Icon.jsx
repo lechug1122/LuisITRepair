@@ -21,6 +21,30 @@ export default function Icon({ name = "box", className = "" }) {
         </svg>
       );
 
+    case "suscripciones":
+      return (
+        <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="3" y="6" width="18" height="12" rx="2.2" stroke="#B45309" strokeWidth="1.3" fill="#FFF7ED" />
+          <path d="M3 10.5h18" stroke="#EA580C" strokeWidth="1.2" />
+          <path d="M7 14.5h4" stroke="#C2410C" strokeWidth="1.3" strokeLinecap="round" />
+          <circle cx="17.5" cy="14.5" r="2.2" stroke="#C2410C" strokeWidth="1.2" fill="#FED7AA" />
+          <path d="M17.5 13.1v2.8" stroke="#9A3412" strokeWidth="1.2" strokeLinecap="round" />
+          <path d="M16.1 14.5h2.8" stroke="#9A3412" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      );
+
+    case "proveedores":
+      return (
+        <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="3" y="6" width="8" height="13" rx="1.8" stroke="#0F766E" strokeWidth="1.3" fill="#ECFDF5" />
+          <rect x="13" y="4" width="8" height="15" rx="1.8" stroke="#047857" strokeWidth="1.3" fill="#D1FAE5" />
+          <path d="M6 10h2" stroke="#047857" strokeWidth="1.2" strokeLinecap="round" />
+          <path d="M6 13h2" stroke="#047857" strokeWidth="1.2" strokeLinecap="round" />
+          <path d="M16 8h2" stroke="#065F46" strokeWidth="1.2" strokeLinecap="round" />
+          <path d="M16 11h2" stroke="#065F46" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      );
+
     case "pos":
       return (
         <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

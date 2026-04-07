@@ -1,9 +1,9 @@
-import { initializeApp } from "firebase/app";
+import { deleteApp, initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore } from "firebase/firestore";
 
-const firebaseConfig = {
+export const firebaseConfig = {
   apiKey: "AIzaSyBj5ffv-VNRqxkiaWKUhzY4FBKRkzp5rW4",
   authDomain: "hojaservice-3ab3d.firebaseapp.com",
   projectId: "hojaservice-3ab3d",
@@ -16,6 +16,36 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 getAnalytics(app);
 
+const isLocalDevHost =
+  typeof window !== "undefined" &&
+  ["localhost", "127.0.0.1"].includes(window.location.hostname);
+
+const firestoreSettings = {
+  ignoreUndefinedProperties: true,
+  useFetchStreams: false,
+  ...(isLocalDevHost
+    ? {
+        experimentalForceLongPolling: true,
+      }
+    : {
+        experimentalAutoDetectLongPolling: true,
+      }),
+};
+
 // Exporta las conexiones compartidas para autenticacion y Firestore.
-export const db = getFirestore(app);
+export const db = initializeFirestore(app, firestoreSettings);
 export const auth = getAuth(app);
+
+export function createSecondaryAuthClient() {
+  const name = `secondary-auth-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const secondaryApp = initializeApp(firebaseConfig, name);
+  const secondaryAuth = getAuth(secondaryApp);
+
+  return {
+    app: secondaryApp,
+    auth: secondaryAuth,
+    dispose: async () => {
+      await deleteApp(secondaryApp).catch(() => {});
+    },
+  };
+}

@@ -1,19 +1,48 @@
 import { useEffect, useState } from "react";
 import { signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { doc, updateDoc } from "firebase/firestore";
+import { useLocation, useNavigate } from "react-router-dom";
 import { auth, db } from "../initializer/firebase";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
-import "../css/login.scss";
-import { useNavigate } from "react-router-dom";
+import { obtenerEstadoAutorizacion } from "../js/services/autorizacion";
 import { obtenerEmpresa, readEmpresaConfigCache } from "../js/services/configure_empresa";
+import { consumeDeviceConflictMessage } from "../js/services/device_sessions";
+import "../css/login.scss";
+
+function getFriendlyLoginError(error) {
+  const code = String(error?.code || "").trim();
+  if (
+    code === "auth/invalid-credential" ||
+    code === "auth/wrong-password" ||
+    code === "auth/user-not-found" ||
+    code === "auth/invalid-email"
+  ) {
+    return "Credenciales incorrectas.";
+  }
+
+  if (code === "permission-denied" || code === "firestore/permission-denied") {
+    return "No se pudo validar tu acceso. Revisa permisos y reglas de Firestore.";
+  }
+
+  return String(error?.message || "").trim() || "No se pudo iniciar sesion.";
+}
 
 export default function Login() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const routeAccessMessage = String(location.state?.accessMessage || "").trim();
   const [nombreEmpresa, setNombreEmpresa] = useState(
     () => readEmpresaConfigCache().nombre || "LuisITRepair",
   );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const navigate = useNavigate();
+  const [storedAccessMessage] = useState(() => consumeDeviceConflictMessage());
+  const accessMessage = routeAccessMessage || storedAccessMessage;
+
+  const clearAccessMessage = () => {
+    if (!routeAccessMessage) return;
+    navigate(location.pathname, { replace: true, state: {} });
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -31,53 +60,38 @@ export default function Login() {
     };
   }, []);
 
-  // Valida el acceso y marca al usuario como conectado.
   const handleSubmit = async (e) => {
     e.preventDefault();
+    clearAccessMessage();
     setError("");
 
     try {
       const userCredential = await signInWithEmailAndPassword(
         auth,
         email.trim(),
-        password
+        password,
       );
 
       const user = userCredential.user;
+      const estado = await obtenerEstadoAutorizacion(user.uid);
+      if (!estado.permitido) {
+        await signOut(auth);
+        setError(estado.mensaje || "No tienes acceso a este sistema.");
+        return;
+      }
 
-      // 🔥 Verificar si está en autorizados
       const docRef = doc(db, "autorizados", user.uid);
-      const snap = await getDoc(docRef);
-
-      if (!snap.exists()) {
-        await signOut(auth);
-        setError("Usuario no autorizado.");
-        return;
-      }
-
-      const data = snap.data();
-
-      // 🔥 Verificar si está activo
-      if (!data.activo) {
-        await signOut(auth);
-        setError("Usuario inactivo. Contacte al administrador.");
-        return;
-      }
-
-      // 🔥 Marcar como en línea
       await updateDoc(docRef, {
+        activo: true,
         online: true,
         lastActive: new Date(),
-      });
+      }).catch(() => {});
 
-      // 🔥 Guardar rol en localStorage (opcional)
-      localStorage.setItem("rol", data.rol);
-
-      // ✅ Redirigir
+      localStorage.setItem("rol", estado.autorizado?.rol || "");
       navigate("/home", { replace: true });
-
-    } catch {
-      setError("Credenciales incorrectas.");
+    } catch (error) {
+      await signOut(auth).catch(() => {});
+      setError(getFriendlyLoginError(error));
     }
   };
 
@@ -103,15 +117,17 @@ export default function Login() {
             Bienvenido a <span>{nombreEmpresa}</span>
           </h4>
 
-          <p>
-            Esta sección es solo para usuarios autorizados.
-          </p>
+          <p>Esta seccion es solo para usuarios autorizados.</p>
 
           <div className="floating-label">
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                clearAccessMessage();
+                setError("");
+                setEmail(e.target.value);
+              }}
               placeholder=" "
               autoComplete="email"
               required
@@ -123,20 +139,23 @@ export default function Login() {
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                clearAccessMessage();
+                setError("");
+                setPassword(e.target.value);
+              }}
               placeholder=" "
               autoComplete="current-password"
               required
             />
-            <label>Contraseña:</label>
+            <label>Contrasena:</label>
           </div>
 
-          {/* Boton principal para iniciar sesion. */}
-          <button type="submit">Iniciar Sesión</button>
+          <button type="submit">Iniciar sesion</button>
 
-          {error && (
+          {(error || accessMessage) && (
             <p style={{ color: "crimson", marginTop: "12px" }}>
-              {error}
+              {error || accessMessage}
             </p>
           )}
         </form>

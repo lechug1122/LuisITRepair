@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
-  Legend,
   Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -17,8 +17,7 @@ import {
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
 import Layout from "../components/Layout";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../initializer/firebase";
+import { getDocs } from "firebase/firestore";
 import { auth } from "../initializer/firebase";
 import { generarPdfCorteCajaDia } from "../js/services/pdf_corte_caja";
 import {
@@ -33,7 +32,10 @@ import {
   actualizarEgreso,
 } from "../js/services/egresos_firestore";
 import { APARIENCIA_EVENT, readAparienciaConfigStorage } from "../js/services/apariencia_config";
+import { filterItemsByTenant, getTenantCollectionQuery } from "../js/services/tenant";
 import ModalEgresos from "../components/modal_egresos";
+import { imprimirTicketVenta, visualizarTicketVenta } from "../components/print_ticket_venta";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import "../css/reportes.css";
 
 const money = (value) =>
@@ -42,6 +44,63 @@ const money = (value) =>
     currency: "MXN",
     maximumFractionDigits: 2,
   }).format(Number(value || 0));
+
+const CHART_BAR_COLORS = [
+  "#0f766e",
+  "#2563eb",
+  "#9333ea",
+  "#f59e0b",
+  "#dc2626",
+  "#0891b2",
+  "#7c3aed",
+  "#ea580c",
+  "#16a34a",
+  "#e11d48",
+];
+
+const PIE_COLORS = ["#16a34a", "#2563eb", "#9333ea", "#f59e0b"];
+
+const normalizeSearchText = (value) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+const getChartItemColor = (index) => CHART_BAR_COLORS[index % CHART_BAR_COLORS.length];
+
+const getProductoNombre = (producto) => String(producto?.nombre || "").trim() || "Sin nombre";
+
+const isServicioProducto = (producto) => {
+  const tipo = normalizeSearchText(producto?.tipo);
+  const nombre = normalizeSearchText(producto?.nombre);
+  return (
+    tipo === "servicio" ||
+    ["lap", "laptop", "computadora", "impresora", "reparacion", "servicio"].some((keyword) =>
+      nombre.includes(keyword)
+    )
+  );
+};
+
+const getServicioClienteLabel = (venta, producto) => {
+  const clienteEnNombre = getProductoNombre(producto)
+    .split(" - ")
+    .slice(1)
+    .join(" - ")
+    .trim();
+
+  return (
+    clienteEnNombre ||
+    String(venta?.clienteNombre || "").trim() ||
+    String(venta?.clienteTelefono || "").trim() ||
+    "Cliente no identificado"
+  );
+};
+
+const getServicioDisplayName = (producto) => {
+  const folio = String(producto?.servicioFolio || producto?.codigo || "").trim();
+  if (folio) return `Servicio ${folio}`;
+  return getProductoNombre(producto);
+};
 
 const toDate = (value) => {
   if (!value) return null;
@@ -56,6 +115,77 @@ const ymd = (date) => {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+};
+
+const formatChartDateTick = (value) => {
+  if (!value) return "";
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "short",
+  });
+};
+
+const getCajeroDisplayName = (corte, empleadosNombreIndex = null) => {
+  const nombre = String(corte?.cajero?.nombre || "").trim();
+  if (nombre) return nombre;
+
+  const uid = String(corte?.cajero?.uid || "").trim();
+  if (uid && empleadosNombreIndex?.byUid?.[uid]) {
+    return empleadosNombreIndex.byUid[uid];
+  }
+
+  const correo = String(corte?.cajero?.email || "").trim().toLowerCase();
+  if (correo && empleadosNombreIndex?.byEmail?.[correo]) {
+    return empleadosNombreIndex.byEmail[correo];
+  }
+
+  return "Cajero sin nombre";
+};
+
+const getCorteHoraLabel = (corte) => {
+  const fecha = toDate(corte?.cerradoEn || corte?.aperturaEn);
+  if (!fecha) return "Hora no disponible";
+  return fecha.toLocaleTimeString("es-MX", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const getDiferenciaTone = (value) => {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount === 0) return "neutral";
+  return amount > 0 ? "positive" : "negative";
+};
+
+const getVentaServicioItem = (venta) =>
+  Array.isArray(venta?.productos) ? venta.productos.find((item) => item?.esServicio) : null;
+
+const getVentaClienteTicketData = (venta) => {
+  const servicioItem = getVentaServicioItem(venta);
+  const nombreDesdeServicio = String(servicioItem?.nombre || "")
+    .split(" - ")
+    .slice(1)
+    .join(" - ")
+    .trim();
+
+  return {
+    nombre: String(venta?.clienteNombre || "").trim() || nombreDesdeServicio || "Publico general",
+    telefono: String(venta?.clienteTelefono || "").trim() || "-",
+  };
+};
+
+const getVentaAtendioLabel = (venta, empleadosNombreIndex = null) => {
+  const stored = String(venta?.atendio || venta?.atendidoPor || "").trim();
+  if (stored) return stored;
+
+  const actorEmail = String(venta?.actorEmail || "").trim().toLowerCase();
+  if (actorEmail && empleadosNombreIndex?.byEmail?.[actorEmail]) {
+    return empleadosNombreIndex.byEmail[actorEmail];
+  }
+
+  return "Sin asignar";
 };
 
 const startOfToday = () => {
@@ -83,6 +213,7 @@ const TIPO_EGRESO_META = {
 };
 
 export default function Reportes() {
+  const { serviciosHabilitados } = useEmpresaConfig();
   const [ventas, setVentas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cerrandoCaja, setCerrandoCaja] = useState(false);
@@ -91,7 +222,6 @@ export default function Reportes() {
   const [corteHoyDetalle, setCorteHoyDetalle] = useState(null);
   const [fondoInicialCaja, setFondoInicialCaja] = useState("");
   const [denominaciones, setDenominaciones] = useState({});
-  const [retiros, setRetiros] = useState([]);
   const [notasCorte, setNotasCorte] = useState("");
   const [cortesHistorial, setCortesHistorial] = useState([]);
   const [filtroCajero, setFiltroCajero] = useState("");
@@ -106,6 +236,10 @@ export default function Reportes() {
   const [fechaHasta, setFechaHasta] = useState(() => ymd(new Date()));
   const [mostrarModalEgresos, setMostrarModalEgresos] = useState(false);
   const [egresos, setEgresos] = useState([]);
+  const [empleadosNombreIndex, setEmpleadosNombreIndex] = useState({ byUid: {}, byEmail: {} });
+  const [expandedChartDetails, setExpandedChartDetails] = useState({});
+  const [chartProductVisibility, setChartProductVisibility] = useState({});
+  const [activeBottomSection, setActiveBottomSection] = useState("historial");
   const [animationsEnabled, setAnimationsEnabled] = useState(
     () => readAparienciaConfigStorage().animations !== false,
   );
@@ -123,11 +257,21 @@ export default function Reportes() {
       return false;
     }
   });
+
   useEffect(() => {
-    obtenerVentas();
-    cargarEstadoCorteHoy();
-    cargarHistorialCortes();
-    cargarEgresosDia();
+    const bootstrapReportes = async () => {
+      await Promise.allSettled([
+        obtenerVentas(),
+        cargarEstadoCorteHoy(),
+        cargarHistorialCortes(),
+        cargarEgresosDia(),
+        cargarNombresEmpleados(),
+      ]);
+    };
+
+    bootstrapReportes().catch((error) => {
+      console.warn("[reportes] No se pudo completar la carga inicial:", error?.code || error);
+    });
   }, []);
 
   useEffect(() => {
@@ -165,36 +309,61 @@ export default function Reportes() {
   };
 
   const cargarEstadoCorteHoy = async () => {
-    const corte = await obtenerCorteCajaDia();
-    setCajaCerradaHoy(!!(corte && corte.cerrado));
-    setCorteHoyDetalle(corte || null);
-    if (corte?.fondoInicialCaja !== undefined && corte?.fondoInicialCaja !== null) {
-      setFondoInicialCaja(String(corte.fondoInicialCaja));
+    try {
+      const corte = await obtenerCorteCajaDia();
+      setCajaCerradaHoy(!!(corte && corte.cerrado));
+      setCorteHoyDetalle(corte || null);
+      if (corte?.fondoInicialCaja !== undefined && corte?.fondoInicialCaja !== null) {
+        setFondoInicialCaja(String(corte.fondoInicialCaja));
+      }
+      if (Array.isArray(corte?.denominaciones)) {
+        const map = {};
+        corte.denominaciones.forEach((d) => {
+          map[String(d.valor)] = Number(d.cantidad || 0);
+        });
+        setDenominaciones(map);
+      }
+      if (corte?.notasCorte) setNotasCorte(String(corte.notasCorte));
+    } catch (error) {
+      console.error("Error cargando estado de corte:", error);
+      setCajaCerradaHoy(false);
+      setCorteHoyDetalle(null);
     }
-    if (Array.isArray(corte?.denominaciones)) {
-      const map = {};
-      corte.denominaciones.forEach((d) => {
-        map[String(d.valor)] = Number(d.cantidad || 0);
-      });
-      setDenominaciones(map);
-    }
-    if (Array.isArray(corte?.retiros)) {
-      setRetiros(
-        corte.retiros.map((r, idx) => ({
-          id: `r-${idx}-${Date.now()}`,
-          tipo: String(r?.tipo || "retiro"),
-          monto: String(r?.monto ?? ""),
-          motivo: String(r?.motivo || ""),
-          usuario: String(r?.usuario || ""),
-        }))
-      );
-    }
-    if (corte?.notasCorte) setNotasCorte(String(corte.notasCorte));
   };
 
   const cargarHistorialCortes = async () => {
-    const data = await listarCortesCaja();
-    setCortesHistorial(Array.isArray(data) ? data : []);
+    try {
+      const data = await listarCortesCaja();
+      setCortesHistorial(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Error cargando historial de cortes:", error);
+      setCortesHistorial([]);
+    }
+  };
+
+  const cargarNombresEmpleados = async () => {
+    try {
+      const snapshot = await getDocs(getTenantCollectionQuery("empleados"));
+      const byUid = {};
+      const byEmail = {};
+
+      filterItemsByTenant(snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      }))).forEach((data) => {
+        const nombre = String(data?.nombre || "").trim();
+        const uid = String(data?.uid || "").trim();
+        const correo = String(data?.correo || data?.email || "").trim().toLowerCase();
+
+        if (!nombre) return;
+        if (uid) byUid[uid] = nombre;
+        if (correo) byEmail[correo] = nombre;
+      });
+
+      setEmpleadosNombreIndex({ byUid, byEmail });
+    } catch (err) {
+      console.error("Error cargando nombres de empleados:", err);
+    }
   };
 
   const cargarEgresosDia = async () => {
@@ -254,18 +423,35 @@ export default function Reportes() {
 
   const obtenerVentas = async () => {
     setLoading(true);
-    const querySnapshot = await getDocs(collection(db, "ventas"));
-    const lista = querySnapshot.docs.map((docSnap) => ({
-      id: docSnap.id,
-      ...docSnap.data(),
-    }));
-    setVentas(lista);
-    setLoading(false);
+    try {
+      const querySnapshot = await getDocs(getTenantCollectionQuery("ventas"));
+      const lista = filterItemsByTenant(querySnapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      })));
+      setVentas(lista);
+    } catch (error) {
+      console.error("Error cargando ventas:", error);
+      setVentas([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const totalEgresos = useMemo(() => {
     return egresos.reduce((acc, e) => acc + Number(e.monto || 0), 0);
   }, [egresos]);
+
+  const currentCajeroNombre = useMemo(() => {
+    const uid = String(auth.currentUser?.uid || "").trim();
+    const correo = String(auth.currentUser?.email || "").trim().toLowerCase();
+
+    return (
+      (uid ? empleadosNombreIndex.byUid?.[uid] : "") ||
+      (correo ? empleadosNombreIndex.byEmail?.[correo] : "") ||
+      String(auth.currentUser?.displayName || "").trim()
+    );
+  }, [empleadosNombreIndex]);
 
   const updateDenominacion = (valor, cantidad) => {
     const key = String(valor);
@@ -275,25 +461,44 @@ export default function Reportes() {
     }));
   };
 
-  const agregarMovimiento = (tipo = "retiro") => {
-    setRetiros((prev) => [
-      ...prev,
-      {
-        id: `r-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        tipo,
-        monto: "",
-        motivo: "",
-        usuario: auth.currentUser?.email || "",
-      },
-    ]);
+  const buildVentaTicketPayload = (venta) => {
+    const detalle = venta?.pagoDetalle || {};
+    const servicioItem = getVentaServicioItem(venta);
+
+    return {
+      ventaId: String(venta?.id || "-"),
+      fecha: toDate(venta?.fecha) || new Date(),
+      atendio: getVentaAtendioLabel(venta, empleadosNombreIndex),
+      cliente: getVentaClienteTicketData(venta),
+      tipoPago: String(venta?.tipoPago || "efectivo").trim().toLowerCase(),
+      referenciaTarjeta:
+        String(detalle?.referenciaTarjeta || venta?.referenciaTarjeta || "").trim(),
+      productos: Array.isArray(venta?.productos) ? venta.productos : [],
+      estado: servicioItem ? "Entregado" : "Pagado",
+      subtotal: Number(venta?.subtotal || 0),
+      aplicaIVA: venta?.aplicarIVA !== false,
+      ivaPorcentaje: Number(venta?.ivaPorcentaje || 0.16),
+      iva: Number(venta?.iva || 0),
+      total: Number(venta?.total || 0),
+    };
   };
 
-  const updateRetiro = (id, patch) => {
-    setRetiros((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const handleVisualizarVentaTicket = async (venta) => {
+    try {
+      await visualizarTicketVenta(buildVentaTicketPayload(venta));
+    } catch (error) {
+      console.error("Error visualizando ticket:", error);
+      alert("No se pudo visualizar el ticket.");
+    }
   };
 
-  const eliminarRetiro = (id) => {
-    setRetiros((prev) => prev.filter((r) => r.id !== id));
+  const handleReimprimirVentaTicket = async (venta) => {
+    try {
+      await imprimirTicketVenta(buildVentaTicketPayload(venta));
+    } catch (error) {
+      console.error("Error reimprimiendo ticket:", error);
+      alert("No se pudo reimprimir el ticket.");
+    }
   };
 
   const handleCorteCaja = async () => {
@@ -312,12 +517,12 @@ export default function Reportes() {
           valor,
           cantidad: Number(denominaciones[String(valor)] || 0),
         })),
-        retiros: retirosValidos,
+        retiros: [],
         egresos: egresosValidos,
         cajero: {
           uid: auth.currentUser?.uid || "",
           email: auth.currentUser?.email || "",
-          nombre: auth.currentUser?.displayName || "",
+          nombre: currentCajeroNombre || "",
         },
         notasCorte,
       });
@@ -403,14 +608,19 @@ export default function Reportes() {
     const totalHoy = ventasHoy.reduce((acc, v) => acc + Number(v.total || 0), 0);
 
     let unidades = 0;
+    let servicios = 0;
     ventasFiltradas.forEach((v) => {
       (v.productos || []).forEach((p) => {
-        unidades += Number(p?.cantidad || 0);
+        const cantidad = Number(p?.cantidad || 0);
+        unidades += cantidad;
+        if (p?.esServicio || isServicioProducto(p)) {
+          servicios += cantidad;
+        }
       });
     });
 
     const iva = ventasFiltradas.reduce((acc, v) => acc + Number(v.iva || 0), 0);
-    return { total, tickets, promedio, totalHoy, unidades, iva };
+    return { total, tickets, promedio, totalHoy, unidades, servicios, iva };
   }, [ventas, ventasFiltradas]);
 
   const ventasPorDia = useMemo(() => {
@@ -429,7 +639,7 @@ export default function Reportes() {
       .map(([fecha, total]) => ({ fecha, total: Number(total.toFixed(2)) }));
   }, [ventasFiltradas]);
 
-  const topProductos = useMemo(() => {
+  const _topProductos = useMemo(() => {
     const map = new Map();
     ventasFiltradas.forEach((v) => {
       (v.productos || []).forEach((p) => {
@@ -456,7 +666,7 @@ export default function Reportes() {
       .slice(0, 10);
   }, [ventasFiltradas]);
 
-  const utilidadPorProducto = useMemo(() => {
+  const _utilidadPorProducto = useMemo(() => {
     const map = new Map();
     ventasFiltradas.forEach((v) => {
       (v.productos || []).forEach((p) => {
@@ -474,6 +684,142 @@ export default function Reportes() {
       .map(([nombre, utilidad]) => ({ nombre, utilidad: Number(utilidad.toFixed(2)) }))
       .sort((a, b) => b.utilidad - a.utilidad)
       .slice(0, 10);
+  }, [ventasFiltradas]);
+
+  const topProductosChart = useMemo(() => {
+    const map = new Map();
+    ventasFiltradas.forEach((v) => {
+      (v.productos || []).forEach((p) => {
+        const cantidad = Number(p?.cantidad || 0);
+        const importe = Number(p?.precioVenta || 0) * cantidad;
+        const esServicio = p?.esServicio || isServicioProducto(p);
+        const nombre = esServicio ? "Servicios" : getProductoNombre(p);
+        const tipo = esServicio ? "Servicio" : "Producto";
+        const key = `${tipo}:${nombre}`;
+        const detalleNombre = esServicio ? getServicioDisplayName(p) : null;
+        const curr = map.get(key) || {
+          nombre,
+          tipo,
+          cantidad: 0,
+          importe: 0,
+          detallesMap: new Map(),
+        };
+
+        if (detalleNombre) {
+          const detalleActual = curr.detallesMap.get(detalleNombre) || {
+            nombre: detalleNombre,
+            cantidad: 0,
+            importe: 0,
+          };
+          curr.detallesMap.set(detalleNombre, {
+            ...detalleActual,
+            cantidad: detalleActual.cantidad + cantidad,
+            importe: detalleActual.importe + importe,
+          });
+        }
+
+        map.set(key, {
+          ...curr,
+          cantidad: curr.cantidad + cantidad,
+          importe: curr.importe + importe,
+        });
+      });
+    });
+
+    return [...map.values()]
+      .sort((a, b) => b.cantidad - a.cantidad)
+      .slice(0, 10)
+      .map((item, index) => ({
+        ...item,
+        color: getChartItemColor(index),
+        detalles: [...(item.detallesMap?.values() || [])]
+          .sort((a, b) => b.cantidad - a.cantidad)
+          .slice(0, 10),
+      }));
+  }, [ventasFiltradas]);
+
+  const utilidadPorProductoChart = useMemo(() => {
+    const map = new Map();
+    ventasFiltradas.forEach((v) => {
+      (v.productos || []).forEach((p) => {
+        const cantidad = Number(p?.cantidad || 0);
+        const venta = Number(p?.precioVenta || 0);
+        const compra = Number(p?.precioCompra || 0);
+        const utilidad = (venta - compra) * cantidad;
+        const esServicio = p?.esServicio || isServicioProducto(p);
+        const nombre = esServicio ? "Servicios" : getProductoNombre(p);
+        const tipo = esServicio ? "Servicio" : "Producto";
+        const key = `${tipo}:${nombre}`;
+        const detalleNombre = esServicio ? getServicioDisplayName(p) : null;
+        const curr = map.get(key) || {
+          nombre,
+          tipo,
+          utilidad: 0,
+          detallesMap: new Map(),
+        };
+
+        if (detalleNombre) {
+          const detalleActual = curr.detallesMap.get(detalleNombre) || {
+            nombre: detalleNombre,
+            utilidad: 0,
+          };
+          curr.detallesMap.set(detalleNombre, {
+            ...detalleActual,
+            utilidad: detalleActual.utilidad + utilidad,
+          });
+        }
+
+        map.set(key, {
+          ...curr,
+          utilidad: curr.utilidad + utilidad,
+        });
+      });
+    });
+
+    return [...map.values()]
+      .map((item) => ({
+        ...item,
+        utilidad: Number(item.utilidad.toFixed(2)),
+        detalles: [...(item.detallesMap?.values() || [])]
+          .map((detalle) => ({
+            ...detalle,
+            utilidad: Number(detalle.utilidad.toFixed(2)),
+          }))
+          .sort((a, b) => b.utilidad - a.utilidad)
+          .slice(0, 10),
+      }))
+      .sort((a, b) => b.utilidad - a.utilidad)
+      .slice(0, 10)
+      .map((item, index) => ({ ...item, color: getChartItemColor(index) }));
+  }, [ventasFiltradas]);
+
+  const serviciosRealizados = useMemo(() => {
+    const items = [];
+
+    ventasFiltradas.forEach((v) => {
+      const fecha = toDate(v.fecha);
+
+      (v.productos || []).forEach((p, index) => {
+        if (!(p?.esServicio || isServicioProducto(p))) return;
+
+        const cantidad = Math.max(1, Number(p?.cantidad || 1));
+        items.push({
+          id: `${v.id || "venta"}-${p?.servicioId || p?.servicioFolio || index}`,
+          fecha,
+          fechaTexto: fecha?.toLocaleString("es-MX") || "-",
+          servicio: getServicioDisplayName(p),
+          folio: String(p?.servicioFolio || p?.codigo || "-").trim() || "-",
+          cliente: getServicioClienteLabel(v, p),
+          ventaId: String(v?.id || "-"),
+          venta: v,
+          metodo: String(v?.tipoPago || "-").trim() || "-",
+          cantidad,
+          monto: Number(p?.precioVenta || 0) * cantidad,
+        });
+      });
+    });
+
+    return items.sort((a, b) => (b.fecha?.getTime() || 0) - (a.fecha?.getTime() || 0));
   }, [ventasFiltradas]);
 
   const metodosPago = useMemo(() => {
@@ -502,7 +848,53 @@ export default function Reportes() {
     ].filter((x) => x.value > 0);
   }, [ventasFiltradas]);
 
-  const coloresPie = ["#16a34a", "#2563eb", "#9333ea", "#f59e0b"];
+  const ventasPorDiaResumen = useMemo(() => {
+    const total = ventasPorDia.reduce((acc, item) => acc + Number(item?.total || 0), 0);
+    const promedio = ventasPorDia.length > 0 ? total / ventasPorDia.length : 0;
+    const mejorDia = ventasPorDia.reduce(
+      (best, item) => (Number(item?.total || 0) > Number(best?.total || 0) ? item : best),
+      null,
+    );
+    return { total, promedio, mejorDia };
+  }, [ventasPorDia]);
+
+  const topProductosResumen = useMemo(() => {
+    const totalUnidades = topProductosChart.reduce((acc, item) => acc + Number(item?.cantidad || 0), 0);
+    const productos = topProductosChart.filter((item) => item.tipo === "Producto").length;
+    const servicios = topProductosChart.filter((item) => item.tipo === "Servicio").length;
+    return {
+      totalUnidades,
+      productos,
+      servicios,
+      lider: topProductosChart[0] || null,
+    };
+  }, [topProductosChart]);
+
+  const utilidadResumen = useMemo(() => {
+    const total = utilidadPorProductoChart.reduce((acc, item) => acc + Number(item?.utilidad || 0), 0);
+    return {
+      total,
+      lider: utilidadPorProductoChart[0] || null,
+    };
+  }, [utilidadPorProductoChart]);
+
+  const metodosPagoResumen = useMemo(() => {
+    const total = metodosPago.reduce((acc, item) => acc + Number(item?.value || 0), 0);
+    const items = [...metodosPago]
+      .sort((a, b) => Number(b?.value || 0) - Number(a?.value || 0))
+      .map((item, index) => ({
+        ...item,
+        color: PIE_COLORS[index % PIE_COLORS.length],
+        percent: total > 0 ? (Number(item?.value || 0) / total) * 100 : 0,
+      }));
+
+    return {
+      total,
+      items,
+      lider: items[0] || null,
+    };
+  }, [metodosPago]);
+
   const chartTextColor = isDarkMode ? "#cbd5e1" : "#475569";
   const chartGridColor = isDarkMode ? "#334155" : "#dbe3ef";
   const chartTooltipStyle = {
@@ -540,17 +932,6 @@ export default function Reportes() {
     }, 0);
   }, [denominaciones]);
 
-  const retirosValidos = useMemo(() => {
-    return retiros
-      .map((r) => ({
-        tipo: String(r?.tipo || "retiro"),
-        monto: Number(String(r?.monto || "").replace(/,/g, "")),
-        motivo: String(r?.motivo || "").trim(),
-        usuario: String(r?.usuario || "").trim() || auth.currentUser?.email || "sin_usuario",
-      }))
-      .filter((r) => Number.isFinite(r.monto) && r.monto > 0);
-  }, [retiros]);
-
   // Egresos capturados en "Registrar Egresos" (coleccion diaria).
   const egresosValidos = useMemo(() => {
     return egresos
@@ -564,15 +945,11 @@ export default function Reportes() {
       .filter((e) => Number.isFinite(e.monto) && e.monto > 0);
   }, [egresos]);
 
-  const totalRetiros = useMemo(() => {
-    return retirosValidos.reduce((acc, r) => acc + Number(r.monto || 0), 0);
-  }, [retirosValidos]);
-
   const totalEgresosDia = useMemo(() => {
     return egresosValidos.reduce((acc, e) => acc + Number(e.monto || 0), 0);
   }, [egresosValidos]);
 
-  const totalSalidasCaja = totalRetiros + totalEgresosDia;
+  const totalSalidasCaja = totalEgresosDia;
   const cajaFinalEsperada = fondoInicialNum + efectivoEsperadoHoy - totalSalidasCaja;
   const diferenciaContado = totalDenominaciones - efectivoEsperadoHoy;
   const aperturaPendiente = !cajaCerradaHoy && !fondoInicialValido;
@@ -591,6 +968,139 @@ export default function Reportes() {
       return byEmail.includes(cajeroQ) || byNombre.includes(cajeroQ) || byUid.includes(cajeroQ);
     });
   }, [cortesHistorial, filtroCajero, fechaCorteDesde, fechaCorteHasta]);
+
+  const historialCortesResumen = useMemo(() => {
+    const tickets = cortesHistorialFiltrado.reduce(
+      (acc, corte) => acc + Number(corte?.resumen?.tickets || 0),
+      0,
+    );
+    const ultimo = cortesHistorialFiltrado
+      .slice()
+      .sort((a, b) => String(b?.fechaKey || "").localeCompare(String(a?.fechaKey || "")))[0] || null;
+
+    return {
+      total: cortesHistorialFiltrado.length,
+      tickets,
+      ultimo,
+    };
+  }, [cortesHistorialFiltrado]);
+
+  const toggleChartDetail = (detailKey) => {
+    setExpandedChartDetails((prev) => ({
+      ...prev,
+      [detailKey]: !prev[detailKey],
+    }));
+  };
+
+  const setChartProductsVisible = (chartId, shouldShowProducts) => {
+    setChartProductVisibility((prev) => ({
+      ...prev,
+      [chartId]: shouldShowProducts,
+    }));
+  };
+
+  const getVisibleChartItems = (chartId, items) => {
+    const shouldShowProducts = chartProductVisibility[chartId] !== false;
+    if (shouldShowProducts) return items;
+    return items.filter((item) => item.tipo !== "Producto");
+  };
+
+  const selectBottomSection = (sectionKey) => {
+    setActiveBottomSection(sectionKey);
+  };
+
+  const renderChartVisibilityTabs = (chartId, items) => {
+    const hasProducts = items.some((item) => item.tipo === "Producto");
+    if (!hasProducts) return null;
+
+    const shouldShowProducts = chartProductVisibility[chartId] !== false;
+
+    return (
+      <div className="chart-visibility-wrap">
+        <small>Lista inferior</small>
+        <div className="chart-visibility-tabs" role="tablist" aria-label="Filtro de productos en lista">
+          <button
+            type="button"
+            className={`chart-visibility-tab ${shouldShowProducts ? "active" : ""}`}
+            onClick={() => setChartProductsVisible(chartId, true)}
+          >
+            Mostrar productos
+          </button>
+          <button
+            type="button"
+            className={`chart-visibility-tab ${!shouldShowProducts ? "active" : ""}`}
+            onClick={() => setChartProductsVisible(chartId, false)}
+          >
+            Ocultar productos
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderChartSeriesList = (chartId, items, valueFormatter, detailValueFormatter) => {
+    const visibleItems = getVisibleChartItems(chartId, items);
+
+    if (!visibleItems.length) {
+      return <p className="chart-series-empty">Sin datos en el periodo seleccionado.</p>;
+    }
+
+    return (
+      <div className="chart-series-list">
+        {visibleItems.map((item) => {
+          const detailKey = `${chartId}:${item.tipo}:${item.nombre}`;
+          const showDetails = Boolean(expandedChartDetails[detailKey]);
+          const canExpand = Array.isArray(item.detalles) && item.detalles.length > 0;
+          const subLabel = canExpand
+            ? serviciosHabilitados
+              ? `${item.detalles.length} servicio(s) dentro de este total`
+              : `${item.detalles.length} detalle(s) dentro de este total`
+            : item.tipo;
+
+          return (
+            <div className="chart-series-item-wrap" key={detailKey}>
+              <div className="chart-series-item">
+                <span
+                  className="chart-series-swatch"
+                  style={{ background: item.color }}
+                  aria-hidden="true"
+                />
+                <div className="chart-series-copy">
+                  <strong>{item.nombre}</strong>
+                  <small>{subLabel}</small>
+                </div>
+                <div className="chart-series-actions">
+                  <b>{valueFormatter(item)}</b>
+                  {canExpand && (
+                    <button
+                      type="button"
+                      className="chart-series-toggle"
+                      onClick={() => toggleChartDetail(detailKey)}
+                    >
+                      {showDetails
+                        ? serviciosHabilitados ? "Ocultar servicios" : "Ocultar detalle"
+                        : serviciosHabilitados ? "Ver servicios" : "Ver detalle"}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {canExpand && showDetails && (
+                <div className="chart-series-details">
+                  {item.detalles.map((detalle) => (
+                    <div className="chart-series-detail-row" key={`${detailKey}:${detalle.nombre}`}>
+                      <span>{detalle.nombre}</span>
+                      <strong>{detailValueFormatter(detalle)}</strong>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <Layout>
@@ -653,6 +1163,12 @@ export default function Reportes() {
             <small>Tickets</small>
             <b>{kpis.tickets}</b>
           </div>
+          {serviciosHabilitados && (
+            <div className="kpi-card">
+              <small>Servicios realizados</small>
+              <b>{kpis.servicios}</b>
+            </div>
+          )}
           <div className="kpi-card">
             <small>Ticket promedio</small>
             <b>{money(kpis.promedio)}</b>
@@ -668,92 +1184,298 @@ export default function Reportes() {
         </div>
 
         <div className="reportes-grid">
-          <div className="chart-card">
-            <h3>Ventas por dia (ultimos 30 dias)</h3>
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={ventasPorDia}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
-                <XAxis dataKey="fecha" tick={{ fill: chartTextColor }} axisLine={{ stroke: chartGridColor }} />
-                <YAxis tick={{ fill: chartTextColor }} axisLine={{ stroke: chartGridColor }} />
-                <Tooltip
-                  formatter={(v) => money(v)}
-                  isAnimationActive={animationsEnabled}
-                  contentStyle={chartTooltipStyle}
-                />
-                <Legend wrapperStyle={{ color: chartTextColor }} />
-                <Line
-                  type="monotone"
-                  dataKey="total"
-                  stroke="#2563eb"
-                  strokeWidth={2}
-                  name="Total"
-                  isAnimationActive={animationsEnabled}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="chart-card chart-card-sales">
+            <div className="chart-card-head">
+              <div className="chart-card-copy">
+                <span className="chart-card-kicker">Movimiento</span>
+                <h3>Ventas por dia (ultimos 30 dias)</h3>
+                <p>Comportamiento diario del periodo filtrado y dias mas fuertes de cobro.</p>
+              </div>
+              <div className="chart-card-stat">
+                <strong>{money(ventasPorDiaResumen.total)}</strong>
+                <small>Acumulado</small>
+              </div>
+            </div>
+
+            <div className="chart-card-chips">
+              <span className="chart-chip">Promedio diario: {money(ventasPorDiaResumen.promedio)}</span>
+              <span className="chart-chip">
+                Mejor dia:{" "}
+                {ventasPorDiaResumen.mejorDia
+                  ? `${formatChartDateTick(ventasPorDiaResumen.mejorDia.fecha)} · ${money(
+                      ventasPorDiaResumen.mejorDia.total,
+                    )}`
+                  : "Sin ventas"}
+              </span>
+            </div>
+
+            <div className="chart-canvas">
+              <ResponsiveContainer width="100%" height={280}>
+                <AreaChart data={ventasPorDia}>
+                  <defs>
+                    <linearGradient id="ventasAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#2563eb" stopOpacity={0.32} />
+                      <stop offset="100%" stopColor="#2563eb" stopOpacity={0.03} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} vertical={false} />
+                  <XAxis
+                    dataKey="fecha"
+                    tick={{ fill: chartTextColor }}
+                    tickFormatter={formatChartDateTick}
+                    axisLine={{ stroke: chartGridColor }}
+                    tickLine={false}
+                    minTickGap={18}
+                  />
+                  <YAxis
+                    tick={{ fill: chartTextColor }}
+                    axisLine={{ stroke: chartGridColor }}
+                    tickLine={false}
+                    width={54}
+                  />
+                  <Tooltip
+                    formatter={(v) => money(v)}
+                    labelFormatter={(value) => formatChartDateTick(value)}
+                    isAnimationActive={animationsEnabled}
+                    contentStyle={chartTooltipStyle}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    stroke="none"
+                    fill="url(#ventasAreaGradient)"
+                    isAnimationActive={animationsEnabled}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#2563eb"
+                    strokeWidth={3}
+                    dot={false}
+                    activeDot={{ r: 6, fill: "#ffffff", stroke: "#2563eb", strokeWidth: 3 }}
+                    isAnimationActive={animationsEnabled}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
-          <div className="chart-card">
-            <h3>Top productos (unidades)</h3>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={topProductos}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
-                <XAxis dataKey="nombre" hide />
-                <YAxis tick={{ fill: chartTextColor }} axisLine={{ stroke: chartGridColor }} />
-                <Tooltip formatter={(v) => v} isAnimationActive={animationsEnabled} contentStyle={chartTooltipStyle} />
-                <Legend wrapperStyle={{ color: chartTextColor }} />
-                <Bar dataKey="cantidad" fill="#16a34a" name="Unidades" isAnimationActive={animationsEnabled} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="chart-card chart-card-products">
+            <div className="chart-card-head">
+              <div className="chart-card-copy">
+                <span className="chart-card-kicker">Ranking</span>
+                <h3>Top productos (unidades)</h3>
+                <p>
+                  {serviciosHabilitados
+                    ? "Mezcla de productos y servicios mas movidos dentro del periodo actual."
+                    : "Productos mas movidos dentro del periodo actual."}
+                </p>
+              </div>
+              <div className="chart-card-stat">
+                <strong>{topProductosResumen.totalUnidades}</strong>
+                <small>Unidades top</small>
+              </div>
+            </div>
+
+            <div className="chart-card-chips">
+              {serviciosHabilitados && (
+                <span className="chart-chip">Servicios: {topProductosResumen.servicios}</span>
+              )}
+              <span className="chart-chip">Productos: {topProductosResumen.productos}</span>
+              <span className="chart-chip">
+                Lider: {topProductosResumen.lider?.nombre || "Sin datos"}
+              </span>
+            </div>
+
+            <div className="chart-canvas">
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={topProductosChart} barGap={10}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} vertical={false} />
+                  <XAxis dataKey="nombre" hide />
+                  <YAxis
+                    tick={{ fill: chartTextColor }}
+                    axisLine={{ stroke: chartGridColor }}
+                    tickLine={false}
+                    allowDecimals={false}
+                    width={44}
+                  />
+                  <Tooltip
+                    formatter={(v) => [v, "Unidades"]}
+                    labelFormatter={(_, payload) => payload?.[0]?.payload?.nombre || ""}
+                    isAnimationActive={animationsEnabled}
+                    contentStyle={chartTooltipStyle}
+                  />
+                  <Bar
+                    dataKey="cantidad"
+                    name="Unidades"
+                    radius={[12, 12, 4, 4]}
+                    barSize={28}
+                    isAnimationActive={animationsEnabled}
+                  >
+                    {topProductosChart.map((entry) => (
+                      <Cell key={`${entry.tipo}-${entry.nombre}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {renderChartVisibilityTabs("top-productos", topProductosChart)}
+            {renderChartSeriesList(
+              "top-productos",
+              topProductosChart,
+              (item) => `${item.cantidad} und.`,
+              (detalle) => `${detalle.cantidad} und.`,
+            )}
           </div>
 
-          <div className="chart-card">
-            <h3>Metodo de pago</h3>
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie
-                  data={metodosPago}
-                  dataKey="value"
-                  nameKey="name"
-                  outerRadius={95}
-                  label
-                  isAnimationActive={animationsEnabled}
-                >
-                  {metodosPago.map((entry, idx) => (
-                    <Cell key={entry.name} fill={coloresPie[idx % coloresPie.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(v) => money(v)}
-                  isAnimationActive={animationsEnabled}
-                  contentStyle={chartTooltipStyle}
-                />
-                <Legend wrapperStyle={{ color: chartTextColor }} />
-              </PieChart>
-            </ResponsiveContainer>
+          <div className="chart-card chart-card-payments">
+            <div className="chart-card-head">
+              <div className="chart-card-copy">
+                <span className="chart-card-kicker">Cobro</span>
+                <h3>Metodo de pago</h3>
+                <p>Distribucion del efectivo, tarjeta, transferencia y otras entradas.</p>
+              </div>
+              <div className="chart-card-stat">
+                <strong>{money(metodosPagoResumen.total)}</strong>
+                <small>Total cobrado</small>
+              </div>
+            </div>
+
+            <div className="chart-payment-layout">
+              <div className="chart-donut-shell">
+                <ResponsiveContainer width="100%" height={280}>
+                  <PieChart>
+                    <Pie
+                      data={metodosPagoResumen.items}
+                      dataKey="value"
+                      nameKey="name"
+                      innerRadius={68}
+                      outerRadius={102}
+                      paddingAngle={4}
+                      stroke={isDarkMode ? "#0f172a" : "#ffffff"}
+                      strokeWidth={4}
+                      isAnimationActive={animationsEnabled}
+                    >
+                      {metodosPagoResumen.items.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v) => money(v)}
+                      isAnimationActive={animationsEnabled}
+                      contentStyle={chartTooltipStyle}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+
+                <div className="chart-donut-center">
+                  <span>Metodo lider</span>
+                  <strong>{metodosPagoResumen.lider?.name || "Sin datos"}</strong>
+                  <small>{money(metodosPagoResumen.lider?.value || 0)}</small>
+                </div>
+              </div>
+
+              <div className="chart-payment-list">
+                {metodosPagoResumen.items.map((item) => (
+                  <div className="chart-payment-item" key={item.name}>
+                    <span
+                      className="chart-payment-dot"
+                      style={{ background: item.color }}
+                      aria-hidden="true"
+                    />
+                    <div className="chart-payment-copy">
+                      <strong>{item.name}</strong>
+                      <small>{money(item.value)}</small>
+                    </div>
+                    <b>{item.percent.toFixed(0)}%</b>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <div className="chart-card">
-            <h3>Utilidad estimada por producto</h3>
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={utilidadPorProducto}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} />
-                <XAxis dataKey="nombre" hide />
-                <YAxis tick={{ fill: chartTextColor }} axisLine={{ stroke: chartGridColor }} />
-                <Tooltip
-                  formatter={(v) => money(v)}
-                  isAnimationActive={animationsEnabled}
-                  contentStyle={chartTooltipStyle}
-                />
-                <Legend wrapperStyle={{ color: chartTextColor }} />
-                <Bar dataKey="utilidad" fill="#9333ea" name="Utilidad" isAnimationActive={animationsEnabled} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="chart-card chart-card-profit">
+            <div className="chart-card-head">
+              <div className="chart-card-copy">
+                <span className="chart-card-kicker">Rentabilidad</span>
+                <h3>Utilidad estimada por producto</h3>
+                <p>Lectura rapida de lo que mas deja margen dentro del ranking actual.</p>
+              </div>
+              <div className="chart-card-stat">
+                <strong>{money(utilidadResumen.total)}</strong>
+                <small>Utilidad top</small>
+              </div>
+            </div>
+
+            <div className="chart-card-chips">
+              <span className="chart-chip">
+                Mejor aporte: {utilidadResumen.lider?.nombre || "Sin datos"}
+              </span>
+              <span className="chart-chip">
+                Margen visible: {money(utilidadResumen.lider?.utilidad || 0)}
+              </span>
+            </div>
+
+            <div className="chart-canvas">
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={utilidadPorProductoChart} barGap={10}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={chartGridColor} vertical={false} />
+                  <XAxis dataKey="nombre" hide />
+                  <YAxis
+                    tick={{ fill: chartTextColor }}
+                    axisLine={{ stroke: chartGridColor }}
+                    tickLine={false}
+                    width={54}
+                  />
+                  <Tooltip
+                    formatter={(v) => money(v)}
+                    labelFormatter={(_, payload) => payload?.[0]?.payload?.nombre || ""}
+                    isAnimationActive={animationsEnabled}
+                    contentStyle={chartTooltipStyle}
+                  />
+                  <Bar
+                    dataKey="utilidad"
+                    name="Utilidad"
+                    radius={[12, 12, 4, 4]}
+                    barSize={28}
+                    isAnimationActive={animationsEnabled}
+                  >
+                    {utilidadPorProductoChart.map((entry) => (
+                      <Cell key={`${entry.tipo}-${entry.nombre}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {renderChartVisibilityTabs("utilidad-productos", utilidadPorProductoChart)}
+            {renderChartSeriesList(
+              "utilidad-productos",
+              utilidadPorProductoChart,
+              (item) => money(item.utilidad),
+              (detalle) => money(detalle.utilidad),
+            )}
           </div>
         </div>
  
-        <div className="tabla-reportes-wrap">
-          <h3>Historial de cortes (fecha y cajero)</h3>
+        {activeBottomSection === "historial" && (
+        <div className="tabla-reportes-wrap historial-cortes-panel">
+          <div className="reportes-section-head">
+            <div>
+              <h3>Historial de cortes</h3>
+              <p>Consulta cierres por fecha, cajero y resultado del conteo de caja.</p>
+            </div>
+            <div className="reportes-section-badge">
+              {historialCortesResumen.total} corte(s)
+            </div>
+          </div>
+
+          <div className="chart-card-chips historial-cortes-chips">
+            <span className="chart-chip">Tickets acumulados: {historialCortesResumen.tickets}</span>
+            <span className="chart-chip">
+              Ultimo corte: {historialCortesResumen.ultimo?.fechaKey || "Sin registros"}
+            </span>
+          </div>
+
           <div className="historial-cortes-filtros">
             <input
               type="date"
@@ -766,7 +1488,7 @@ export default function Reportes() {
               onChange={(e) => setFechaCorteHasta(e.target.value)}
             />
             <input
-              placeholder="Filtrar por cajero (email/nombre)"
+              placeholder="Filtrar por nombre del cajero"
               value={filtroCajero}
               onChange={(e) => setFiltroCajero(e.target.value)}
             />
@@ -791,20 +1513,42 @@ export default function Reportes() {
               <tbody>
                 {cortesHistorialFiltrado.map((c) => (
                   <tr key={c.id}>
-                    <td>{c.fechaKey || "-"}</td>
-                    <td>{c?.cajero?.email || c?.cajero?.nombre || "-"}</td>
-                    <td>{Number(c?.resumen?.tickets || 0)}</td>
+                    <td>
+                      <div className="historial-fecha-cell">
+                        <strong>{c.fechaKey || "-"}</strong>
+                        <small>{getCorteHoraLabel(c)}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="historial-cajero-cell">
+                        <strong>{getCajeroDisplayName(c, empleadosNombreIndex)}</strong>
+                        <small>{c?.cajero?.uid ? `ID ${String(c.cajero.uid).slice(0, 8)}` : "Cajero registrado"}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="historial-pill">{Number(c?.resumen?.tickets || 0)} tickets</span>
+                    </td>
                     <td>{money(c?.resumen?.iva || 0)}</td>
                     <td>{money(c?.conteoEfectivo?.esperado || 0)}</td>
                     <td>{c?.conteoEfectivo?.contado == null ? "-" : money(c?.conteoEfectivo?.contado)}</td>
-                    <td>{c?.conteoEfectivo?.diferencia == null ? "-" : money(c?.conteoEfectivo?.diferencia)}</td>
+                    <td>
+                      {c?.conteoEfectivo?.diferencia == null ? (
+                        "-"
+                      ) : (
+                        <span
+                          className={`historial-diff ${getDiferenciaTone(c?.conteoEfectivo?.diferencia)}`}
+                        >
+                          {money(c?.conteoEfectivo?.diferencia)}
+                        </span>
+                      )}
+                    </td>
                     <td>
                       <button
                         type="button"
                         className="btn-refresh btn-documento-corte"
                         onClick={() => handleDescargarCorteHistorial(c)}
                       >
-                        PDF
+                        Descargar PDF
                       </button>
                     </td>
                   </tr>
@@ -813,6 +1557,9 @@ export default function Reportes() {
             </table>
           )}
         </div>
+        )}
+
+        {(activeBottomSection === "servicios" || activeBottomSection === "ventas") && (
   <div className="reportes-buscador">
       
           <div className="filtro-texto-wrap">
@@ -824,6 +1571,78 @@ export default function Reportes() {
             />
           </div>
         </div>
+        )}
+        {serviciosHabilitados && activeBottomSection === "servicios" && (
+        <div className="tabla-reportes-wrap">
+          <div className="reportes-section-head">
+            <div>
+              <h3>Servicios realizados</h3>
+              <p>Servicios cobrados dentro del periodo y filtro actual.</p>
+            </div>
+            <div className="reportes-section-badge">
+              {serviciosRealizados.length} registrados
+            </div>
+          </div>
+          {loading && <p>Cargando...</p>}
+          {!loading && serviciosRealizados.length === 0 && (
+            <p>No hay servicios registrados en el filtro actual.</p>
+          )}
+
+          {!loading && serviciosRealizados.length > 0 && (
+            <table className="tabla-reportes">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Servicio</th>
+                  <th>Cliente</th>
+                  <th>Venta</th>
+                  <th>Metodo</th>
+                  <th>Cantidad</th>
+                  <th>Monto</th>
+                  <th>Ticket</th>
+                </tr>
+              </thead>
+              <tbody>
+                {serviciosRealizados.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.fechaTexto}</td>
+                    <td>
+                      <strong>{item.servicio}</strong>
+                      <br />
+                      <small>Folio: {item.folio}</small>
+                    </td>
+                    <td>{item.cliente}</td>
+                    <td>{item.ventaId}</td>
+                    <td>{item.metodo}</td>
+                    <td>{item.cantidad}</td>
+                    <td>{money(item.monto)}</td>
+                    <td>
+                      <div className="tabla-ticket-actions">
+                        <button
+                          type="button"
+                          className="tabla-ticket-btn secondary"
+                          onClick={() => handleVisualizarVentaTicket(item.venta)}
+                        >
+                          Visualizar ticket
+                        </button>
+                        <button
+                          type="button"
+                          className="tabla-ticket-btn"
+                          onClick={() => handleReimprimirVentaTicket(item.venta)}
+                        >
+                          Reimprimir ticket
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        )}
+
+        {activeBottomSection === "ventas" && (
         <div className="tabla-reportes-wrap">
           <h3>Detalle de ventas</h3>
           {loading && <p>Cargando...</p>}
@@ -838,6 +1657,7 @@ export default function Reportes() {
                   <th>Total</th>
                   <th>Metodo</th>
                   <th>Items</th>
+                  <th>Ticket</th>
                 </tr>
               </thead>
               <tbody>
@@ -856,12 +1676,57 @@ export default function Reportes() {
                           .slice(0, 3)
                           .join(" | ")}
                       </td>
+                      <td>
+                        <div className="tabla-ticket-actions">
+                          <button
+                            type="button"
+                            className="tabla-ticket-btn secondary"
+                            onClick={() => handleVisualizarVentaTicket(v)}
+                          >
+                            Visualizar ticket
+                          </button>
+                          <button
+                            type="button"
+                            className="tabla-ticket-btn"
+                            onClick={() => handleReimprimirVentaTicket(v)}
+                          >
+                            Reimprimir ticket
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
               </tbody>
             </table>
           )}
         </div>
+        )}
+
+        <nav className="reportes-bottom-nav" aria-label="Secciones de reportes">
+          <button
+            type="button"
+            className={activeBottomSection === "historial" ? "active" : ""}
+            onClick={() => selectBottomSection("historial")}
+          >
+            Historial de cortes
+          </button>
+          {serviciosHabilitados && (
+            <button
+              type="button"
+              className={activeBottomSection === "servicios" ? "active" : ""}
+              onClick={() => selectBottomSection("servicios")}
+            >
+              Servicios realizados
+            </button>
+          )}
+          <button
+            type="button"
+            className={activeBottomSection === "ventas" ? "active" : ""}
+            onClick={() => selectBottomSection("ventas")}
+          >
+            Detalle de ventas
+          </button>
+        </nav>
 
         {mostrarModalCierre && (
           <div className="corte-modal-overlay">
@@ -922,75 +1787,28 @@ export default function Reportes() {
                   </div>
                 </div>
                 <div>
-                  <label>Total salidas (retiros + egresos)</label>
+                  <label>Total salidas de caja</label>
                   <div className="conteo-caja-value">{money(totalSalidasCaja)}</div>
                 </div>
               </div>
 
               <div className="retiros-wrap">
                 <div className="retiros-head">
-                  <h4>Retiros / Gastos manuales</h4>
+                  <h4>Egresos manuales</h4>
                   <div className="reportes-header-actions">
                     <button
                       className="btn-refresh"
                       type="button"
-                      onClick={() => agregarMovimiento("retiro")}
+                      onClick={() => setMostrarModalEgresos(true)}
+                      disabled={cajaCerradaHoy || cerrandoCaja}
                     >
-                      + Retiro
-                    </button>
-                    <button
-                      className="btn-refresh"
-                      type="button"
-                      onClick={() => agregarMovimiento("gasto")}
-                    >
-                      + Gasto
-                    </button>
-                    <button
-                      className="btn-refresh"
-                      type="button"
-                      onClick={() => agregarMovimiento("vale")}
-                    >
-                      + Vale
+                      + Egreso
                     </button>
                   </div>
                 </div>
-                {retiros.length === 0 && (
-                  <p className="conteo-caja-hint">Sin retiros manuales registrados.</p>
-                )}
-                {retiros.map((r) => (
-                  <div key={`modal-${r.id}`} className="retiro-card">
-                    <div className="retiro-row">
-                      <select value={r.tipo} onChange={(e) => updateRetiro(r.id, { tipo: e.target.value })}>
-                        <option value="retiro">Retiro</option>
-                        <option value="gasto">Gasto</option>
-                        <option value="vale">Vale</option>
-                      </select>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="Monto"
-                        value={r.monto}
-                        onChange={(e) => updateRetiro(r.id, { monto: e.target.value })}
-                      />
-                      <input
-                        placeholder="Motivo"
-                        value={r.motivo}
-                        onChange={(e) => updateRetiro(r.id, { motivo: e.target.value })}
-                      />
-                      <input
-                        placeholder="Usuario"
-                        value={r.usuario}
-                        onChange={(e) => updateRetiro(r.id, { usuario: e.target.value })}
-                      />
-                    </div>
-                    <div className="retiro-row-actions">
-                      <button className="btn-corte" type="button" onClick={() => eliminarRetiro(r.id)}>
-                        Quitar
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                <p className="conteo-caja-hint">
+                  Usa el boton <strong>+ Egreso</strong> para abrir el modal de registrar egresos.
+                </p>
 
                 <div className="egresos-corte-wrap">
                   <div className="egresos-corte-head">

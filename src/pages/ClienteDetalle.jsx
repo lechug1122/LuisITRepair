@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import "../css/clientes.css";
 import PageLoader from "../components/PageLoader";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useServiciosConfig from "../hooks/useServiciosConfig";
 
 import {
   actualizarCliente,
+  listarVentasPorCliente,
   obtenerClientePorId,
 } from "../js/services/clientes_firestore";
 import { obtenerProductos } from "../js/services/POS_firebase";
@@ -19,13 +21,17 @@ const METAS_PUNTOS = [
 ];
 
 function fmtFecha(ts) {
-  if (!ts?.seconds) return "-";
-  return new Date(ts.seconds * 1000).toLocaleDateString("es-MX");
+  const fecha = toDate(ts);
+  if (!fecha) return "-";
+  return fecha.toLocaleDateString("es-MX");
 }
 
 function toDate(ts) {
-  if (!ts?.seconds) return null;
-  return new Date(ts.seconds * 1000);
+  if (!ts) return null;
+  if (typeof ts?.toDate === "function") return ts.toDate();
+  if (typeof ts?.seconds === "number") return new Date(ts.seconds * 1000);
+  const fecha = ts instanceof Date ? ts : new Date(ts);
+  return Number.isNaN(fecha.getTime()) ? null : fecha;
 }
 
 function phoneToWhatsapp(raw) {
@@ -40,6 +46,18 @@ function formatMoney(value) {
     currency: "MXN",
     maximumFractionDigits: 2,
   }).format(Number(value || 0));
+}
+
+function resumirItemsVenta(venta = {}) {
+  return (Array.isArray(venta?.productos) ? venta.productos : [])
+    .filter(Boolean)
+    .map((item) => {
+      const nombre = String(
+        item?.nombre || item?.descripcion || item?.codigo || "Concepto sin nombre",
+      ).trim();
+      const cantidad = Math.max(1, Number(item?.cantidad || 1));
+      return `${cantidad}x ${nombre}`;
+    });
 }
 
 function normalizarProductoCanje(producto, puntosForzados = null) {
@@ -66,6 +84,7 @@ function normalizarProductoCanje(producto, puntosForzados = null) {
 export default function ClienteDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { serviciosHabilitados } = useEmpresaConfig();
   const { catalogoCanjes, habilitarCanjes } = useServiciosConfig();
   const mostrarProgramaCanjes = !habilitarCanjes;
   const goToServicio = (folioRaw) => {
@@ -81,6 +100,7 @@ export default function ClienteDetalle() {
   const [notasInternas, setNotasInternas] = useState("");
   const [guardandoNotas, setGuardandoNotas] = useState(false);
   const [productos, setProductos] = useState([]);
+  const [ventas, setVentas] = useState([]);
 
   useEffect(() => {
     let alive = true;
@@ -88,16 +108,23 @@ export default function ClienteDetalle() {
     (async () => {
       try {
         setError("");
-        const [c, s, inventario] = await Promise.all([
+        const [c, inventario, s] = await Promise.all([
           obtenerClientePorId(id),
-          listarServiciosPorClienteId(id),
           obtenerProductos(),
+          serviciosHabilitados ? listarServiciosPorClienteId(id) : Promise.resolve([]),
         ]);
+        const compras = c
+          ? await listarVentasPorCliente({
+              clienteId: id,
+              telefono: c?.telefono || "",
+            })
+          : [];
 
         if (!alive) return;
         setCliente(c);
         setServicios(Array.isArray(s) ? s : []);
         setProductos(Array.isArray(inventario) ? inventario : []);
+        setVentas(Array.isArray(compras) ? compras : []);
         setNotasInternas(String(c?.notasInternas || ""));
       } catch (e) {
         console.error("Error cargando detalle del cliente:", e);
@@ -105,6 +132,7 @@ export default function ClienteDetalle() {
         setCliente(null);
         setServicios([]);
         setProductos([]);
+        setVentas([]);
         setError("No se pudo cargar la informacion del cliente.");
       } finally {
         if (alive) setLoading(false);
@@ -114,7 +142,7 @@ export default function ClienteDetalle() {
     return () => {
       alive = false;
     };
-  }, [id]);
+  }, [id, serviciosHabilitados]);
 
   const pendientes = useMemo(
     () =>
@@ -132,8 +160,30 @@ export default function ClienteDetalle() {
     () => servicios.reduce((acc, s) => acc + Number(s.total || 0), 0),
     [servicios],
   );
+  const totalCompras = useMemo(
+    () => ventas.reduce((acc, venta) => acc + Number(venta?.total || 0), 0),
+    [ventas],
+  );
+  const ultimaCompra = useMemo(() => ventas[0] || null, [ventas]);
+  const productosCompradosResumen = useMemo(() => {
+    const map = new Map();
+    ventas.forEach((venta) => {
+      (venta?.productos || []).forEach((item) => {
+        const nombre = String(
+          item?.nombre || item?.descripcion || item?.codigo || "Concepto sin nombre",
+        ).trim();
+        const cantidad = Math.max(1, Number(item?.cantidad || 1));
+        map.set(nombre, (map.get(nombre) || 0) + cantidad);
+      });
+    });
 
-  const clienteFrecuente = servicios.length >= 5;
+    return [...map.entries()]
+      .map(([nombre, cantidad]) => ({ nombre, cantidad }))
+      .sort((a, b) => b.cantidad - a.cantidad)
+      .slice(0, 5);
+  }, [ventas]);
+
+  const clienteFrecuente = serviciosHabilitados && servicios.length >= 5;
   const puntosCliente = Number(cliente?.puntos || 0);
 
   // Ultimo servicio ya entregado para mostrar resumen de valor.
@@ -173,19 +223,25 @@ export default function ClienteDetalle() {
     const phone = phoneToWhatsapp(cliente?.telefono);
     if (!phone) return "";
     const text = encodeURIComponent(
-      `Hola ${cliente?.nombre || ""}, te compartimos el seguimiento de tus servicios.`,
+      serviciosHabilitados
+        ? `Hola ${cliente?.nombre || ""}, te compartimos el seguimiento de tus servicios.`
+        : `Hola ${cliente?.nombre || ""}, te compartimos tus datos de cliente y beneficios disponibles.`,
     );
     return `https://wa.me/${phone}?text=${text}`;
-  }, [cliente?.telefono, cliente?.nombre]);
+  }, [cliente?.telefono, cliente?.nombre, serviciosHabilitados]);
 
   const correoUrl = useMemo(() => {
     const email = String(cliente?.email || "").trim();
-    const subject = encodeURIComponent("Seguimiento de servicio");
+    const subject = encodeURIComponent(
+      serviciosHabilitados ? "Seguimiento de servicio" : "Seguimiento de cliente",
+    );
     const body = encodeURIComponent(
-      `Hola ${cliente?.nombre || ""}, te escribimos para dar seguimiento a tu servicio.`,
+      serviciosHabilitados
+        ? `Hola ${cliente?.nombre || ""}, te escribimos para dar seguimiento a tu servicio.`
+        : `Hola ${cliente?.nombre || ""}, te escribimos para dar seguimiento a tu cuenta de cliente.`,
     );
     return `mailto:${email}?subject=${subject}&body=${body}`;
-  }, [cliente?.email, cliente?.nombre]);
+  }, [cliente?.email, cliente?.nombre, serviciosHabilitados]);
 
   const metasPuntos = useMemo(
     () =>
@@ -292,14 +348,25 @@ export default function ClienteDetalle() {
       `Telefono: ${cliente?.telefono || "-"}`,
       `Direccion: ${cliente?.direccion || "-"}`,
       `Alta: ${fmtFecha(cliente?.createdAt)}`,
-      `Total servicios: ${servicios.length}`,
-      `Servicios pendientes: ${pendientes.length}`,
-      `Total gastado: $${totalGastado.toFixed(2)}`,
-      "",
-      "Ultimo servicio entregado:",
-      `Folio: ${ultimoServicio?.folio || "-"}`,
-      `Fecha: ${fmtFecha(ultimoServicio?.createdAt)}`,
-      `Equipo: ${ultimoServicio?.tipoDispositivo || "-"} ${ultimoServicio?.marca || ""} ${ultimoServicio?.modelo || ""}`.trim(),
+      `Compras registradas: ${ventas.length}`,
+      `Total en compras: ${formatMoney(totalCompras)}`,
+      `Ultima compra: ${fmtFecha(ultimaCompra?.fecha || ultimaCompra?.createdAt)}`,
+      `Productos frecuentes: ${productosCompradosResumen.length
+        ? productosCompradosResumen.map((item) => `${item.nombre} (${item.cantidad})`).join(", ")
+        : "-"}`,
+      ...(serviciosHabilitados
+        ? [
+            `Total servicios: ${servicios.length}`,
+            `Servicios pendientes: ${pendientes.length}`,
+            `Total gastado: $${totalGastado.toFixed(2)}`,
+            "",
+            "Ultimo servicio entregado:",
+            `Folio: ${ultimoServicio?.folio || "-"}`,
+            `Fecha: ${fmtFecha(ultimoServicio?.createdAt)}`,
+            `Equipo: ${ultimoServicio?.tipoDispositivo || "-"} ${ultimoServicio?.marca || ""} ${ultimoServicio?.modelo || ""}`.trim(),
+            "",
+          ]
+        : []),
       "",
       "Notas internas:",
       notasInternas || "-",
@@ -352,20 +419,37 @@ export default function ClienteDetalle() {
                   )}
                 </div>
 
-                <div className="hero-metricas">
-                  <div>
-                    <span>Total servicios</span>
-                    <b>{servicios.length}</b>
+                {serviciosHabilitados ? (
+                  <div className="hero-metricas">
+                    <div>
+                      <span>Total servicios</span>
+                      <b>{servicios.length}</b>
+                    </div>
+                    <div>
+                      <span>Pendientes</span>
+                      <b>{pendientes.length}</b>
+                    </div>
+                    <div>
+                      <span>Total gastado</span>
+                      <b>${totalGastado.toFixed(2)}</b>
+                    </div>
                   </div>
-                  <div>
-                    <span>Pendientes</span>
-                    <b>{pendientes.length}</b>
+                ) : (
+                  <div className="hero-metricas">
+                    <div>
+                      <span>Compras</span>
+                      <b>{ventas.length}</b>
+                    </div>
+                    <div>
+                      <span>Total comprado</span>
+                      <b>{formatMoney(totalCompras)}</b>
+                    </div>
+                    <div>
+                      <span>Ultima compra</span>
+                      <b>{fmtFecha(ultimaCompra?.fecha || ultimaCompra?.createdAt)}</b>
+                    </div>
                   </div>
-                  <div>
-                    <span>Total gastado</span>
-                    <b>${totalGastado.toFixed(2)}</b>
-                  </div>
-                </div>
+                )}
               </div>
             </div>
 
@@ -374,25 +458,27 @@ export default function ClienteDetalle() {
                 Volver
               </button>
 
-              <button
-                className="btn-primary"
-                onClick={() =>
-                  navigate("/hoja_servicio", {
-                    state: {
-                      prefillCliente: {
-                        id: cliente.id,
-                        nombre: cliente.nombre || "",
-                        telefono: cliente.telefono || "",
-                        direccion: cliente.direccion || "",
-                        numeroSeriePreferido: cliente.numeroSeriePreferido || "",
-                        omitirNumeroSerie: !!cliente.omitirNumeroSerie,
+              {serviciosHabilitados && (
+                <button
+                  className="btn-primary"
+                  onClick={() =>
+                    navigate("/hoja_servicio", {
+                      state: {
+                        prefillCliente: {
+                          id: cliente.id,
+                          nombre: cliente.nombre || "",
+                          telefono: cliente.telefono || "",
+                          direccion: cliente.direccion || "",
+                          numeroSeriePreferido: cliente.numeroSeriePreferido || "",
+                          omitirNumeroSerie: !!cliente.omitirNumeroSerie,
+                        },
                       },
-                    },
-                  })
-                }
-              >
-                + Nuevo servicio
-              </button>
+                    })
+                  }
+                >
+                  + Nuevo servicio
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -527,44 +613,94 @@ export default function ClienteDetalle() {
           </>
         )}
 
-        <section className="detalle-grid">
-          <article className="detalle-card">
-            <p className="detalle-title">Ultimo servicio realizado</p>
-            {ultimoServicio ? (
-              <>
-                <div className="detalle-main">
-                  Folio #{ultimoServicio.folio || "-"} -{" "}
-                  {fmtFecha(ultimoServicio.createdAt)}
-                </div>
-                <p className="detalle-muted">
-                  {ultimoServicio.tipoDispositivo || "Equipo"} -{" "}
-                  {ultimoServicio.marca || "-"} {ultimoServicio.modelo || "-"}
-                </p>
-              </>
-            ) : (
-              <p className="detalle-muted">Sin servicios entregados.</p>
-            )}
-          </article>
+        <section
+          className={
+            serviciosHabilitados ? "detalle-grid" : "detalle-grid detalle-grid-comercial"
+          }
+        >
+          {serviciosHabilitados && (
+            <>
+              <article className="detalle-card detalle-card-ultimo-servicio">
+                <p className="detalle-title">Ultimo servicio realizado</p>
+                {ultimoServicio ? (
+                  <>
+                    <div className="detalle-main">
+                      Folio #{ultimoServicio.folio || "-"} -{" "}
+                      {fmtFecha(ultimoServicio.createdAt)}
+                    </div>
+                    <p className="detalle-muted">
+                      {ultimoServicio.tipoDispositivo || "Equipo"} -{" "}
+                      {ultimoServicio.marca || "-"} {ultimoServicio.modelo || "-"}
+                    </p>
+                  </>
+                ) : (
+                  <p className="detalle-muted">Sin servicios entregados.</p>
+                )}
+              </article>
 
-          <article className="detalle-card">
-            <p className="detalle-title">Actividad (servicios por mes)</p>
-            <div className="mini-chart">
-              {actividadMensual.items.map((item) => (
-                <div key={item.key} className="mini-bar-col">
-                  <div
-                    className="mini-bar"
-                    style={{
-                      height: `${Math.max((item.total / actividadMensual.max) * 44, item.total ? 8 : 2)}px`,
-                    }}
-                    title={`${item.label}: ${item.total}`}
-                  />
-                  <span>{item.label.replace(".", "")}</span>
+              <article className="detalle-card detalle-card-actividad">
+                <p className="detalle-title">Actividad (servicios por mes)</p>
+                <div className="mini-chart">
+                  {actividadMensual.items.map((item) => (
+                    <div key={item.key} className="mini-bar-col">
+                      <div
+                        className="mini-bar"
+                        style={{
+                          height: `${Math.max((item.total / actividadMensual.max) * 44, item.total ? 8 : 2)}px`,
+                        }}
+                        title={`${item.label}: ${item.total}`}
+                      />
+                      <span>{item.label.replace(".", "")}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </article>
+            </>
+          )}
+
+          <article className="detalle-card detalle-card-resumen">
+            <div className="detalle-resumen-head">
+              <div>
+                <p className="detalle-title">Compras registradas</p>
+                <div className="detalle-main">{ventas.length} ticket(s)</div>
+              </div>
+              <div className="detalle-resumen-total">{formatMoney(totalCompras)}</div>
+            </div>
+
+            <div className="detalle-resumen-stats">
+              <div className="detalle-stat-pill">
+                <span>Total comprado</span>
+                <strong>{formatMoney(totalCompras)}</strong>
+              </div>
+              <div className="detalle-stat-pill">
+                <span>Ultima compra</span>
+                <strong>{fmtFecha(ultimaCompra?.fecha || ultimaCompra?.createdAt)}</strong>
+              </div>
+              <div className="detalle-stat-pill">
+                <span>Promedio por ticket</span>
+                <strong>{formatMoney(ventas.length ? totalCompras / ventas.length : 0)}</strong>
+              </div>
+            </div>
+
+            <div className="detalle-productos-top">
+              <span className="detalle-productos-label">Productos frecuentes</span>
+              {productosCompradosResumen.length > 0 ? (
+                <div className="detalle-productos-chips">
+                  {productosCompradosResumen.map((item) => (
+                    <span key={item.nombre} className="detalle-producto-chip">
+                      {item.nombre} · {item.cantidad}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="detalle-muted">
+                  Cuando el cliente tenga compras, aqui veras lo que mas adquiere.
+                </p>
+              )}
             </div>
           </article>
 
-          <article className="detalle-card">
+          <article className="detalle-card detalle-card-actions">
             <p className="detalle-title">Acciones rapidas</p>
             <div className="quick-actions">
               <a
@@ -611,47 +747,107 @@ export default function ClienteDetalle() {
           </article>
         </section>
 
-        <div className="tabs">
-          <button
-            className={tab === "pendientes" ? "tab active" : "tab"}
-            onClick={() => setTab("pendientes")}
-          >
-            Pendientes
-          </button>
-
-          <button
-            className={tab === "historial" ? "tab active" : "tab"}
-            onClick={() => setTab("historial")}
-          >
-            Historial
-          </button>
-        </div>
-
-        {serviciosTab.length === 0 && (
-          <p className="clientes-msg">No hay servicios en esta vista.</p>
-        )}
-
-        {serviciosTab.map((s) => (
-          <div
-            key={s.id}
-            className="servicio-card-modern"
-            onClick={() => goToServicio(s.folio)}
-          >
-            <div className="servicio-left">
-              <div className="servicio-folio">Folio #{s.folio}</div>
-
-              <div className="servicio-device">
-                {s.tipoDispositivo} - {s.marca} {s.modelo}
-              </div>
-
-              <div className="servicio-date">{fmtFecha(s.createdAt)}</div>
+        <section className="compras-section">
+          <div className="compras-section-head">
+            <div>
+              <p className="detalle-title">Historial de compras</p>
+              <h3>Compras registradas para este cliente</h3>
             </div>
-
-            <div className={`servicio-status ${s.status?.toLowerCase()}`}>
-              {s.status}
+            <div className="compras-badge">
+              {ventas.length} ticket{ventas.length === 1 ? "" : "s"}
             </div>
           </div>
-        ))}
+
+          {ventas.length === 0 && (
+            <p className="clientes-msg">No hay compras registradas para este cliente.</p>
+          )}
+
+          {ventas.length > 0 && (
+            <div className="compras-grid">
+              {ventas.map((venta) => {
+                const items = resumirItemsVenta(venta);
+
+                return (
+                  <article key={venta.id} className="compra-card">
+                    <div className="compra-card-head">
+                      <div className="compra-card-copy">
+                        <strong>Ticket #{venta.id?.slice(0, 8) || "SIN-ID"}</strong>
+                        <span>{fmtFecha(venta?.fecha || venta?.createdAt)}</span>
+                      </div>
+                      <div className="compra-total">{formatMoney(venta?.total || 0)}</div>
+                    </div>
+
+                    <div className="compra-card-meta">
+                      <span className="compra-chip">
+                        Metodo: {venta?.tipoPago || "No especificado"}
+                      </span>
+                      <span className="compra-chip">
+                        {Array.isArray(venta?.productos) ? venta.productos.length : 0} concepto(s)
+                      </span>
+                    </div>
+
+                    {items.length > 0 ? (
+                      <ul className="compra-items">
+                        {items.slice(0, 5).map((item) => (
+                          <li key={`${venta.id}-${item}`}>{item}</li>
+                        ))}
+                        {items.length > 5 && <li>Y {items.length - 5} mas...</li>}
+                      </ul>
+                    ) : (
+                      <p className="detalle-muted">No hay conceptos guardados en esta compra.</p>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {serviciosHabilitados && (
+          <>
+            <div className="tabs">
+              <button
+                className={tab === "pendientes" ? "tab active" : "tab"}
+                onClick={() => setTab("pendientes")}
+              >
+                Pendientes
+              </button>
+
+              <button
+                className={tab === "historial" ? "tab active" : "tab"}
+                onClick={() => setTab("historial")}
+              >
+                Historial
+              </button>
+            </div>
+
+            {serviciosTab.length === 0 && (
+              <p className="clientes-msg">No hay servicios en esta vista.</p>
+            )}
+
+            {serviciosTab.map((s) => (
+              <div
+                key={s.id}
+                className="servicio-card-modern"
+                onClick={() => goToServicio(s.folio)}
+              >
+                <div className="servicio-left">
+                  <div className="servicio-folio">Folio #{s.folio}</div>
+
+                  <div className="servicio-device">
+                    {s.tipoDispositivo} - {s.marca} {s.modelo}
+                  </div>
+
+                  <div className="servicio-date">{fmtFecha(s.createdAt)}</div>
+                </div>
+
+                <div className={`servicio-status ${s.status?.toLowerCase()}`}>
+                  {s.status}
+                </div>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );

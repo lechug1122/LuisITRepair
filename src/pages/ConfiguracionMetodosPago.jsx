@@ -5,6 +5,7 @@ import {
   formatCurrency,
   getCurrencyOption,
 } from "../js/services/moneda_config";
+import { SUSCRIPCION_METODOS_PAGO } from "../js/services/suscripciones";
 
 export default function ConfiguracionMetodosPago() {
   const { codigoMoneda, opcionesMoneda } = useMonedaConfig();
@@ -45,7 +46,10 @@ export default function ConfiguracionMetodosPago() {
     <section className="cfg-pos-wrap">
       <div className="cfg-pos-page-head">
         <h2>Metodos de Pago</h2>
-        <p>Define la moneda del sistema para POS, cambio y tickets impresos.</p>
+        <p>
+          Define la moneda del sistema y los metodos visibles para registrar cobros de
+          suscripciones.
+        </p>
       </div>
 
       <div className="cfg-pos-card cfg-empresa-card">
@@ -88,6 +92,33 @@ export default function ConfiguracionMetodosPago() {
           {mensaje ? <small className="cfg-pos-saved">{mensaje}</small> : null}
           {errorDetalle ? <small className="cfg-pos-help">Detalle: {errorDetalle}</small> : null}
         </div>
+      </div>
+
+      <div className="cfg-pos-card cfg-metodos-card">
+        <div className="cfg-metodos-head">
+          <div>
+            <h3>Metodos para suscripciones</h3>
+            <p>
+              Estos son los medios de pago que ya puedes mostrar al registrar o editar
+              usuarios con suscripcion.
+            </p>
+          </div>
+          <span className="cfg-metodos-pill">Visible en Configuracion</span>
+        </div>
+
+        <div className="cfg-metodos-grid">
+          {SUSCRIPCION_METODOS_PAGO.map((item) => (
+            <article key={item.value} className="cfg-metodos-option">
+              <strong>{item.label}</strong>
+              <small>Disponible para registrar el cobro del usuario.</small>
+            </article>
+          ))}
+        </div>
+
+        <small className="cfg-pos-help">
+          Por ahora se muestran como opciones de control administrativo para suscripciones:
+          Tarjeta, Transferencia, Mercado Pago y PayPal.
+        </small>
       </div>
     </section>
   );

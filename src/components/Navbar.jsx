@@ -1,16 +1,7 @@
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
-import { onAuthStateChanged, signOut } from "firebase/auth";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  limit,
-  query,
-  updateDoc,
-  where,
-} from "firebase/firestore";
+import { signOut } from "firebase/auth";
+import { doc, updateDoc } from "firebase/firestore";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import { auth, db } from "../initializer/firebase";
@@ -33,11 +24,12 @@ export default function Navbar({
   notificaciones = [],
   noLeidas = 0,
   mostrarNotificaciones = true,
+  onDismissNotification = () => {},
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { puede } = useAutorizacionActual();
-  const { nombreEmpresa } = useEmpresaConfig();
+  const { puede, nombre } = useAutorizacionActual();
+  const { nombreEmpresa, serviciosHabilitados } = useEmpresaConfig();
   const [usuarioNombre, setUsuarioNombre] = useState("Usuario");
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
   const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false);
@@ -50,43 +42,21 @@ export default function Navbar({
     { label: "Clientes", to: "/clientes", permission: "clientes.ver" },
     { label: "Punto de venta", to: "/POS", permission: "ventas.pos" },
     { label: "Configuracion", to: "/configuracion", permission: "configuracion.ver" },
-  ].filter((item) => puede(item.permission));
+  ].filter((item) => {
+    if (!serviciosHabilitados && ["/hoja_servicio", "/servicios"].includes(item.to)) {
+      return false;
+    }
+    return puede(item.permission);
+  });
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setUsuarioNombre("Usuario");
-        return;
-      }
-
-      const fallback = user.displayName || String(user.email || "Usuario").split("@")[0];
-      setUsuarioNombre(fallback);
-
-      try {
-        const empQ = query(
-          collection(db, "empleados"),
-          where("uid", "==", user.uid),
-          limit(1),
-        );
-        const empSnap = await getDocs(empQ);
-        if (!empSnap.empty) {
-          const nombreEmpleado = String(empSnap.docs[0]?.data()?.nombre || "").trim();
-          if (nombreEmpleado) {
-            setUsuarioNombre(nombreEmpleado);
-            return;
-          }
-        }
-
-        const autSnap = await getDoc(doc(db, "autorizados", user.uid));
-        const nombreAutorizado = String(autSnap.data()?.nombre || "").trim();
-        if (nombreAutorizado) setUsuarioNombre(nombreAutorizado);
-      } catch {
-        // fallback ya seteado
-      }
-    });
-
-    return () => unsub();
-  }, []);
+    const fallback =
+      auth.currentUser?.displayName ||
+      String(auth.currentUser?.email || "Usuario").split("@")[0] ||
+      "Usuario";
+    const nombreVisible = String(nombre || "").trim();
+    setUsuarioNombre(nombreVisible || fallback);
+  }, [nombre]);
 
   useEffect(() => {
     setMenuMovilAbierto(false);
@@ -202,9 +172,19 @@ export default function Navbar({
 
                 {panelAbierto && (
                   <div className="notification-panel">
-                    <div className="notification-panel-header">
-                      <strong>Notificaciones</strong>
-                      <span>{notificaciones.length}</span>
+                      <div className="notification-panel-header">
+                        <div className="notification-panel-header-actions">
+                          <strong>Notificaciones</strong>
+                          <span>{notificaciones.length}</span>
+                        </div>
+                      <button
+                        type="button"
+                        className="notification-panel-close"
+                        aria-label="Cerrar panel de notificaciones"
+                        onClick={togglePanelNotificaciones}
+                      >
+                        ×
+                      </button>
                     </div>
 
                     {notificaciones.length === 0 && (
@@ -213,7 +193,17 @@ export default function Navbar({
 
                     {notificaciones.slice(0, 12).map((n) => (
                       <div key={n.id} className={`notification-panel-item ${n.nivel || "baja"}`}>
-                        <p className="notification-panel-title">{n.titulo}</p>
+                        <div className="notification-panel-item-head">
+                          <p className="notification-panel-title">{n.titulo}</p>
+                          <button
+                            type="button"
+                            className="notification-panel-close"
+                            aria-label={`Cerrar notificacion ${n.titulo}`}
+                            onClick={() => onDismissNotification(n.id)}
+                          >
+                            ×
+                          </button>
+                        </div>
                         <p className="notification-panel-detail">{n.detalle}</p>
                         <span className="notification-panel-time">{formatoHora(n.fecha)}</span>
                       </div>

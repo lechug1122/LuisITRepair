@@ -19,6 +19,14 @@ import { obtenerProductos } from "../js/services/POS_firebase";
 import useServiciosConfig from "../hooks/useServiciosConfig";
 import useNotificacionesConfig from "../hooks/useNotificacionesConfig";
 import { STATUS } from "../js/utils/status_map";
+import {
+  buildCamposPersonalizados,
+  buildLegacyBlocksFromCampos,
+  formatCampoServicio,
+  getCamposVisiblesTipoNegocio,
+  getEtiquetaOpcionTipo,
+  inferTipoNegocioServicio,
+} from "../js/services/tipos_negocio";
 
 import "../css/servicio_detalle.css";
 
@@ -80,9 +88,28 @@ function requierePrecioFinal(status) {
   return !estadosTempranos.has(s);
 }
 
+function permitePrecioCero(status) {
+  const s = normalizarStatus(status);
+  return s === "cancelado" || s === "no_reparable";
+}
+
 function formatFecha(ts) {
   if (!ts?.seconds) return "-";
   return new Date(ts.seconds * 1000).toLocaleDateString("es-MX");
+}
+
+function parsePrecioEditable(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+
+  const sanitized = raw
+    .replace(/,/g, "")
+    .replace(/[^\d.]/g, "");
+
+  if (!sanitized) return null;
+
+  const n = Number(sanitized);
+  return Number.isFinite(n) ? n : null;
 }
 
 function num(v) {
@@ -408,6 +435,81 @@ function tieneCaracteristicasPendientes(servicio) {
   return false;
 }
 
+function buildEquipoEditDynamic(servicio) {
+  const tipoNegocio = inferTipoNegocioServicio(servicio);
+  return {
+    nombre: servicio?.nombre || "",
+    telefono: servicio?.telefono || "",
+    direccion: servicio?.direccion || "",
+    tipoDispositivo: servicio?.tipoDispositivo || "",
+    marca: servicio?.marca || "",
+    modelo: servicio?.modelo || "",
+    numeroSerie: servicio?.numeroSerie || "",
+    omitirNumeroSerie: !!servicio?.omitirNumeroSerie,
+    trabajo: servicio?.trabajo || "",
+    tipoNegocioId: tipoNegocio?.id || "",
+    tipoNegocioSnapshot: tipoNegocio,
+    camposPersonalizados: buildCamposPersonalizados(
+      tipoNegocio,
+      servicio?.camposPersonalizados,
+      servicio,
+    ),
+  };
+}
+
+function getEquipoDetallesDynamic(servicio) {
+  if (!servicio) return [];
+
+  const tipoNegocio = inferTipoNegocioServicio(servicio);
+  const camposVisibles = getCamposVisiblesTipoNegocio(tipoNegocio, servicio?.tipoDispositivo);
+  const camposPersonalizados = buildCamposPersonalizados(
+    tipoNegocio,
+    servicio?.camposPersonalizados,
+    servicio,
+  );
+
+  const detalles = [
+    {
+      label: tipoNegocio?.etiquetaTipoDispositivo || "Tipo",
+      value: getEtiquetaOpcionTipo(tipoNegocio, servicio.tipoDispositivo || "-"),
+    },
+    { label: tipoNegocio?.etiquetaMarca || "Marca", value: servicio.marca || "-" },
+    { label: tipoNegocio?.etiquetaModelo || "Modelo", value: servicio.modelo || "-" },
+    {
+      label: tipoNegocio?.etiquetaSerie || "No. de serie",
+      value: servicio.omitirNumeroSerie ? "No proporcionado" : servicio.numeroSerie || "-",
+    },
+  ];
+
+  camposVisibles.forEach((campo) => {
+    detalles.push({
+      label: campo.etiqueta,
+      value: formatCampoServicio(campo, camposPersonalizados[campo.id]),
+    });
+  });
+
+  return detalles;
+}
+
+function tieneCaracteristicasPendientesDynamic(servicio) {
+  if (!servicio) return false;
+  if (servicio.caracteristicasPendientes) return true;
+
+  const tipoNegocio = inferTipoNegocioServicio(servicio);
+  const camposVisibles = getCamposVisiblesTipoNegocio(tipoNegocio, servicio?.tipoDispositivo);
+  const camposPersonalizados = buildCamposPersonalizados(
+    tipoNegocio,
+    servicio?.camposPersonalizados,
+    servicio,
+  );
+
+  return camposVisibles.some((campo) => {
+    if (!campo.requerido) return false;
+    if (campo.tipo === "checkbox") return !camposPersonalizados[campo.id];
+    return !String(camposPersonalizados[campo.id] ?? "").trim();
+  });
+}
+
 export default function ServicioDetalle() {
   const { folio: folioParam } = useParams();
   const navigate = useNavigate();
@@ -470,7 +572,7 @@ export default function ServicioDetalle() {
   const boletaScannerRef = useRef(null);
   const boletaScannerDedupeRef = useRef({ value: "", at: 0 });
   const autoRetardoSyncRef = useRef(false);
-  const [equipoEdit, setEquipoEdit] = useState(buildEquipoEdit(null));
+  const [equipoEdit, setEquipoEdit] = useState(buildEquipoEditDynamic(null));
   const [modalPaso, setModalPaso] = useState(0);
   const statusPrevioRef = useRef("pendiente");
 
@@ -484,20 +586,24 @@ export default function ServicioDetalle() {
   const statusActual = statusValueFromRaw(status || servicio?.status || "pendiente");
   const statusMeta = STATUS.find((s) => s.value === statusActual);
   const statusLabel = statusMeta?.label || "Pendiente";
-  const equipoDetalles = useMemo(() => getEquipoDetalles(servicio), [servicio]);
+  const equipoDetalles = useMemo(() => getEquipoDetallesDynamic(servicio), [servicio]);
+  const tipoNegocioServicio = useMemo(
+    () => equipoEdit?.tipoNegocioSnapshot || inferTipoNegocioServicio(servicio),
+    [equipoEdit?.tipoNegocioSnapshot, servicio],
+  );
+  const camposTecnicosEdit = useMemo(
+    () =>
+      getCamposVisiblesTipoNegocio(
+        tipoNegocioServicio,
+        equipoEdit?.tipoDispositivo || servicio?.tipoDispositivo,
+      ),
+    [tipoNegocioServicio, equipoEdit?.tipoDispositivo, servicio?.tipoDispositivo],
+  );
 
-  const pasosModal = useMemo(() => {
-    const base = [{ key: "general", label: "Datos generales" }];
-    if (
-      tipoEquipoEdit === "laptop" ||
-      tipoEquipoEdit === "pc" ||
-      tipoEquipoEdit === "impresora" ||
-      tipoEquipoEdit === "monitor"
-    ) {
-      base.push({ key: "tecnico", label: "Datos tecnicos" });
-    }
-    return base;
-  }, [tipoEquipoEdit]);
+  const pasosModal = useMemo(
+    () => [{ key: "general", label: "Datos generales" }],
+    [],
+  );
 
   const modalPasoActual = pasosModal[modalPaso]?.key || "general";
 
@@ -523,11 +629,11 @@ export default function ServicioDetalle() {
         if (!alive) return;
 
         setServicio(data);
-        setEquipoEdit(buildEquipoEdit(data));
+        setEquipoEdit(buildEquipoEditDynamic(data));
         if (
           data &&
           !isFinalStatus(data?.status) &&
-          tieneCaracteristicasPendientes(data)
+          tieneCaracteristicasPendientesDynamic(data)
         ) {
           setModalPaso(0);
           setMostrarModalCaracteristicas(true);
@@ -921,7 +1027,7 @@ export default function ServicioDetalle() {
       );
       return;
     }
-    setEquipoEdit(buildEquipoEdit(servicio));
+    setEquipoEdit(buildEquipoEditDynamic(servicio));
     setModalPaso(0);
     setMostrarModalCaracteristicas(true);
   };
@@ -1081,9 +1187,17 @@ export default function ServicioDetalle() {
     const costoActual = num(servicio?.costo);
     const retardoActual = num(servicio?.retardo?.cargoTotal);
     const sinRetardo = Math.max(0, costoActual - retardoActual);
+    const costoPersistidoVacio =
+      servicio?.costo === undefined ||
+      servicio?.costo === null ||
+      String(servicio?.costo).trim() === "";
 
     if (sinRetardo > 0) return sinRetardo;
-    if (statusPersistidoNormalizado === "cancelado" && Number(precioRevision || 0) > 0) {
+    if (
+      costoPersistidoVacio &&
+      statusPersistidoNormalizado === "cancelado" &&
+      Number(precioRevision || 0) > 0
+    ) {
       return Number(precioRevision || 0);
     }
 
@@ -1338,19 +1452,33 @@ const guardarTodo = async ({ silent = false } = {}) => {
     return false;
   }
 
-  const costoSinBoleta = num(precioFinal);
+  const costoManualCapturado = parsePrecioEditable(precioFinal);
+  const costoSinBoleta = costoManualCapturado ?? 0;
   const costoConBoleta = totalBoleta;
   const nextStatus = statusValueFromRaw(status);
   const pidePrecio = requierePrecioFinal(nextStatus);
+  const aceptaPrecioCero = permitePrecioCero(nextStatus);
+  const costoPersistidoVacio =
+    servicio?.costo === undefined ||
+    servicio?.costo === null ||
+    String(servicio?.costo).trim() === "";
 
   // ===============================
   // VALIDACIONES NORMALES
   // ===============================
 
   if (!usarBoleta) {
-    if (pidePrecio && (!costoSinBoleta || costoSinBoleta <= 0)) {
+    const costoManualInvalido =
+      costoManualCapturado === null ||
+      (!aceptaPrecioCero && costoManualCapturado <= 0);
+
+    if (pidePrecio && costoManualInvalido) {
       if (!silent)
-        alert("⚠️ Captura un Precio final válido (mayor a 0) o activa Boleta.");
+        alert(
+          aceptaPrecioCero
+            ? "⚠️ Captura un Precio final válido (puede ser 0) o activa Boleta."
+            : "⚠️ Captura un Precio final válido (mayor a 0) o activa Boleta.",
+        );
       return false;
     }
   } else {
@@ -1396,11 +1524,13 @@ const guardarTodo = async ({ silent = false } = {}) => {
   const cargoRetardoGuardar = aplicarRetardo ? cargoRetardoTotal : 0;
   const costoGuardar = usarBoleta
     ? costoConBoleta + cargoRetardoGuardar
-    : statusNormalizado === "cancelado" && costoRevision > 0
+    : statusNormalizado === "cancelado" && costoRevision > 0 && costoManualCapturado === null
       ? costoRevision + cargoRetardoGuardar
-      : costoSinBoleta > 0
+      : costoManualCapturado !== null
         ? costoSinBoleta + cargoRetardoGuardar
-        : servicio?.costo || "";
+        : costoPersistidoVacio
+          ? ""
+          : servicio?.costo;
 
   const patch = {
     status: nextStatus,
@@ -1582,11 +1712,95 @@ const guardarTodo = async ({ silent = false } = {}) => {
     }
 
     setServicio(actualizado);
-    setEquipoEdit(buildEquipoEdit(actualizado));
+    setEquipoEdit(buildEquipoEditDynamic(actualizado));
     setMostrarModalCaracteristicas(false);
   };
 
   // ✅ Generar PDF: primero guarda boleta y luego abre PDF
+  const guardarCaracteristicasEquipoDynamic = async () => {
+    if (!servicio?.id) return;
+    if (locked) {
+      alert("Este servicio ya esta cerrado o bloqueado. No se puede modificar.");
+      return;
+    }
+
+    const tipo = normalizarStatus(
+      equipoEdit?.tipoDispositivo || servicio?.tipoDispositivo,
+    );
+    const nombreLimpio = String(equipoEdit?.nombre || "").trim();
+    const telefonoLimpio = String(equipoEdit?.telefono || "")
+      .replace(/\D/g, "")
+      .slice(0, 10);
+    const direccionLimpia = String(equipoEdit?.direccion || "").trim();
+    const numeroSerieLimpio = String(equipoEdit?.numeroSerie || "").trim();
+
+    if (!nombreLimpio) {
+      alert("Captura el nombre del cliente.");
+      return;
+    }
+
+    if (!equipoEdit?.omitirNumeroSerie && !numeroSerieLimpio) {
+      alert("Captura el numero de serie o activa 'No quiero poner el numero de serie'.");
+      return;
+    }
+
+    const camposPersonalizados = buildCamposPersonalizados(
+      tipoNegocioServicio,
+      equipoEdit?.camposPersonalizados,
+    );
+    const campoFaltante = camposTecnicosEdit.find((campo) => {
+      if (!campo.requerido) return false;
+      if (campo.tipo === "checkbox") return !camposPersonalizados[campo.id];
+      return !String(camposPersonalizados[campo.id] ?? "").trim();
+    });
+
+    if (campoFaltante) {
+      alert(`Completa el campo obligatorio: ${campoFaltante.etiqueta}.`);
+      return;
+    }
+
+    const legacyBlocks = buildLegacyBlocksFromCampos(tipo, camposPersonalizados);
+    const patch = {
+      caracteristicasPendientes: false,
+      nombre: nombreLimpio,
+      telefono: telefonoLimpio,
+      direccion: direccionLimpia,
+      tipoDispositivo: equipoEdit?.tipoDispositivo || "",
+      marca: String(equipoEdit?.marca || "").trim(),
+      modelo: String(equipoEdit?.modelo || "").trim(),
+      numeroSerie: equipoEdit?.omitirNumeroSerie ? "" : numeroSerieLimpio,
+      omitirNumeroSerie: !!equipoEdit?.omitirNumeroSerie,
+      trabajo: String(equipoEdit?.trabajo || "").trim(),
+      tipoNegocioId: tipoNegocioServicio?.id || "",
+      tipoNegocioNombre: tipoNegocioServicio?.nombre || "",
+      tipoNegocioSnapshot: tipoNegocioServicio,
+      camposPersonalizados,
+      laptopPc: legacyBlocks.laptopPc,
+      impresora: legacyBlocks.impresora,
+      monitor: legacyBlocks.monitor,
+    };
+
+    const actualizado = await actualizarServicioPorId(servicio.id, patch);
+
+    if (servicio?.clienteId) {
+      try {
+        await actualizarCliente(servicio.clienteId, {
+          nombre: patch.nombre,
+          telefono: patch.telefono,
+          direccion: patch.direccion,
+          numeroSeriePreferido: patch.numeroSerie,
+          omitirNumeroSerie: patch.omitirNumeroSerie,
+        });
+      } catch (errCli) {
+        console.error("No se pudo actualizar el cliente enlazado:", errCli);
+      }
+    }
+
+    setServicio(actualizado);
+    setEquipoEdit(buildEquipoEditDynamic(actualizado));
+    setMostrarModalCaracteristicas(false);
+  };
+
   const handleExportPdf = async () => {
     if (!puedeExportarBoleta) {
       alert("⚠️ Activa 'Generar boleta' y captura al menos 1 descripción.");
@@ -1615,6 +1829,78 @@ const guardarTodo = async ({ silent = false } = {}) => {
     } finally {
       setExportingPdf(false);
     }
+  };
+
+  const handleCampoTecnicoEditChange = (campoId, value) => {
+    setEquipoEdit((prev) => ({
+      ...prev,
+      camposPersonalizados: {
+        ...(prev?.camposPersonalizados || {}),
+        [campoId]: value,
+      },
+    }));
+  };
+
+  const renderCampoTecnicoEdit = (campo) => {
+    const value = equipoEdit?.camposPersonalizados?.[campo.id];
+    const wrapperClass = `equipo-field${campo.anchoCompleto ? " equipo-field--full" : ""}`;
+
+    if (campo.tipo === "textarea") {
+      return (
+        <label key={campo.id} className={wrapperClass}>
+          <span>{campo.etiqueta}</span>
+          <textarea
+            value={String(value ?? "")}
+            placeholder={campo.placeholder || ""}
+            onChange={(e) => handleCampoTecnicoEditChange(campo.id, e.target.value)}
+          />
+        </label>
+      );
+    }
+
+    if (campo.tipo === "select") {
+      return (
+        <label key={campo.id} className={wrapperClass}>
+          <span>{campo.etiqueta}</span>
+          <select
+            value={String(value ?? "")}
+            onChange={(e) => handleCampoTecnicoEditChange(campo.id, e.target.value)}
+          >
+            <option value="">-- Selecciona --</option>
+            {(campo.opciones || []).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      );
+    }
+
+    if (campo.tipo === "checkbox") {
+      return (
+        <label key={campo.id} className="equipo-check equipo-field--full">
+          <input
+            type="checkbox"
+            checked={!!value}
+            onChange={(e) => handleCampoTecnicoEditChange(campo.id, e.target.checked)}
+          />
+          <span>{campo.etiqueta}</span>
+        </label>
+      );
+    }
+
+    return (
+      <label key={campo.id} className={wrapperClass}>
+        <span>{campo.etiqueta}</span>
+        <input
+          type={campo.tipo === "number" ? "number" : "text"}
+          value={String(value ?? "")}
+          placeholder={campo.placeholder || ""}
+          onChange={(e) => handleCampoTecnicoEditChange(campo.id, e.target.value)}
+        />
+      </label>
+    );
   };
 
   if (loading)
@@ -2419,7 +2705,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
               tecnicas.
             </p>
 
-            <div className="equipo-carousel-head">
+            {pasosModal.length > 1 && <div className="equipo-carousel-head">
               <div className="equipo-carousel-tabs">
                 {pasosModal.map((p, idx) => (
                   <button
@@ -2456,115 +2742,137 @@ const guardarTodo = async ({ silent = false } = {}) => {
                   Siguiente →
                 </button>
               </div>
-            </div>
+            </div>}
 
             {modalPasoActual === "general" && (
               <div className="equipo-modal-grid equipo-modal-grid--general">
-              <label className="equipo-field">
-                <span>Nombre del cliente</span>
-                <input
-                  value={equipoEdit.nombre}
-                  onChange={(e) =>
-                    setEquipoEdit((p) => ({ ...p, nombre: e.target.value }))
-                  }
-                />
-              </label>
-              <label className="equipo-field">
-                <span>Telefono</span>
-                <input
-                  value={equipoEdit.telefono}
-                  onChange={(e) =>
-                    setEquipoEdit((p) => ({
-                      ...p,
-                      telefono: e.target.value.replace(/\D/g, "").slice(0, 10),
-                    }))
-                  }
-                />
-              </label>
-              <label className="equipo-field equipo-field--full">
-                <span>Direccion</span>
-                <input
-                  value={equipoEdit.direccion}
-                  onChange={(e) =>
-                    setEquipoEdit((p) => ({ ...p, direccion: e.target.value }))
-                  }
-                />
-              </label>
-              <label className="equipo-field">
-                <span>Tipo de dispositivo</span>
-                <select
-                  value={equipoEdit.tipoDispositivo}
-                  onChange={(e) =>
-                    setEquipoEdit((p) => ({
-                      ...p,
-                      tipoDispositivo: e.target.value,
-                    }))
-                  }
-                >
-                  <option value="laptop">Laptop</option>
-                  <option value="pc">Computadora de Escritorio</option>
-                  <option value="impresora">Impresora</option>
-                  <option value="monitor">Monitor</option>
-                </select>
-              </label>
-              <label className="equipo-field">
-                <span>Marca</span>
-                <input
-                  value={equipoEdit.marca}
-                  onChange={(e) =>
-                    setEquipoEdit((p) => ({ ...p, marca: e.target.value }))
-                  }
-                />
-              </label>
-              <label className="equipo-field">
-                <span>Modelo</span>
-                <input
-                  value={equipoEdit.modelo}
-                  onChange={(e) =>
-                    setEquipoEdit((p) => ({ ...p, modelo: e.target.value }))
-                  }
-                />
-              </label>
-              <label className="equipo-field">
-                <span>No. de serie</span>
-                <input
-                  value={equipoEdit.numeroSerie}
-                  disabled={!!equipoEdit.omitirNumeroSerie}
-                  onChange={(e) =>
-                    setEquipoEdit((p) => ({
-                      ...p,
-                      numeroSerie: e.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="equipo-check equipo-field--full">
-                <input
-                  type="checkbox"
-                  checked={!!equipoEdit.omitirNumeroSerie}
-                  onChange={(e) =>
-                    setEquipoEdit((p) => ({
-                      ...p,
-                      omitirNumeroSerie: e.target.checked,
-                      numeroSerie: e.target.checked ? "" : p.numeroSerie,
-                    }))
-                  }
-                />
-                <span>No quiero poner el numero de serie</span>
-              </label>
-              <label className="equipo-field equipo-field--full">
-                <span>Trabajo / falla reportada</span>
-                <textarea
-                  value={equipoEdit.trabajo}
-                  onChange={(e) =>
-                    setEquipoEdit((p) => ({ ...p, trabajo: e.target.value }))
-                  }
-                />
-              </label>
+                <label className="equipo-field">
+                  <span>Nombre del cliente</span>
+                  <input
+                    value={equipoEdit.nombre}
+                    onChange={(e) =>
+                      setEquipoEdit((p) => ({ ...p, nombre: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="equipo-field">
+                  <span>Telefono</span>
+                  <input
+                    value={equipoEdit.telefono}
+                    onChange={(e) =>
+                      setEquipoEdit((p) => ({
+                        ...p,
+                        telefono: e.target.value.replace(/\D/g, "").slice(0, 10),
+                      }))
+                    }
+                  />
+                </label>
+                <label className="equipo-field equipo-field--full">
+                  <span>Direccion</span>
+                  <input
+                    value={equipoEdit.direccion}
+                    onChange={(e) =>
+                      setEquipoEdit((p) => ({ ...p, direccion: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="equipo-field">
+                  <span>{tipoNegocioServicio?.etiquetaTipoDispositivo || "Tipo de dispositivo"}</span>
+                  <select
+                    value={equipoEdit.tipoDispositivo}
+                    onChange={(e) =>
+                      setEquipoEdit((p) => ({
+                        ...p,
+                        tipoDispositivo: e.target.value,
+                      }))
+                    }
+                  >
+                    {(tipoNegocioServicio?.opcionesTipoDispositivo || []).map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="equipo-field">
+                  <span>{tipoNegocioServicio?.etiquetaMarca || "Marca"}</span>
+                  <input
+                    value={equipoEdit.marca}
+                    onChange={(e) =>
+                      setEquipoEdit((p) => ({ ...p, marca: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="equipo-field">
+                  <span>{tipoNegocioServicio?.etiquetaModelo || "Modelo"}</span>
+                  <input
+                    value={equipoEdit.modelo}
+                    onChange={(e) =>
+                      setEquipoEdit((p) => ({ ...p, modelo: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="equipo-field">
+                  <span>{tipoNegocioServicio?.etiquetaSerie || "No. de serie"}</span>
+                  <input
+                    value={equipoEdit.numeroSerie}
+                    disabled={!!equipoEdit.omitirNumeroSerie}
+                    onChange={(e) =>
+                      setEquipoEdit((p) => ({
+                        ...p,
+                        numeroSerie: e.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="equipo-check equipo-field--full">
+                  <input
+                    type="checkbox"
+                    checked={!!equipoEdit.omitirNumeroSerie}
+                    onChange={(e) =>
+                      setEquipoEdit((p) => ({
+                        ...p,
+                        omitirNumeroSerie: e.target.checked,
+                        numeroSerie: e.target.checked ? "" : p.numeroSerie,
+                      }))
+                    }
+                  />
+                  <span>No quiero poner este dato</span>
+                </label>
+                <label className="equipo-field equipo-field--full">
+                  <span>{tipoNegocioServicio?.etiquetaTrabajo || "Trabajo / falla reportada"}</span>
+                  <textarea
+                    value={equipoEdit.trabajo}
+                    onChange={(e) =>
+                      setEquipoEdit((p) => ({ ...p, trabajo: e.target.value }))
+                    }
+                  />
+                </label>
+
+                {camposTecnicosEdit.length > 0 && (
+                  <div className="equipo-field equipo-field--full">
+                    <span>Campos del servicio</span>
+                    <div className="equipo-modal-grid equipo-modal-grid--embedded">
+                      {camposTecnicosEdit.map((campo) => renderCampoTecnicoEdit(campo))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {modalPasoActual === "tecnico" &&
+            {modalPasoActual === "tecnico" && (
+              <div className="equipo-modal-grid">
+                {camposTecnicosEdit.length === 0 ? (
+                  <div className="cfg-grid-empty">
+                    Este servicio no tiene campos tecnicos adicionales para este tipo.
+                  </div>
+                ) : (
+                  camposTecnicosEdit.map((campo) => renderCampoTecnicoEdit(campo))
+                )}
+              </div>
+            )}
+
+            {false && modalPasoActual === "tecnico" &&
               (tipoEquipoEdit === "laptop" || tipoEquipoEdit === "pc") && (
               <div className="equipo-modal-grid">
                 <input
@@ -2631,7 +2939,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
               </div>
             )}
 
-            {modalPasoActual === "tecnico" && tipoEquipoEdit === "impresora" && (
+            {false && modalPasoActual === "tecnico" && tipoEquipoEdit === "impresora" && (
               <div className="equipo-modal-grid">
                 <input
                   placeholder="Tipo de impresora"
@@ -2663,7 +2971,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
               </div>
             )}
 
-            {modalPasoActual === "tecnico" && tipoEquipoEdit === "monitor" && (
+            {false && modalPasoActual === "tecnico" && tipoEquipoEdit === "monitor" && (
               <div className="equipo-modal-grid">
                 <input
                   placeholder="Tamaño del monitor"
@@ -2698,7 +3006,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
             <div className="equipo-modal-actions">
               <button
                 className="btn btn-ok"
-                onClick={guardarCaracteristicasEquipo}
+                onClick={guardarCaracteristicasEquipoDynamic}
               >
                 Guardar cambios
               </button>

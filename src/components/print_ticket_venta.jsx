@@ -5,7 +5,14 @@
 } from "../js/services/ticket_config";
 import { getTicketFontFamily } from "../js/services/apariencia_config";
 import { readEmpresaConfigCache } from "../js/services/configure_empresa";
+import { readImpresorasConfigCache } from "../js/services/impresoras_config";
 import { formatCurrency, readMonedaConfigCache } from "../js/services/moneda_config";
+import { detectMobileDevice, getTicketPrintWidth } from "../js/services/mobile_detection";
+import {
+  openTicketImageDataUrl,
+  shareTicketImageDataUrl,
+} from "../js/services/mobile_ticket_share";
+import { captureElementToPngDataUrl, printImageSilently } from "../js/services/silent_print";
 
 const escapeHtml = (value) => {
   return String(value ?? "")
@@ -38,7 +45,51 @@ function renderLines(lines = [], className = "") {
     .join("");
 }
 
-export function imprimirTicketVenta({
+async function waitForImagesLoaded(root) {
+  const images = Array.from(root.querySelectorAll("img"));
+  await Promise.all(
+    images.map(
+      (img) =>
+        new Promise((resolve) => {
+          if (img.complete) {
+            resolve();
+            return;
+          }
+
+          const done = () => resolve();
+          img.addEventListener("load", done, { once: true });
+          img.addEventListener("error", done, { once: true });
+        }),
+    ),
+  );
+}
+
+async function captureTicketToImageDataUrl({ ticketBodyHtml, captureStyles, captureClass }) {
+  const host = document.createElement("div");
+  host.style.position = "fixed";
+  host.style.left = "-10000px";
+  host.style.top = "0";
+  host.style.background = "#fff";
+  host.style.pointerEvents = "none";
+  host.innerHTML = `<style>${captureStyles}</style><div class="${captureClass}">${ticketBodyHtml}</div>`;
+  document.body.appendChild(host);
+
+  try {
+    await waitForImagesLoaded(host);
+    await new Promise((resolve) => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(resolve);
+      });
+    });
+
+    const ticketElement = host.querySelector(".ticket-paper");
+    return await captureElementToPngDataUrl(ticketElement);
+  } finally {
+    host.remove();
+  }
+}
+
+export async function imprimirTicketVenta({
   ventaId,
   fecha,
   atendio,
@@ -53,18 +104,23 @@ export function imprimirTicketVenta({
   iva,
   total,
   ticketConfig,
+  previewOnly = false,
 }) {
-  const popup = window.open("", "_blank", "width=420,height=760");
-
-  if (!popup) {
-    alert("Bloqueado por el navegador. Permite popups para imprimir.");
-    return;
-  }
-
+  const printerCfg = readImpresorasConfigCache();
   const cfg = buildTicketConfig(ticketConfig || readTicketConfigStorage());
   const empresaCfg = readEmpresaConfigCache();
   const atendioTexto = String(atendio || "").trim() || "-";
   const ticketFontFamily = getTicketFontFamily();
+  const esVistaMovil = detectMobileDevice();
+  const ticketWidth = getTicketPrintWidth(esVistaMovil);
+  const baseFontSize = esVistaMovil ? "14px" : "12px";
+  const titleFontSize = esVistaMovil ? "20px" : "16px";
+  const extraLineFontSize = esVistaMovil ? "13px" : "11px";
+  const totalFontSize = esVistaMovil ? "15px" : "13px";
+  const logoHeight = esVistaMovil ? "60px" : "45px";
+  const paperPadding = esVistaMovil ? "4mm" : "3mm";
+  const popupWidth = esVistaMovil ? 520 : 420;
+  const popupHeight = esVistaMovil ? 860 : 760;
 
   const filas = (productos || [])
     .map((p) => {
@@ -180,186 +236,397 @@ export function imprimirTicketVenta({
   const footerHtml = cfg.footerText.trim()
     ? `<div class="ticket-footer">${escapeHtml(cfg.footerText)}</div>`
     : "";
+  const popupStyles = `
+    @page { size: ${ticketWidth} auto; margin: 0; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: ${ticketWidth};
+      background: #fff;
+      font-family: ${ticketFontFamily};
+      font-size: ${baseFontSize};
+    }
+    .ticket-paper {
+      width: ${ticketWidth};
+      background: #fff;
+      border-radius: 0;
+      border: none;
+      padding: ${paperPadding};
+      box-sizing: border-box;
+    }
+    .ticket-header {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .ticket-logo {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 6px;
+    }
+    .ticket-logo img {
+      width: auto;
+      height: ${logoHeight};
+      object-fit: contain;
+    }
+    .ticket-title {
+      font-size: ${titleFontSize};
+      font-weight: 800;
+    }
+    .ticket-sub {
+      font-size: ${baseFontSize};
+      opacity: 0.85;
+      margin-top: 2px;
+      word-break: break-word;
+    }
+    .ticket-extra-line {
+      font-size: ${extraLineFontSize};
+      text-align: center;
+      margin-top: 2px;
+      word-break: break-word;
+    }
+    .ticket-section {
+      margin-top: 10px;
+      font-size: ${baseFontSize};
+    }
+    .ticket-section-title {
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .ticket-item {
+      padding: 6px 0;
+      border-bottom: 1px dashed rgba(0, 0, 0, 0.2);
+    }
+    .ticket-item:last-child {
+      border-bottom: none;
+    }
+    .ticket-item-name {
+      font-weight: 700;
+      word-break: break-word;
+    }
+    .ticket-item-name.single-line {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ticket-item-meta {
+      color: #334155;
+      margin-top: 2px;
+    }
+    .ticket-item-row {
+      margin-top: 4px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .ticket-divider {
+      margin: 12px 0;
+      border-top: 1px dashed rgba(0, 0, 0, 0.25);
+    }
+    .ticket-status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .ticket-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #16a34a;
+    }
+    .ticket-status-pill {
+      display: inline-block;
+      border: 1px solid #16a34a;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: ${baseFontSize};
+      color: #16a34a;
+    }
+    .ticket-total-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 3px;
+    }
+    .ticket-total-final {
+      font-weight: 800;
+      font-size: ${totalFontSize};
+    }
+    .ticket-paper.ticket-paper-all-bold,
+    .ticket-paper.ticket-paper-all-bold *:not(.ticket-dot) {
+      color: #000;
+      opacity: 1;
+      font-weight: 700;
+    }
+    .ticket-paper.ticket-paper-all-bold .ticket-title,
+    .ticket-paper.ticket-paper-all-bold .ticket-section-title,
+    .ticket-paper.ticket-paper-all-bold .ticket-total-final,
+    .ticket-paper.ticket-paper-all-bold b,
+    .ticket-paper.ticket-paper-all-bold strong {
+      font-weight: 800;
+    }
+    .ticket-legend {
+      margin-top: 8px;
+      text-align: center;
+      line-height: 1.35;
+    }
+    .ticket-footer {
+      text-align: center;
+      margin-top: 12px;
+      font-size: ${baseFontSize};
+      opacity: 0.85;
+    }
+  `;
+  const captureClass = "ticket-silent-capture";
+  const captureStyles = `
+    .${captureClass} {
+      width: ${ticketWidth};
+      background: #fff;
+      color: #000;
+      font-family: ${ticketFontFamily};
+      font-size: ${baseFontSize};
+    }
+    .${captureClass} .ticket-paper {
+      width: ${ticketWidth};
+      background: #fff;
+      border-radius: 0;
+      border: none;
+      padding: ${paperPadding};
+      box-sizing: border-box;
+    }
+    .${captureClass} .ticket-header {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    .${captureClass} .ticket-logo {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 6px;
+    }
+    .${captureClass} .ticket-logo img {
+      width: auto;
+      height: ${logoHeight};
+      object-fit: contain;
+    }
+    .${captureClass} .ticket-title {
+      font-size: ${titleFontSize};
+      font-weight: 800;
+    }
+    .${captureClass} .ticket-sub {
+      font-size: ${baseFontSize};
+      opacity: 0.85;
+      margin-top: 2px;
+      word-break: break-word;
+    }
+    .${captureClass} .ticket-extra-line {
+      font-size: ${extraLineFontSize};
+      text-align: center;
+      margin-top: 2px;
+      word-break: break-word;
+    }
+    .${captureClass} .ticket-section {
+      margin-top: 10px;
+      font-size: ${baseFontSize};
+    }
+    .${captureClass} .ticket-section-title {
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .${captureClass} .ticket-item {
+      padding: 6px 0;
+      border-bottom: 1px dashed rgba(0, 0, 0, 0.2);
+    }
+    .${captureClass} .ticket-item:last-child {
+      border-bottom: none;
+    }
+    .${captureClass} .ticket-item-name {
+      font-weight: 700;
+      word-break: break-word;
+    }
+    .${captureClass} .ticket-item-name.single-line {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .${captureClass} .ticket-item-meta {
+      color: #334155;
+      margin-top: 2px;
+    }
+    .${captureClass} .ticket-item-row {
+      margin-top: 4px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .${captureClass} .ticket-divider {
+      margin: 12px 0;
+      border-top: 1px dashed rgba(0, 0, 0, 0.25);
+    }
+    .${captureClass} .ticket-status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .${captureClass} .ticket-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: #16a34a;
+    }
+    .${captureClass} .ticket-status-pill {
+      display: inline-block;
+      border: 1px solid #16a34a;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: ${baseFontSize};
+      color: #16a34a;
+    }
+    .${captureClass} .ticket-total-row {
+      margin-top: 4px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 3px;
+    }
+    .${captureClass} .ticket-total-final {
+      font-weight: 800;
+      font-size: ${totalFontSize};
+    }
+    .${captureClass} .ticket-legend {
+      margin-top: 8px;
+      text-align: center;
+      line-height: 1.35;
+    }
+    .${captureClass} .ticket-footer {
+      text-align: center;
+      margin-top: 12px;
+      font-size: ${baseFontSize};
+      opacity: 0.85;
+    }
+  `;
+
+  const ticketBodyHtml = `
+    <div class="ticket-paper ${cfg.boldAllText ? "ticket-paper-all-bold" : ""}">
+      <div class="ticket-header">
+        ${cfg.showLogo ? `<div class="ticket-logo"><img src="${LOGO_URL}" alt="Logo negocio" /></div>` : ""}
+        <div class="ticket-title">Ticket de venta</div>
+        ${businessHtml}
+        <div class="ticket-sub">Folio: <b>${escapeHtml(ventaId || "-")}</b></div>
+        <div class="ticket-sub">Fecha: ${escapeHtml(formatDate(fecha))}</div>
+        <div class="ticket-sub">Atendio: ${escapeHtml(atendioTexto)}</div>
+        ${topLinesHtml}
+      </div>
+
+      ${clientSectionHtml}
+
+      <div class="ticket-section">
+        <div class="ticket-section-title">Conceptos y precio</div>
+        ${filas || "<div>-</div>"}
+      </div>
+
+      ${paymentSectionHtml}
+      ${statusSectionHtml}
+
+      <div class="ticket-divider"></div>
+
+      <div class="ticket-section">
+        <div class="ticket-total-row"><span>Subtotal</span><span>${formatMoney(subtotal)}</span></div>
+        ${ivaRow}
+        <div class="ticket-total-row ticket-total-final"><span>Total</span><span>${formatMoney(total)}</span></div>
+      </div>
+
+      ${bottomLinesHtml}
+      ${legendHtml}
+      ${footerHtml}
+    </div>
+  `;
+
+  if (!previewOnly && printerCfg.modoImpresion === "silenciosa") {
+    try {
+      const imageDataUrl = await captureTicketToImageDataUrl({
+        ticketBodyHtml,
+        captureStyles,
+        captureClass,
+      });
+
+      await printImageSilently({
+        printerName: printerCfg.nombreImpresoraTicket || printerCfg.nombreImpresora || "",
+        imageDataUrl,
+        paperSize: ticketWidth,
+        jobName: `Venta ${ventaId || ""}`.trim() || "Ticket de venta",
+      });
+      return;
+    } catch (error) {
+      console.warn(
+        "[impresion-silenciosa] Ticket de venta. Se usara el dialogo del navegador como respaldo:",
+        error,
+      );
+    }
+  }
+
+  if (!previewOnly && esVistaMovil && printerCfg.salidaTicketMovil === "imagen") {
+    const imageDataUrl = await captureTicketToImageDataUrl({
+      ticketBodyHtml,
+      captureStyles,
+      captureClass,
+    });
+    const ventaLabel = String(ventaId || "ticket").trim() || "ticket";
+    const filename = `ticket-venta-${ventaLabel}.png`;
+    const title = `Ticket ${ventaLabel}`;
+
+    try {
+      const shared = await shareTicketImageDataUrl({
+        imageDataUrl,
+        filename,
+        title,
+        text: "Abrir con PrinterApp para imprimir el ticket.",
+      });
+      if (shared) return;
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      console.warn("[ticket-mobile-share] No se pudo compartir el ticket de venta:", error);
+    }
+
+    if (openTicketImageDataUrl(imageDataUrl, title)) return;
+  }
+
+  const popup = window.open("", "_blank", `width=${popupWidth},height=${popupHeight}`);
+
+  if (!popup) {
+    alert("Bloqueado por el navegador. Permite popups para imprimir.");
+    return;
+  }
 
   popup.document.write(`
     <!DOCTYPE html>
     <html lang="es">
       <head>
         <meta charset="UTF-8" />
-        <title>Ticket de Venta</title>
-        <style>
-          @page { size: 58mm auto; margin: 0; }
-          html, body {
-            margin: 0;
-            padding: 0;
-            width: 58mm;
-            background: #fff;
-            font-family: ${ticketFontFamily};
-            font-size: 12px;
-          }
-          .ticket-paper {
-            width: 58mm;
-            background: #fff;
-            border-radius: 0;
-            border: none;
-            padding: 3mm;
-            box-sizing: border-box;
-          }
-          .ticket-header {
-            text-align: center;
-            margin-bottom: 10px;
-          }
-          .ticket-logo {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 6px;
-          }
-          .ticket-logo img {
-            width: auto;
-            height: 45px;
-            object-fit: contain;
-          }
-          .ticket-title {
-            font-size: 16px;
-            font-weight: 800;
-          }
-          .ticket-sub {
-            font-size: 12px;
-            opacity: 0.85;
-            margin-top: 2px;
-            word-break: break-word;
-          }
-          .ticket-extra-line {
-            font-size: 11px;
-            text-align: center;
-            margin-top: 2px;
-            word-break: break-word;
-          }
-          .ticket-section {
-            margin-top: 10px;
-            font-size: 12px;
-          }
-          .ticket-section-title {
-            font-weight: 800;
-            margin-bottom: 4px;
-          }
-          .ticket-item {
-            padding: 6px 0;
-            border-bottom: 1px dashed rgba(0, 0, 0, 0.2);
-          }
-          .ticket-item:last-child {
-            border-bottom: none;
-          }
-          .ticket-item-name {
-            font-weight: 700;
-            word-break: break-word;
-          }
-          .ticket-item-name.single-line {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-          }
-          .ticket-item-meta {
-            color: #334155;
-            margin-top: 2px;
-          }
-          .ticket-item-row {
-            margin-top: 4px;
-            display: flex;
-            justify-content: space-between;
-            gap: 8px;
-          }
-          .ticket-divider {
-            margin: 12px 0;
-            border-top: 1px dashed rgba(0, 0, 0, 0.25);
-          }
-          .ticket-status-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-          }
-          .ticket-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 999px;
-            background: #16a34a;
-          }
-          .ticket-status-pill {
-            display: inline-block;
-            border: 1px solid #16a34a;
-            padding: 4px 8px;
-            border-radius: 999px;
-            font-weight: 700;
-            font-size: 11px;
-            color: #16a34a;
-          }
-          .ticket-total-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 3px;
-          }
-          .ticket-total-final {
-            font-weight: 800;
-            font-size: 13px;
-          }
-          .ticket-legend {
-            margin-top: 8px;
-            text-align: center;
-            line-height: 1.35;
-          }
-          .ticket-footer {
-            text-align: center;
-            margin-top: 12px;
-            font-size: 12px;
-            opacity: 0.85;
-          }
-        </style>
+        <title>${previewOnly ? "Vista previa del ticket" : "Ticket de Venta"}</title>
+        <style>${popupStyles}</style>
       </head>
       <body>
-        <div class="ticket-paper">
-          <div class="ticket-header">
-            ${cfg.showLogo ? `<div class="ticket-logo"><img src="${LOGO_URL}" alt="Logo negocio" /></div>` : ""}
-            <div class="ticket-title">Ticket de venta</div>
-            ${businessHtml}
-            <div class="ticket-sub">Folio: <b>${escapeHtml(ventaId || "-")}</b></div>
-            <div class="ticket-sub">Fecha: ${escapeHtml(formatDate(fecha))}</div>
-            <div class="ticket-sub">Atendio: ${escapeHtml(atendioTexto)}</div>
-            ${topLinesHtml}
-          </div>
-
-          ${clientSectionHtml}
-
-          <div class="ticket-section">
-            <div class="ticket-section-title">Conceptos y precio</div>
-            ${filas || "<div>-</div>"}
-          </div>
-
-          ${paymentSectionHtml}
-          ${statusSectionHtml}
-
-          <div class="ticket-divider"></div>
-
-          <div class="ticket-section">
-            <div class="ticket-total-row"><span>Subtotal</span><span>${formatMoney(subtotal)}</span></div>
-            ${ivaRow}
-            <div class="ticket-total-row ticket-total-final"><span>Total</span><span>${formatMoney(total)}</span></div>
-          </div>
-
-          ${bottomLinesHtml}
-          ${legendHtml}
-          ${footerHtml}
-        </div>
+        ${ticketBodyHtml}
+        ${previewOnly ? "" : `
         <script>
           window.onload = () => {
             window.print();
             window.onafterprint = () => window.close();
           };
         </script>
+        `}
       </body>
     </html>
   `);
 
   popup.document.close();
+}
+
+export async function visualizarTicketVenta(payload) {
+  return imprimirTicketVenta({
+    ...payload,
+    previewOnly: true,
+  });
 }
 
 

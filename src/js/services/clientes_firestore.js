@@ -4,16 +4,16 @@ import {
   doc,
   getDocs,
   getDoc,
-  limit,
-  orderBy,
-  query,
-  where,
   serverTimestamp,
-  startAt,
-  endAt,
   updateDoc,
 } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
+import {
+  dataBelongsToTenant,
+  filterItemsByTenant,
+  getTenantCollectionQuery,
+  withTenantData,
+} from "./tenant";
 
 /* ========= Normalización ========= */
 function separarCamelCase(s) {
@@ -71,6 +71,7 @@ export async function crearCliente({
   const nombreCompact = compact(nombre);
 
   const ref = await addDoc(collection(db, "clientes"), {
+    ...withTenantData({}),
     nombre: (nombre || "").trim(),
     nombreNorm,
     nombreCompact,
@@ -92,6 +93,9 @@ export async function actualizarCliente(id, patch) {
   const ref = doc(db, "clientes", id);
   const snap = await getDoc(ref);
   const actual = snap.exists() ? snap.data() : {};
+  if (snap.exists() && !dataBelongsToTenant(actual)) {
+    throw new Error("Cliente fuera del alcance de la cuenta actual.");
+  }
 
   const nombreFinal = Object.prototype.hasOwnProperty.call(patch || {}, "nombre")
     ? String(patch?.nombre || "").trim()
@@ -110,7 +114,7 @@ export async function actualizarCliente(id, patch) {
     : String(actual?.numeroSeriePreferido || "").trim();
 
   await updateDoc(ref, {
-    ...patch,
+    ...withTenantData(patch),
     numeroSeriePreferido: omitirNumeroSerieFinal ? "" : numeroSerieFinal,
     omitirNumeroSerie: omitirNumeroSerieFinal,
     nombreNorm: normalizarTexto(nombreFinal),
@@ -126,18 +130,16 @@ export async function buscarClientesSimilares(
 ) {
   const norm = normalizarTexto(input);
   if (!norm) return [];
-
-  // Prefix search por nombreNorm
-  const qy = query(
-    collection(db, "clientes"),
-    orderBy("nombreNorm"),
-    startAt(norm),
-    endAt(norm + "\uf8ff"),
-    limit(maxFetch)
-  );
-
-  const snap = await getDocs(qy);
-  const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const snap = await getDocs(getTenantCollectionQuery("clientes"));
+  const arr = filterItemsByTenant(
+    snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+  )
+    .filter((c) => {
+      const nombreN = normalizarTexto(c?.nombreNorm || c?.nombre || "");
+      const nombreC = compact(c?.nombreCompact || c?.nombre || "");
+      return nombreN.includes(norm) || nombreC.includes(compact(input));
+    })
+    .slice(0, maxFetch);
 
   const inC = compact(input);
 
@@ -145,19 +147,13 @@ export async function buscarClientesSimilares(
 
   // Fallback para clientes viejos con nombreNorm/nombreCompact vacios.
   if (candidatos.length < maxReturn) {
-    const fallbackQ = query(
-      collection(db, "clientes"),
-      orderBy("updatedAt", "desc"),
-      limit(Math.max(maxFetch * 2, 120)),
-    );
-    const fallbackSnap = await getDocs(fallbackQ);
-    const fallback = fallbackSnap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((c) => {
-        const nombreN = normalizarTexto(c?.nombre || "");
-        const nombreC = compact(c?.nombre || "");
-        return nombreN.includes(norm) || nombreC.includes(inC);
-      });
+    const fallback = filterItemsByTenant(
+      snap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    ).filter((c) => {
+      const nombreN = normalizarTexto(c?.nombre || "");
+      const nombreC = compact(c?.nombre || "");
+      return nombreN.includes(norm) || nombreC.includes(inC);
+    });
 
     const byId = new Map();
     [...arr, ...fallback].forEach((c) => byId.set(c.id, c));
@@ -178,27 +174,24 @@ export async function buscarClientesSimilares(
 }
 // Lista clientes (últimos actualizados)
 export async function listarClientes({ max = 100 } = {}) {
-  const qy = query(collection(db, "clientes"), orderBy("updatedAt", "desc"), limit(max));
-  const snap = await getDocs(qy);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const snap = await getDocs(getTenantCollectionQuery("clientes"));
+  return filterItemsByTenant(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    .sort((a, b) => toMillis(b?.updatedAt) - toMillis(a?.updatedAt))
+    .slice(0, max);
 }
 
 // Leer un cliente por ID
 export async function obtenerClientePorId(id) {
   const snap = await getDoc(doc(db, "clientes", id));
   if (!snap.exists()) return null;
+  if (!dataBelongsToTenant(snap.data())) return null;
   return { id: snap.id, ...snap.data() };
 }
 
 export async function listarServiciosPorClienteId(clienteId) {
-  const qy = query(
-    collection(db, "servicios"),
-    where("clienteId", "==", clienteId)
-  );
-
-  const snap = await getDocs(qy);
-
-  const arr = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const snap = await getDocs(getTenantCollectionQuery("servicios"));
+  const arr = filterItemsByTenant(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    .filter((item) => item?.clienteId === clienteId);
 
   // ordenar en el cliente (sin índice)
   arr.sort(
@@ -207,4 +200,34 @@ export async function listarServiciosPorClienteId(clienteId) {
   );
 
   return arr;
+}
+
+function toMillis(raw) {
+  if (!raw) return 0;
+  if (typeof raw?.toDate === "function") return raw.toDate().getTime();
+  if (typeof raw?.seconds === "number") return raw.seconds * 1000;
+  const fecha = raw instanceof Date ? raw : new Date(raw);
+  return Number.isNaN(fecha.getTime()) ? 0 : fecha.getTime();
+}
+
+export async function listarVentasPorCliente({ clienteId = "", telefono = "" } = {}) {
+  const telefonoLimpio = String(telefono || "").trim();
+  if (!clienteId && !telefonoLimpio) return [];
+
+  const snap = await getDocs(getTenantCollectionQuery("ventas"));
+  const byId = new Map();
+
+  snap.docs.forEach((d) => {
+    const data = d.data() || {};
+    if (!dataBelongsToTenant(data)) return;
+    const sameCliente = clienteId && data?.clienteId === clienteId;
+    const sameTelefono = telefonoLimpio && String(data?.clienteTelefono || "").trim() === telefonoLimpio;
+    if (sameCliente || sameTelefono) {
+      byId.set(d.id, { id: d.id, ...data });
+    }
+  });
+
+  return [...byId.values()].sort(
+    (a, b) => toMillis(b?.fecha || b?.createdAt) - toMillis(a?.fecha || a?.createdAt),
+  );
 }

@@ -6,6 +6,8 @@
   justify-content: center;
   align-items: center;
   z-index: 9999;
+  padding: 16px;
+  overflow-y: auto;
 }
 
 .modal-cobro-pro {
@@ -16,9 +18,10 @@
   border-radius: 14px;
   animation: fadeIn 0.2s ease-in-out;
   box-shadow: 0 20px 50px rgba(0,0,0,0.25);
-  max-height: none;
-  overflow: visible;
+  max-height: min(92dvh, 960px);
+  overflow: auto;
   height: auto;
+  overscroll-behavior: contain;
 }
 
 .modal-cobro-pro.sin-teclado {
@@ -232,6 +235,7 @@
   .lado-derecho {
     margin-top: 16px;
     justify-content: center;
+    min-width: 0;
   }
 
   .acciones-pro {
@@ -241,10 +245,17 @@
 }
 
 @media (max-width: 560px) {
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
   .modal-cobro-pro {
-    width: calc(100vw - 12px);
-    max-width: calc(100vw - 12px);
+    width: 100%;
+    max-width: 100%;
+    max-height: min(96dvh, 100%);
     padding: 12px;
+    border-radius: 16px 16px 0 0;
   }
 
   .modal-header h2 {
@@ -280,6 +291,10 @@
 
   .cambio-pro {
     font-size: 20px;
+  }
+
+  .teclado {
+    width: min(100%, 240px);
   }
 
   .acciones-pro button {

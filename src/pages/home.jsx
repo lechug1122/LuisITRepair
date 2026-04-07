@@ -15,6 +15,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pi
 import { APARIENCIA_EVENT, readAparienciaConfigStorage } from "../js/services/apariencia_config";
 import { STATUS } from "../js/utils/status_map";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useMonedaConfig from "../hooks/useMonedaConfig";
 import PageLoader from "../components/PageLoader";
 
@@ -34,12 +35,14 @@ function normalizeRoleText(raw = "") {
     .trim();
 }
 
-function normalizeRole(raw = "", permisos = {}) {
+function normalizeRole(raw = "", permisos = {}, serviciosHabilitados = true) {
   const key = normalizeRoleText(raw);
   if (key.includes("admin")) return "admin";
-  if (key.includes("tecn")) return "tecnico";
+  if (key.includes("tecn") && serviciosHabilitados) return "tecnico";
   if (key.includes("vend") || key.includes("cajer")) return "vendedor";
-  if (permisos?.["servicios.ver"] || permisos?.["servicios.crear"]) return "tecnico";
+  if (serviciosHabilitados && (permisos?.["servicios.ver"] || permisos?.["servicios.crear"])) {
+    return "tecnico";
+  }
   if (permisos?.["ventas.pos"] || permisos?.["productos.ver"]) return "vendedor";
   return "general";
 }
@@ -214,8 +217,12 @@ function ServiceListCard({ title, subtitle = "", services = [], emptyText, onOpe
 export default function Home() {
   const navigate = useNavigate();
   const { rol, nombre, permisos, puede } = useAutorizacionActual();
+  const { serviciosHabilitados } = useEmpresaConfig();
   const { formatCurrency } = useMonedaConfig();
-  const roleKey = useMemo(() => normalizeRole(rol, permisos), [rol, permisos]);
+  const roleKey = useMemo(
+    () => normalizeRole(rol, permisos, serviciosHabilitados),
+    [rol, permisos, serviciosHabilitados],
+  );
   const panelTitle = useMemo(() => (
     roleKey === "admin"
       ? "Dashboard Administrativo"
@@ -227,13 +234,15 @@ export default function Home() {
   ), [roleKey]);
   const panelSubtitle = useMemo(() => (
     roleKey === "admin"
-      ? "Vision completa del negocio, ventas y operacion."
+      ? serviciosHabilitados
+        ? "Vision completa del negocio, ventas y operacion."
+        : "Vision completa del negocio, ventas, inventario y clientes."
       : roleKey === "tecnico"
         ? "Cola tecnica, prioridades y entregas pendientes."
         : roleKey === "vendedor"
           ? "Caja, cobro y oportunidades de cierre del dia."
           : "Accesos rapidos segun tus permisos."
-  ), [roleKey]);
+  ), [roleKey, serviciosHabilitados]);
   const welcomeTitle = useMemo(() => {
     const safeName = String(nombre || "").trim();
     return safeName ? `Bienvenido, ${safeName}` : "Bienvenido";
@@ -264,6 +273,9 @@ export default function Home() {
   const [mostrarPanelNoti, setMostrarPanelNoti] = useState(false);
   const [mostrarPanelCorte, setMostrarPanelCorte] = useState(false);
   const [mostrarCalendarioPanel, setMostrarCalendarioPanel] = useState(false);
+  const [dismissedNotificationIds, setDismissedNotificationIds] = useState([]);
+  const [dismissedTechnicalAlertIds, setDismissedTechnicalAlertIds] = useState([]);
+  const [dismissedCommercialAlertIds, setDismissedCommercialAlertIds] = useState([]);
   const [animationsEnabled, setAnimationsEnabled] = useState(() => readAparienciaConfigStorage().animations !== false);
   const [isDarkMode, setIsDarkMode] = useState(() => readAparienciaConfigStorage().themeMode === "oscuro");
   const [mostrarTodos, setMostrarTodos] = useState(false);
@@ -349,7 +361,7 @@ export default function Home() {
   const serviciosListos = useMemo(() => serviciosOrdenados.filter((s) => ["listo", "finalizado"].includes(normalizeStatus(s.status))), [serviciosOrdenados]);
   const serviciosCobrables = useMemo(() => serviciosOrdenados.filter((s) => {
     const status = normalizeStatus(s.status);
-    return ["listo", "cancelado", "no_reparable"].includes(status) && Number(s.costo || 0) > 0 && !Boolean(s.cobradoEnPOS);
+    return ["listo", "cancelado", "no_reparable"].includes(status) && Number(s.costo || 0) > 0 && !s.cobradoEnPOS;
   }), [serviciosOrdenados]);
   const flujoTecnico = useMemo(() => {
     const counters = new Map(STATUS.map((item) => [item.value, 0]));
@@ -376,8 +388,22 @@ export default function Home() {
     .slice(0, 6), [serviciosOrdenados, today]);
   const alertasComerciales = useMemo(() => notificaciones.filter((n) => {
     const id = String(n.id || "");
-    return id.includes("stock") || id.includes("servicios-listos") || id.includes("tarjeta");
-  }), [notificaciones]);
+    return id.includes("stock") || id.includes("tarjeta") || (
+      serviciosHabilitados && id.includes("servicios-listos")
+    );
+  }), [notificaciones, serviciosHabilitados]);
+  const notificacionesVisibles = useMemo(
+    () => notificaciones.filter((item) => !dismissedNotificationIds.includes(String(item.id || ""))),
+    [dismissedNotificationIds, notificaciones],
+  );
+  const alertasTecnicasVisibles = useMemo(
+    () => alertasTecnicas.filter((item) => !dismissedTechnicalAlertIds.includes(String(item.id || item.folio || ""))),
+    [alertasTecnicas, dismissedTechnicalAlertIds],
+  );
+  const alertasComercialesVisibles = useMemo(
+    () => alertasComerciales.filter((item) => !dismissedCommercialAlertIds.includes(String(item.id || ""))),
+    [alertasComerciales, dismissedCommercialAlertIds],
+  );
 
   const totalHoy = Number(resumenCajaHoy?.resumenHoy?.total || 0);
   const resumenPago = resumenCajaHoy?.resumenHoy || {};
@@ -545,7 +571,7 @@ export default function Home() {
   if (loading) return <PageLoader text="Cargando dashboard..." />;
 
   return (
-    <div className={`home-page role-${roleKey} ${roleKey === "admin" && fijarCalendarioPanel ? "calendar-layout-pinned" : ""}`}>
+    <div className={`home-page role-${roleKey} ${roleKey === "admin" && (mostrarCalendarioPanel || fijarCalendarioPanel) ? "calendar-layout-pinned" : ""}`}>
       <div className="home-header home-role-header">
         <div className="home-hero-panel">
           <div className="home-role-copy">
@@ -556,64 +582,97 @@ export default function Home() {
 
           {roleKey === "admin" ? (
             <div className="home-header-actions admin-actions" ref={panelAccionesRef}>
-              <button className="btn-light btn-home-notif" onClick={() => { setMostrarPanelNoti((v) => !v); setMostrarPanelCorte(false); }}>
-                {"\u{1F514}"} Notificaciones ({notificaciones.length})
-              </button>
-              <button className="btn-light btn-home-corte" onClick={() => { setMostrarPanelCorte((v) => !v); setMostrarPanelNoti(false); }}>
-                {"\u{1F4E6}"} Corte de caja
-              </button>
-              <button
-                className="btn-light btn-home-calendar-inline"
-                onClick={() => setMostrarCalendarioPanel((v) => !v)}
-              >
-                {"\u{1F4C5}"} Calendario
-              </button>
-              {puede("servicios.crear") && <button className="btn-primary" onClick={() => navigate("/hoja_servicio")}>+ Nuevo servicio</button>}
-
-              {mostrarPanelNoti && (
-                <div className="home-info-popover">
-                  <div className="home-info-block">
-                    <div className="notifications-header"><h4>Notificaciones</h4><span>{notificaciones.length}</span></div>
-                    {notificaciones.length === 0 && <p className="notifications-empty">Sin alertas por ahora.</p>}
-                    {notificaciones.map((n) => (
-                      <div key={n.id} className={`notification-item ${n.nivel || "baja"}`}>
-                        <div className="notification-main">
-                          <p className="notification-title">{n.titulo}</p>
-                          <p className="notification-detail">{n.detalle}</p>
+              <div className="home-action-anchor">
+                <button className="btn-light btn-home-notif" onClick={() => { setMostrarPanelNoti((v) => !v); setMostrarPanelCorte(false); }}>
+                  {"\u{1F514}"} Notificaciones ({notificacionesVisibles.length})
+                </button>
+                {mostrarPanelNoti && (
+                  <div className="home-info-popover">
+                    <div className="home-info-block">
+                      <div className="notifications-header">
+                        <div className="notifications-header-actions">
+                          <h4>Notificaciones</h4>
+                          <span>{notificacionesVisibles.length}</span>
                         </div>
-                        {n.accion && <button className="btn-light" onClick={() => navigate(n.accion)}>{n.accionTexto || "Ver"}</button>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {mostrarPanelCorte && (
-                <div className="home-corte-popover">
-                  {resumenCajaHoy ? (
-                    <div className="home-info-block corte-compacto">
-                      <div className="corte-header">
-                        <h4>Corte de caja de hoy</h4>
-                        <span className={resumenCajaHoy.cerrado ? "corte-status closed" : "corte-status open"}>{resumenCajaHoy.cerrado ? "Cerrada" : "Abierta"}</span>
-                      </div>
-                      <div className="corte-grid">
-                        <div><p>Tickets</p><b>{ticketsHoy}</b></div>
-                        <div><p>Total</p><b>{formatCurrency(totalHoy)}</b></div>
-                      </div>
-                      <div className="corte-actions">
-                        <button className="btn-light" onClick={async () => {
-                          await generarPdfCorteCajaDia(resumenCajaHoy.ventasHoy || [], {
-                            corte: resumenCajaHoy.corte || null,
-                            fechaKey: resumenCajaHoy?.fechaKey,
-                          });
-                        }}>
-                          Descargar PDF
+                        <button
+                          type="button"
+                          className="notifications-close-btn"
+                          aria-label="Cerrar notificaciones"
+                          onClick={() => setMostrarPanelNoti(false)}
+                        >
+                          ×
                         </button>
-                        {puede("reportes.ver") && <button className="btn-primary" onClick={() => navigate("/reportes")}>Reportes</button>}
                       </div>
+                      {notificacionesVisibles.length === 0 && <p className="notifications-empty">Sin alertas por ahora.</p>}
+                      {notificacionesVisibles.map((n) => (
+                        <div key={n.id} className={`notification-item ${n.nivel || "baja"}`}>
+                          <div className="notification-main">
+                            <p className="notification-title">{n.titulo}</p>
+                            <p className="notification-detail">{n.detalle}</p>
+                          </div>
+                          <div className="notification-actions">
+                            {n.accion && <button className="btn-light" onClick={() => navigate(n.accion)}>{n.accionTexto || "Ver"}</button>}
+                            <button
+                              type="button"
+                              className="notifications-close-btn"
+                              aria-label={`Cerrar alerta ${n.titulo}`}
+                              onClick={() => setDismissedNotificationIds((prev) => [...new Set([...prev, String(n.id || "")])])}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ) : <div className="home-info-block"><p className="notifications-empty">No hay informacion de corte disponible.</p></div>}
-                </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="home-action-anchor home-action-anchor-right">
+                <button className="btn-light btn-home-corte" onClick={() => { setMostrarPanelCorte((v) => !v); setMostrarPanelNoti(false); }}>
+                  {"\u{1F4E6}"} Corte de caja
+                </button>
+                {mostrarPanelCorte && (
+                  <div className="home-corte-popover">
+                    {resumenCajaHoy ? (
+                      <div className="home-info-block corte-compacto">
+                        <div className="corte-header">
+                          <h4>Corte de caja de hoy</h4>
+                          <span className={resumenCajaHoy.cerrado ? "corte-status closed" : "corte-status open"}>{resumenCajaHoy.cerrado ? "Cerrada" : "Abierta"}</span>
+                        </div>
+                        <div className="corte-grid">
+                          <div><p>Tickets</p><b>{ticketsHoy}</b></div>
+                          <div><p>Total</p><b>{formatCurrency(totalHoy)}</b></div>
+                        </div>
+                        <div className="corte-actions">
+                          <button className="btn-light" onClick={async () => {
+                            await generarPdfCorteCajaDia(resumenCajaHoy.ventasHoy || [], {
+                              corte: resumenCajaHoy.corte || null,
+                              fechaKey: resumenCajaHoy?.fechaKey,
+                            });
+                          }}>
+                            Descargar PDF
+                          </button>
+                          {puede("reportes.ver") && <button className="btn-primary" onClick={() => navigate("/reportes")}>Reportes</button>}
+                        </div>
+                      </div>
+                    ) : <div className="home-info-block"><p className="notifications-empty">No hay informacion de corte disponible.</p></div>}
+                  </div>
+                )}
+              </div>
+
+              {serviciosHabilitados && (
+                <button
+                  className="btn-light btn-home-calendar-inline"
+                  onClick={() => setMostrarCalendarioPanel((v) => !v)}
+                >
+                  {"\u{1F4C5}"} Calendario
+                </button>
+              )}
+              {serviciosHabilitados && puede("servicios.crear") && (
+                <button className="btn-primary" onClick={() => navigate("/hoja_servicio")}>
+                  + Nuevo servicio
+                </button>
               )}
             </div>
           ) : roleKey === "tecnico" ? (
@@ -623,7 +682,7 @@ export default function Home() {
             </div>
           ) : roleKey === "vendedor" ? (
             <div className="home-quick-grid compact home-sales-actions">
-              {roleKey === "vendedor" && puede("ventas.pos") && <QuickActionCard title="Abrir POS" description="Cobrar ventas y servicios." tone="green" onClick={() => navigate("/POS")} />}
+              {roleKey === "vendedor" && puede("ventas.pos") && <QuickActionCard title="Abrir POS" description={serviciosHabilitados ? "Cobrar ventas y servicios." : "Cobrar ventas desde caja."} tone="green" onClick={() => navigate("/POS")} />}
               {roleKey === "vendedor" && puede("clientes.ver") && <QuickActionCard title="Clientes" description="Buscar contacto y puntos." tone="blue" onClick={() => navigate("/clientes")} />}
               {roleKey === "vendedor" && puede("productos.ver") && <QuickActionCard title="Inventario" description="Revisar stock y precios." tone="amber" onClick={() => navigate("/productos")} />}
             </div>
@@ -639,28 +698,36 @@ export default function Home() {
               icon={"\u{1F4B0}"}
               label="Ingresos del mes"
               value={formatCurrency(kpis.ingresosMes)}
-              sublabel={`Servicios ${formatCurrency(kpis.ingresosServiciosMes || 0)} + utilidad POS ${formatCurrency(kpis.utilidadProductosMes || 0)}`}
+              sublabel={serviciosHabilitados
+                ? `Servicios ${formatCurrency(kpis.ingresosServiciosMes || 0)} + utilidad POS ${formatCurrency(kpis.utilidadProductosMes || 0)}`
+                : "Ventas cobradas y utilidad del punto de venta."}
             />
             <MetricCard
               tone="blue"
-              icon={"\u{1F527}"}
-              label="Servicios activos"
-              value={kpis.activos}
-              sublabel="Equipos en proceso, revision o listos por entregar"
+              icon={serviciosHabilitados ? "\u{1F527}" : "\u{1F4C4}"}
+              label={serviciosHabilitados ? "Servicios activos" : "Tickets hoy"}
+              value={serviciosHabilitados ? kpis.activos : ticketsHoy}
+              sublabel={serviciosHabilitados
+                ? "Equipos en proceso, revision o listos por entregar"
+                : "Ventas registradas en el corte del dia"}
             />
             <MetricCard
               tone="success"
-              icon={"\u{2705}"}
-              label="Entregados hoy"
-              value={kpis.entregados}
-              sublabel="Servicios cerrados y entregados en la fecha actual"
+              icon={serviciosHabilitados ? "\u{2705}" : "\u{1F4B5}"}
+              label={serviciosHabilitados ? "Entregados hoy" : "Cobrado hoy"}
+              value={serviciosHabilitados ? kpis.entregados : formatCurrency(totalHoy)}
+              sublabel={serviciosHabilitados
+                ? "Servicios cerrados y entregados en la fecha actual"
+                : "Importe acumulado en la caja del dia"}
             />
             <MetricCard
               tone="orange"
               icon={"\u{1F464}"}
               label="Clientes"
               value={kpis.totalClientes}
-              sublabel="Base registrada para ventas, servicios y fidelidad"
+              sublabel={serviciosHabilitados
+                ? "Base registrada para ventas, servicios y fidelidad"
+                : "Base registrada para ventas y fidelidad"}
             />
           </div>
           <div className="charts-grid">
@@ -763,7 +830,8 @@ export default function Home() {
                 <span><i className="legend-pill current"></i> Ingresos cobrados</span>
               </div>
             </div>
-            <div className="chart-card chart-card-pie">
+            {serviciosHabilitados && (
+              <div className="chart-card chart-card-pie">
               <div className="chart-card-pie-head">
                 <div>
                   <span className="chart-card-kicker">Distribucion mensual</span>
@@ -851,7 +919,8 @@ export default function Home() {
                   Aun no hay servicios entregados este mes para dibujar la grafica.
                 </div>
               )}
-            </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -894,15 +963,25 @@ export default function Home() {
             <ServiceListCard className="home-role-card-tech-ready" title="Listos para entregar" subtitle="Equipos que ya pueden cerrarse con cliente." services={serviciosListos.slice(0, 5)} emptyText="No hay equipos listos por ahora." onOpen={goToServicio} />
             <div className="panel-card home-role-card home-role-card-tech-priority">
               <div className="home-role-card-head"><div><h4>Prioridades</h4><p>Servicios ordenados por urgencia operativa.</p></div></div>
-              {alertasTecnicas.length === 0 && <p className="home-empty-copy">No hay alertas tecnicas inmediatas.</p>}
-              {alertasTecnicas.map((servicio) => (
+              {alertasTecnicasVisibles.length === 0 && <p className="home-empty-copy">No hay alertas tecnicas inmediatas.</p>}
+              {alertasTecnicasVisibles.map((servicio) => (
                 <div key={servicio.id} className={`home-priority-item tone-${servicio.tone}`}>
                   <div>
                     <strong>{servicio.folio || "-"}</strong>
                     <p>{servicio.nombre || "Cliente"} - {servicio.status || "Pendiente"}</p>
                     <small>{servicio.fechaAprox ? `Entrega: ${formatFechaLarga(parseFechaAprox(servicio.fechaAprox))}` : "Sin fecha estimada"}</small>
                   </div>
-                  <button type="button" className="btn-light" onClick={() => goToServicio(servicio.folio)}>Abrir</button>
+                  <div className="home-alert-actions">
+                    <button type="button" className="btn-light" onClick={() => goToServicio(servicio.folio)}>Abrir</button>
+                    <button
+                      type="button"
+                      className="notifications-close-btn"
+                      aria-label={`Cerrar alerta del servicio ${servicio.folio || servicio.id}`}
+                      onClick={() => setDismissedTechnicalAlertIds((prev) => [...new Set([...prev, String(servicio.id || servicio.folio || "")])])}
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -919,7 +998,9 @@ export default function Home() {
             <MetricCard tone="success" icon={"\u{1F4B3}"} label="Tarjeta" value={formatCurrency(resumenPago.tarjeta || 0)} />
           </div>
           <div className="home-role-grid">
-            <ServiceListCard title="Servicios por cobrar" subtitle="Listos, cancelados o no reparables con costo." services={serviciosCobrables.slice(0, 6)} emptyText="No hay servicios pendientes de cobro." onOpen={() => navigate("/POS")} sideRenderer={(servicio) => <small>{formatCurrency(servicio.costo || 0)}</small>} />
+            {serviciosHabilitados && (
+              <ServiceListCard title="Servicios por cobrar" subtitle="Listos, cancelados o no reparables con costo." services={serviciosCobrables.slice(0, 6)} emptyText="No hay servicios pendientes de cobro." onOpen={() => navigate("/POS")} sideRenderer={(servicio) => <small>{formatCurrency(servicio.costo || 0)}</small>} />
+            )}
             <div className="panel-card home-role-card">
               <div className="home-role-card-head"><div><h4>Resumen rapido de caja</h4><p>Distribucion y volumen acumulado del dia.</p></div></div>
               <div className="home-mini-stats">
@@ -931,28 +1012,40 @@ export default function Home() {
             </div>
             <div className="panel-card home-role-card">
               <div className="home-role-card-head"><div><h4>Alertas comerciales</h4><p>Situaciones que afectan venta e inventario.</p></div></div>
-              {alertasComerciales.length === 0 && <p className="home-empty-copy">No hay alertas comerciales importantes hoy.</p>}
-              {alertasComerciales.slice(0, 5).map((item) => (
+              {alertasComercialesVisibles.length === 0 && <p className="home-empty-copy">No hay alertas comerciales importantes hoy.</p>}
+              {alertasComercialesVisibles.slice(0, 5).map((item) => (
                 <div key={item.id} className="home-alert-row">
                   <div><strong>{item.titulo}</strong><p>{item.detalle}</p></div>
-                  {item.accion ? <button type="button" className="btn-light" onClick={() => navigate(item.accion)}>{item.accionTexto || "Ver"}</button> : null}
+                  <div className="home-alert-actions">
+                    {item.accion ? <button type="button" className="btn-light" onClick={() => navigate(item.accion)}>{item.accionTexto || "Ver"}</button> : null}
+                    <button
+                      type="button"
+                      className="notifications-close-btn"
+                      aria-label={`Cerrar alerta ${item.titulo}`}
+                      onClick={() => setDismissedCommercialAlertIds((prev) => [...new Set([...prev, String(item.id || "")])])}
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
-            <ServiceListCard title="Listos para entrega" subtitle="Servicios que ya se pueden cerrar con cliente." services={serviciosListos.slice(0, 5)} emptyText="No hay servicios listos por ahora." onOpen={goToServicio} />
+            {serviciosHabilitados && (
+              <ServiceListCard title="Listos para entrega" subtitle="Servicios que ya se pueden cerrar con cliente." services={serviciosListos.slice(0, 5)} emptyText="No hay servicios listos por ahora." onOpen={goToServicio} />
+            )}
           </div>
         </>
       )}
 
       {roleKey === "general" && (
         <div className="home-quick-grid">
-          {puede("servicios.ver") && <QuickActionCard title="Servicios" description="Abrir panel de seguimiento." tone="blue" onClick={() => navigate("/servicios")} />}
+          {serviciosHabilitados && puede("servicios.ver") && <QuickActionCard title="Servicios" description="Abrir panel de seguimiento." tone="blue" onClick={() => navigate("/servicios")} />}
           {puede("clientes.ver") && <QuickActionCard title="Clientes" description="Consultar historial y contacto." tone="green" onClick={() => navigate("/clientes")} />}
           {puede("ventas.pos") && <QuickActionCard title="Punto de venta" description="Cobrar ventas desde caja." tone="amber" onClick={() => navigate("/POS")} />}
         </div>
       )}
 
-      {roleKey === "admin" && (
+      {roleKey === "admin" && serviciosHabilitados && (
         <>
           <button className={`calendar-side-tab ${mostrarCalendarioPanel || fijarCalendarioPanel ? "open" : ""}`} onClick={() => setMostrarCalendarioPanel((v) => !v)}>
             {"\u{1F4C5}"} Calendario

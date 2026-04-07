@@ -98,14 +98,32 @@ export default function POSMobileScanner({
   disabledMessage = "",
   itemsCount = 0,
   total = 0,
+  serviciosHabilitados = true,
   onResolveCode,
   onExitToNormal,
+  title = "Escaner POS",
+  subtitle = "",
+  overlayLabel = "ESCANER",
+  embedded = false,
+  modeOptions = [],
+  children = null,
 }) {
   const { formatCurrency } = useMonedaConfig();
   const scannerRef = useRef(null);
   const dedupeRef = useRef({ value: "", at: 0 });
   const resolveRef = useRef(onResolveCode);
   const processingRef = useRef(false);
+  const pageClassName = ["posm-page", embedded ? "posm-page-embedded" : ""]
+    .filter(Boolean)
+    .join(" ");
+  const cardClassName = ["posm-card", embedded ? "posm-card-embedded" : ""]
+    .filter(Boolean)
+    .join(" ");
+  const resolvedSubtitle = subtitle || (
+    serviciosHabilitados
+      ? "Escanea codigo de barras o QR de producto o servicio."
+      : "Escanea codigo de barras o QR de producto."
+  );
 
   const [manualCode, setManualCode] = useState("");
   const [scannerInfo, setScannerInfo] = useState("Escaner listo para leer codigo de barras y QR.");
@@ -292,10 +310,10 @@ export default function POSMobileScanner({
   };
 
   return (
-    <div className="posm-page">
-      <div className="posm-card">
+    <div className={pageClassName}>
+      <div className={cardClassName}>
         <div className="posm-head">
-          <h1 className="posm-title">Escaner POS</h1>
+          <h1 className="posm-title">{title}</h1>
           {typeof onExitToNormal === "function" && (
             <button
               type="button"
@@ -306,13 +324,31 @@ export default function POSMobileScanner({
             </button>
           )}
         </div>
-        <p className="posm-subtitle">Escanea codigo de barras o QR de servicio.</p>
+
+        {Array.isArray(modeOptions) && modeOptions.length > 0 && (
+          <div className="posm-mode-switch" role="tablist" aria-label="Seleccion de modo">
+            {modeOptions.map((option) => (
+              <button
+                key={option?.key || option?.label}
+                type="button"
+                className={`posm-mode-btn ${option?.active ? "active" : ""}`}
+                aria-pressed={option?.active ? "true" : "false"}
+                onClick={option?.onClick}
+                disabled={option?.disabled}
+              >
+                {option?.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <p className="posm-subtitle">{resolvedSubtitle}</p>
 
         <div className="posm-reader-wrap">
           <div className="posm-reader">
             <div id={SCANNER_ID} className="posm-reader-host" />
             <div className="posm-reader-overlay">
-              <span>ESCANER</span>
+              <span>{overlayLabel}</span>
             </div>
           </div>
         </div>
@@ -343,6 +379,8 @@ export default function POSMobileScanner({
           <div>Items en carrito: <b>{itemsCount}</b></div>
           <div>Total actual: <b>{formatCurrency(total)}</b></div>
         </div>
+
+        {children ? <div className="posm-extra">{children}</div> : null}
       </div>
     </div>
   );

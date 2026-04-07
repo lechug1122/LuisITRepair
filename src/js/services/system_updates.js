@@ -1,11 +1,11 @@
 export const CURRENT_SYSTEM_UPDATE = {
-  key: "system-update-2026-03-13-retardo",
-  fecha: new Date("2026-03-13T12:00:00-06:00").getTime(),
-  titulo: "Actualizacion reciente del sistema",
+  key: "system-update-2026-04-04-promocion-funciones-400",
+  fecha: new Date("2026-04-04T12:00:00-06:00").getTime(),
+  titulo: "Sistema completo por $400 al mes",
   detalle:
-    "Se agrego retardo automatico por fecha de entrega, modal rojo de equipo con retraso y un progress bar corregido en detalle del servicio.",
+    "Servicios, POS, inventario, clientes, reportes, empleados, puntos e impresion en un solo lugar por $400 al mes.",
   accion: "/configuracion",
-  accionTexto: "Ver novedades",
+  accionTexto: "Ver funciones",
 };
 
 export function buildSystemUpdateNotification() {

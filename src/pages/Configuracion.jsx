@@ -1,13 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { collection, doc, getDoc, onSnapshot, updateDoc } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../initializer/firebase";
 import UpdateModal from "../components/UpdateModal";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useMonedaConfig from "../hooks/useMonedaConfig";
 import "../css/configuracion.css";
 
-const SYSTEM_VERSION = "1.7.0";
+const SYSTEM_VERSION = "1.9";
 const PRESENCE_TTL_MS = 2 * 60 * 1000;
 const SUPPORT_PHONE = "2731430147";
 const SUPPORT_EMAIL = "luisitrepairhuatusco@gmail.com";
@@ -44,10 +46,21 @@ export default function Configuracion() {
   const navigate = useNavigate();
   const location = useLocation();
   const enSubSeccion = location.pathname !== "/configuracion";
+  const ocultarPanelLateral =
+    location.pathname === "/configuracion/suscripciones" ||
+    location.pathname === "/configuracion/mi-suscripcion";
+  const { serviciosHabilitados } = useEmpresaConfig();
   const { formatCurrency } = useMonedaConfig();
+  const { superAdmin, cuentaPrincipalUid, suscripcionControlada, uid } = useAutorizacionActual();
+  const ownerBase = cuentaPrincipalUid || uid;
+  const esTitularSuscripcion =
+    superAdmin !== true &&
+    suscripcionControlada === true &&
+    String(uid || "").trim() !== "" &&
+    String(uid || "").trim() === String(cuentaPrincipalUid || "").trim();
 
   const [showUpdate, setShowUpdate] = useState(false);
-  const [presenciaAhora, setPresenciaAhora] = useState(Date.now());
+  const [presenciaAhora, setPresenciaAhora] = useState(() => Date.now());
   const [empleadosActivos, setEmpleadosActivos] = useState([]);
   const [stats, setStats] = useState({
     ventas: 0,
@@ -58,19 +71,44 @@ export default function Configuracion() {
   const menuItems = [
     { name: "Panel General", path: "/configuracion" },
     { name: "Empresa", path: "/configuracion/empresa" },
+    { name: "Proveedores", path: "/configuracion/proveedores" },
     { name: "Empleados", path: "/configuracion/empleados" },
-    { name: "Roles y Permisos", path: "/configuracion/roles" },
+    ...(superAdmin ? [{ name: "Suscripciones", path: "/configuracion/suscripciones" }] : []),
+    ...(esTitularSuscripcion
+      ? [{ name: "Mi Suscripcion", path: "/configuracion/mi-suscripcion" }]
+      : []),
     { name: "POS", path: "/configuracion/pos" },
-    // { name: "Inventario", path: "/configuracion/inventario" },
-    { name: "Servicios", path: "/configuracion/servicios" },
+    { name: "Inventario", path: "/configuracion/inventario" },
+    {
+      name: serviciosHabilitados ? "Servicios" : "Canjes y fidelidad",
+      path: "/configuracion/servicios",
+    },
     { name: "Metodos de Pago", path: "/configuracion/metodos" },
     { name: "Apariencia", path: "/configuracion/apariencia" },
     { name: "Notificaciones", path: "/configuracion/notificaciones" },
-    // { name: "Impresoras", path: "/configuracion/impresoras" },
+    { name: "Impresoras", path: "/configuracion/impresoras" },
     // { name: "Respaldos", path: "/configuracion/respaldos" },
     // { name: "Seguridad", path: "/configuracion/seguridad" },
     // { name: "Integraciones", path: "/configuracion/integraciones" },
   ];
+
+  const empleadosActivosVisibles = useMemo(() => {
+    if (!ownerBase) return [];
+
+    return empleadosActivos.filter((emp) => {
+      const owner = String(emp?.cuentaPrincipalUid || emp?.uid || "").trim();
+      return owner === ownerBase;
+    });
+  }, [empleadosActivos, ownerBase]);
+
+  const statsVisibles = useMemo(() => {
+    if (!ownerBase) return { ventas: 0, clientes: 0, servicios: 0 };
+    return {
+      ventas: stats.ventas,
+      clientes: stats.clientes,
+      servicios: serviciosHabilitados ? stats.servicios : 0,
+    };
+  }, [ownerBase, serviciosHabilitados, stats.clientes, stats.servicios, stats.ventas]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -115,8 +153,10 @@ export default function Configuracion() {
   };
 
   useEffect(() => {
+    if (!ownerBase) return undefined;
+
     const unsub = onSnapshot(
-      collection(db, "empleados"),
+      query(collection(db, "empleados"), where("cuentaPrincipalUid", "==", ownerBase)),
       (snapshot) => {
         const activos = snapshot.docs
           .map((item) => ({ id: item.id, ...item.data() }))
@@ -131,7 +171,7 @@ export default function Configuracion() {
     );
 
     return () => unsub();
-  }, []);
+  }, [ownerBase]);
 
   useEffect(() => {
     const t = setInterval(() => setPresenciaAhora(Date.now()), 30000);
@@ -139,8 +179,10 @@ export default function Configuracion() {
   }, []);
 
   useEffect(() => {
+    if (!ownerBase) return undefined;
+
     const unsub = onSnapshot(
-      collection(db, "autorizados"),
+      query(collection(db, "autorizados"), where("cuentaPrincipalUid", "==", ownerBase)),
       (snapshot) => {
         const onlineMap = {};
         snapshot.docs.forEach((item) => {
@@ -165,11 +207,13 @@ export default function Configuracion() {
     );
 
     return () => unsub();
-  }, []);
+  }, [ownerBase]);
 
   useEffect(() => {
+    if (!ownerBase) return undefined;
+
     const unsubVentas = onSnapshot(
-      collection(db, "ventas"),
+      query(collection(db, "ventas"), where("cuentaPrincipalUid", "==", ownerBase)),
       (snap) => {
         let total = 0;
         snap.docs.forEach((item) => {
@@ -183,7 +227,7 @@ export default function Configuracion() {
     );
 
     const unsubClientes = onSnapshot(
-      collection(db, "clientes"),
+      query(collection(db, "clientes"), where("cuentaPrincipalUid", "==", ownerBase)),
       (snap) => {
         setStats((prev) => ({ ...prev, clientes: snap.size }));
       },
@@ -192,22 +236,25 @@ export default function Configuracion() {
       },
     );
 
-    const unsubServicios = onSnapshot(
-      collection(db, "servicios"),
-      (snap) => {
-        setStats((prev) => ({ ...prev, servicios: snap.size }));
-      },
-      (error) => {
-        logSnapshotError("servicios", error);
-      },
-    );
+    let unsubServicios = () => {};
+    if (serviciosHabilitados) {
+      unsubServicios = onSnapshot(
+        query(collection(db, "servicios"), where("cuentaPrincipalUid", "==", ownerBase)),
+        (snap) => {
+          setStats((prev) => ({ ...prev, servicios: snap.size }));
+        },
+        (error) => {
+          logSnapshotError("servicios", error);
+        },
+      );
+    }
 
     return () => {
       unsubVentas();
       unsubClientes();
       unsubServicios();
     };
-  }, []);
+  }, [ownerBase, serviciosHabilitados]);
 
   const handleLogout = async () => {
     const user = auth.currentUser;
@@ -236,7 +283,7 @@ export default function Configuracion() {
     <>
       {showUpdate && <UpdateModal onClose={handleCloseUpdate} />}
 
-      <div className="cfg-layout">
+      <div className={`cfg-layout ${ocultarPanelLateral ? "cfg-layout-no-right" : ""}`}>
         <aside className="cfg-sidebar">
           <h3>Configuracion</h3>
           <div className="cfg-version-chip">Version v{SYSTEM_VERSION}</div>
@@ -253,7 +300,7 @@ export default function Configuracion() {
           </ul>
         </aside>
 
-        <main className="cfg-main">
+        <main className={`cfg-main ${ocultarPanelLateral ? "cfg-main-no-right" : ""}`}>
           {enSubSeccion && (
             <div className="cfg-back-row">
               <button
@@ -268,101 +315,112 @@ export default function Configuracion() {
           <Outlet />
         </main>
 
-        <aside className="cfg-right">
-          <div className="stats">
-            <h4>Estadisticas</h4>
-            <div className="stat">
-              Ventas <strong>{formatCurrency(stats.ventas)}</strong>
+        {!ocultarPanelLateral && (
+          <aside className="cfg-right">
+            <div className="stats">
+              <h4>Estadisticas</h4>
+              <div className="stat">
+                Ventas <strong>{formatCurrency(statsVisibles.ventas)}</strong>
+              </div>
+              {serviciosHabilitados && (
+                <div className="stat">
+                  Servicios <strong>{statsVisibles.servicios}</strong>
+                </div>
+              )}
+              <div className="stat">
+                Clientes <strong>{statsVisibles.clientes}</strong>
+              </div>
             </div>
-            <div className="stat">
-              Servicios <strong>{stats.servicios}</strong>
-            </div>
-            <div className="stat">
-              Clientes <strong>{stats.clientes}</strong>
-            </div>
-          </div>
 
-          <div className="empleados-activos">
-            <h4>Empleados Activos</h4>
-            <ul>
-              {empleadosActivos.map((emp) => {
-                const onlineReal = estaEnLineaReciente(
-                  emp.online,
-                  emp.lastActive,
-                  presenciaAhora,
-                );
+            <div className="empleados-activos">
+              <h4>Empleados Activos</h4>
+              <ul>
+                {empleadosActivosVisibles.map((emp) => {
+                  const onlineReal = estaEnLineaReciente(
+                    emp.online,
+                    emp.lastActive,
+                    presenciaAhora,
+                  );
 
-                return (
-                  <li key={emp.id}>
-                    {emp.nombre}
-                    <span className={onlineReal ? "online" : "offline"}>
-                      {onlineReal ? "En linea" : "Offline"}
-                    </span>
+                  return (
+                    <li key={emp.id}>
+                      {emp.nombre}
+                      <span className={onlineReal ? "online" : "offline"}>
+                        {onlineReal ? "En linea" : "Offline"}
+                      </span>
+                    </li>
+                  );
+                })}
+
+                {empleadosActivosVisibles.length === 0 && (
+                  <li>
+                    <span>Sin empleados activos</span>
+                    <span className="offline">-</span>
                   </li>
-                );
-              })}
-            </ul>
+                )}
+              </ul>
 
-            <button className="btn-logout-right" onClick={handleLogout}>
-              Cerrar Sesion
-            </button>
-          </div>
-
-          <div className="cfg-version-card">
-            <h4>Version del sistema</h4>
-            <div className="cfg-version-row">
-              <span>Version actual</span>
-              <strong>v{SYSTEM_VERSION}</strong>
-            </div>
-            <button
-              type="button"
-              className="cfg-version-btn"
-              onClick={() => setShowUpdate(true)}
-            >
-              Ver novedades
-            </button>
-          </div>
-
-          <div className="cfg-help-card">
-            <div className="cfg-help-head">
-              <h4>Ayuda</h4>
-              <span>Soporte directo</span>
+              <button className="btn-logout-right" onClick={handleLogout}>
+                Cerrar Sesion
+              </button>
             </div>
 
-            <p className="cfg-help-text">
-              Si necesitas apoyo con configuracion, errores o cambios del sistema, puedes
-              contactarme por cualquiera de estos medios.
-            </p>
-
-            <div className="cfg-help-contact">
-              <span>Telefono</span>
-              <strong>{SUPPORT_PHONE}</strong>
-            </div>
-
-            <div className="cfg-help-contact">
-              <span>Correo</span>
-              <strong>{SUPPORT_EMAIL}</strong>
-            </div>
-
-            <div className="cfg-help-actions">
-              <a
-                className="cfg-help-btn cfg-help-btn-whatsapp"
-                href={SUPPORT_WHATSAPP_URL}
-                target="_blank"
-                rel="noreferrer"
+            <div className="cfg-version-card">
+              <h4>Version del sistema</h4>
+              <div className="cfg-version-row">
+                <span>Version actual</span>
+                <strong>v{SYSTEM_VERSION}</strong>
+              </div>
+              <button
+                type="button"
+                className="cfg-version-btn"
+                onClick={() => setShowUpdate(true)}
               >
-                Abrir WhatsApp
-              </a>
-
-              <a
-                className="cfg-help-btn cfg-help-btn-mail"
-                href={SUPPORT_MAILTO_URL}
-              >
-                Enviar correo
-              </a>
+                Ver novedades
+              </button>
             </div>
-          </div>
-        </aside>
+
+            <div className="cfg-help-card">
+              <div className="cfg-help-head">
+                <h4>Ayuda</h4>
+                <span>Soporte directo</span>
+              </div>
+
+              <p className="cfg-help-text">
+                Si necesitas apoyo con configuracion, errores o cambios del sistema, puedes
+                contactarme por cualquiera de estos medios.
+              </p>
+
+              <div className="cfg-help-contact">
+                <span>Telefono</span>
+                <strong>{SUPPORT_PHONE}</strong>
+              </div>
+
+              <div className="cfg-help-contact">
+                <span>Correo</span>
+                <strong>{SUPPORT_EMAIL}</strong>
+              </div>
+
+              <div className="cfg-help-actions">
+                <a
+                  className="cfg-help-btn cfg-help-btn-whatsapp"
+                  href={SUPPORT_WHATSAPP_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Abrir WhatsApp
+                </a>
+
+                <a
+                  className="cfg-help-btn cfg-help-btn-mail"
+                  href={SUPPORT_MAILTO_URL}
+                >
+                  Enviar correo
+                </a>
+              </div>
+            </div>
+          </aside>
+        )}
       </div>
     </>
   );

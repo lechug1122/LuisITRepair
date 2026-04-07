@@ -6,19 +6,29 @@ import {
   getDocs,
   deleteDoc,
   doc,
+  setDoc,
   updateDoc,
-  query,
-  where
+  writeBatch,
 } from "firebase/firestore";
+import {
+  dataBelongsToTenant,
+  allowLegacyTenantFallback,
+  filterItemsByTenant,
+  getTenantCollectionQuery,
+  getLegacyConfigDocRef,
+  getTenantConfigDocRef,
+  withTenantData,
+} from "./tenant";
 
 // OBTENER PRODUCTOS
 export const obtenerProductos = async () => {
-  const querySnapshot = await getDocs(collection(db, "productos"));
+  const querySnapshot = await getDocs(getTenantCollectionQuery("productos"));
 
-  return querySnapshot.docs.map((docSnap) => ({
+  const items = querySnapshot.docs.map((docSnap) => ({
     id: docSnap.id,
     ...docSnap.data(),
   }));
+  return filterItemsByTenant(items);
 };
 
 
@@ -26,11 +36,12 @@ export const obtenerProductos = async () => {
 export const crearProducto = async (data) => {
 
   // 1️⃣ Crear documento
-  const docRef = await addDoc(collection(db, "productos"), data);
+  const docRef = await addDoc(collection(db, "productos"), withTenantData(data));
 
   // 2️⃣ Guardar el ID real dentro del documento
   await updateDoc(docRef, {
-    id: docRef.id
+    id: docRef.id,
+    ...withTenantData({})
   });
 
 };
@@ -39,12 +50,141 @@ export const crearProducto = async (data) => {
 // ACTUALIZAR PRODUCTO
 export const actualizarProducto = async (id, data) => {
   const productoRef = doc(db, "productos", id);
-  await updateDoc(productoRef, data);
+  await updateDoc(productoRef, withTenantData(data));
 };
 
 // ELIMINAR PRODUCTO
 export const eliminarProductoDB = async (id) => {
   await deleteDoc(doc(db, "productos", id));
+};
+
+/* ================= CATEGORIAS INVENTARIO ================= */
+
+function normalizeCategoryName(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeCategoryItem(item, index = 0) {
+  const nombre = String(item?.nombre ?? item ?? "").trim();
+  if (!nombre) return null;
+
+  return {
+    id: String(item?.id || `cat_${index}_${normalizeCategoryName(nombre).replace(/\s+/g, "_")}`),
+    nombre,
+  };
+}
+
+export const obtenerCategoriasInventario = async () => {
+  const inventarioCategoriasRef = getTenantConfigDocRef("inventario_categorias");
+  const snap = await getDoc(inventarioCategoriasRef);
+  if (!snap.exists()) {
+    if (allowLegacyTenantFallback()) {
+      const legacySnap = await getDoc(getLegacyConfigDocRef("inventario_categorias"));
+      if (legacySnap.exists()) {
+        await setDoc(
+          inventarioCategoriasRef,
+          withTenantData({
+            items: Array.isArray(legacySnap.data()?.items) ? legacySnap.data().items : [],
+            updatedAt: new Date(),
+          }),
+          { merge: true },
+        );
+        return obtenerCategoriasInventario();
+      }
+    }
+    return [];
+  }
+
+  const rawItems = Array.isArray(snap.data()?.items) ? snap.data().items : [];
+  const uniques = new Map();
+
+  rawItems.forEach((item, index) => {
+    const normalized = normalizeCategoryItem(item, index);
+    if (!normalized) return;
+    const key = normalizeCategoryName(normalized.nombre);
+    if (!key || uniques.has(key)) return;
+    uniques.set(key, normalized);
+  });
+
+  return [...uniques.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+};
+
+export const crearCategoriaInventario = async (nombre) => {
+  const safeName = String(nombre ?? "").trim();
+  const normalizedName = normalizeCategoryName(safeName);
+  if (!safeName || !normalizedName) {
+    throw new Error("Nombre de categoria invalido");
+  }
+
+  const actuales = await obtenerCategoriasInventario();
+  const existe = actuales.some((item) => normalizeCategoryName(item.nombre) === normalizedName);
+  if (existe) {
+    const error = new Error("La categoria ya existe");
+    error.code = "categoria-existente";
+    throw error;
+  }
+
+  const nueva = {
+    id: `cat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    nombre: safeName,
+  };
+
+  await setDoc(
+    getTenantConfigDocRef("inventario_categorias"),
+    withTenantData({
+      items: [...actuales, nueva],
+      updatedAt: new Date(),
+    }),
+    { merge: true },
+  );
+
+  return nueva;
+};
+
+export const eliminarCategoriaInventario = async (categoria) => {
+  const categoriaNombre = String(categoria?.nombre ?? categoria ?? "").trim();
+  const categoriaId = String(categoria?.id || "").trim();
+  const categoriaKey = normalizeCategoryName(categoriaNombre);
+  if (!categoriaKey) return;
+
+  const actuales = await obtenerCategoriasInventario();
+  const restantes = actuales.filter((item) => {
+    const sameId = categoriaId && String(item.id || "").trim() === categoriaId;
+    const sameName = normalizeCategoryName(item.nombre) === categoriaKey;
+    return !(sameId || sameName);
+  });
+
+  await setDoc(
+    getTenantConfigDocRef("inventario_categorias"),
+    withTenantData({
+      items: restantes,
+      updatedAt: new Date(),
+    }),
+    { merge: true },
+  );
+
+  const productosConCategoria = await getDocs(
+    getTenantCollectionQuery("productos"),
+  );
+
+  const productosFiltrados = productosConCategoria.docs.filter((docSnap) => {
+    const data = docSnap.data() || {};
+    return dataBelongsToTenant(data) && String(data?.categoria || "").trim() === categoriaNombre;
+  });
+
+  if (productosFiltrados.length > 0) {
+    const batch = writeBatch(db);
+    productosFiltrados.forEach((docSnap) => {
+      batch.update(docSnap.ref, { categoria: "" });
+    });
+    await batch.commit();
+  }
 };
 
 /* ================= CLIENTES ================= */
@@ -53,16 +193,15 @@ export const buscarClientePorTelefono = async (telefono) => {
 
   if (!telefono) return null;
 
-  const q = query(
-    collection(db, "clientes"),
-    where("telefono", "==", telefono.trim())
-  );
-
-  const snapshot = await getDocs(q);
-
-  if (snapshot.empty) return null;
-
-  const docSnap = snapshot.docs[0];
+  const snapshot = await getDocs(getTenantCollectionQuery("clientes"));
+  const docSnap = snapshot.docs.find((item) => {
+    const data = item.data() || {};
+    return (
+      dataBelongsToTenant(data) &&
+      String(data?.telefono || "").trim() === telefono.trim()
+    );
+  });
+  if (!docSnap) return null;
 
   return {
     id: docSnap.id,
@@ -84,6 +223,10 @@ export const sumarPuntosCliente = async (clienteId, puntosNuevos) => {
   }
 
   const data = snapshot.data();
+  if (!dataBelongsToTenant(data)) {
+    console.log("Cliente fuera del alcance de la cuenta actual");
+    return;
+  }
 
   // Si no tiene puntos, iniciarlo en 0
   const puntosActuales = data.puntos ?? 0;
@@ -99,7 +242,7 @@ export const sumarPuntosCliente = async (clienteId, puntosNuevos) => {
 /* ================= VENTAS ================= */
 
 export const registrarVenta = async (data) => {
-  const docRef = await addDoc(collection(db, "ventas"), data);
+  const docRef = await addDoc(collection(db, "ventas"), withTenantData(data));
   return docRef.id;
 };
 

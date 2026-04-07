@@ -11,6 +11,10 @@ import {
   readFacturacionConfigStorage,
   saveFacturacionConfigStorage,
 } from "../js/services/facturacion_config";
+import {
+  readInventarioConfigStorage,
+  saveInventarioConfigStorage,
+} from "../js/services/inventario_config";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useMonedaConfig from "../hooks/useMonedaConfig";
 
@@ -43,14 +47,16 @@ function formatFacturaFolio(serie, folio) {
 }
 
 export default function ConfiguracionPOS() {
-  const { nombreEmpresa } = useEmpresaConfig();
+  const { nombreEmpresa, serviciosHabilitados } = useEmpresaConfig();
   const { formatCurrency } = useMonedaConfig();
   const [aplicarIVA, setAplicarIVA] = useState(leerIVAStorage);
   const [ticketCfg, setTicketCfg] = useState(readTicketConfigStorage);
   const [factCfg, setFactCfg] = useState(readFacturacionConfigStorage);
+  const [inventarioCfg, setInventarioCfg] = useState(readInventarioConfigStorage);
   const [guardado, setGuardado] = useState(false);
   const [panelesAbiertos, setPanelesAbiertos] = useState({
     iva: true,
+    catalogo: true,
     facturacion: true,
     ticket: true,
   });
@@ -58,7 +64,10 @@ export default function ConfiguracionPOS() {
   useEffect(() => {
     try {
       localStorage.setItem(IVA_STORAGE_KEY, aplicarIVA ? "1" : "0");
-      const ok = saveTicketConfigStorage(ticketCfg) && saveFacturacionConfigStorage(factCfg);
+      const ok =
+        saveTicketConfigStorage(ticketCfg) &&
+        saveFacturacionConfigStorage(factCfg) &&
+        saveInventarioConfigStorage(inventarioCfg);
       if (!ok) throw new Error("No se pudo guardar ticket config");
       setGuardado(true);
       const t = setTimeout(() => setGuardado(false), 1200);
@@ -67,7 +76,7 @@ export default function ConfiguracionPOS() {
       setGuardado(false);
       return undefined;
     }
-  }, [aplicarIVA, ticketCfg, factCfg]);
+  }, [aplicarIVA, factCfg, inventarioCfg, ticketCfg]);
 
   const actualizarTicket = (key, value) => {
     setTicketCfg((prev) => ({ ...prev, [key]: value }));
@@ -75,6 +84,10 @@ export default function ConfiguracionPOS() {
 
   const actualizarFacturacion = (key, value) => {
     setFactCfg((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const actualizarInventario = (key, value) => {
+    setInventarioCfg((prev) => ({ ...prev, [key]: value }));
   };
 
   const alternarPanel = (panel) => {
@@ -99,14 +112,14 @@ export default function ConfiguracionPOS() {
         esServicio: false,
       },
       {
-        nombre: "Servicio mantenimiento laptop",
+        nombre: serviciosHabilitados ? "Servicio mantenimiento laptop" : "Arroz 1 kg",
         cantidad: 1,
-        precioVenta: 450,
-        esServicio: true,
-        servicioFolio: "S/N04032601",
+        precioVenta: serviciosHabilitados ? 450 : 28,
+        esServicio: serviciosHabilitados,
+        servicioFolio: serviciosHabilitados ? "S/N04032601" : "",
       },
     ],
-    [],
+    [serviciosHabilitados],
   );
 
   const fechaEjemplo = useMemo(() => new Date(), []);
@@ -146,7 +159,7 @@ export default function ConfiguracionPOS() {
       productos: productosEjemplo,
       estado: "Pagado",
       subtotal: subtotalEjemplo,
-      aplicaIVA,
+      aplicaIVA: aplicarIVA,
       ivaPorcentaje: ivaRateEjemplo,
       iva: ivaEjemplo,
       total: totalEjemplo,
@@ -201,6 +214,111 @@ export default function ConfiguracionPOS() {
 
             <small className="cfg-pos-help">
               Este ajuste impacta el total mostrado en POS y el ticket de venta.
+            </small>
+          </div>
+        )}
+      </div>
+
+      <div className="cfg-pos-card cfg-billing-card">
+        <button
+          type="button"
+          className="cfg-collapse-head"
+          onClick={() => alternarPanel("catalogo")}
+          aria-expanded={panelesAbiertos.catalogo}
+        >
+          <div className="cfg-collapse-title-wrap">
+            <h3 className="cfg-collapse-title">Autocompletado por codigo de barras</h3>
+            <p className="cfg-collapse-subtitle">
+              Controla si inventario rellena descripcion y datos base al capturar un codigo.
+            </p>
+          </div>
+          <div className="cfg-collapse-meta">
+            <span
+              className={`cfg-pos-overview-pill ${inventarioCfg.autocompletarDescripcionCodigo ? "on" : "off"}`}
+            >
+              {inventarioCfg.autocompletarDescripcionCodigo
+                ? "Autocompletado activo"
+                : "Autocompletado inactivo"}
+            </span>
+            <span className={`cfg-collapse-arrow ${panelesAbiertos.catalogo ? "open" : ""}`}>v</span>
+          </div>
+        </button>
+
+        {panelesAbiertos.catalogo && (
+          <div className="cfg-collapse-body">
+            <div className="cfg-billing-grid">
+              <div className="cfg-billing-block">
+                <h4>Inventario inteligente</h4>
+                <label className="cfg-check-row">
+                  <input
+                    type="checkbox"
+                    checked={inventarioCfg.autocompletarDescripcionCodigo}
+                    onChange={(e) =>
+                      actualizarInventario("autocompletarDescripcionCodigo", e.target.checked)
+                    }
+                  />
+                  Autocompletar descripcion con el codigo de barras
+                </label>
+                <p className="cfg-catalog-hint">
+                  Cuando el codigo exista en la base, tambien se llenan nombre, categoria,
+                  precios y claves fiscales.
+                </p>
+
+                <label className="cfg-check-row">
+                  <input
+                    type="checkbox"
+                    checked={inventarioCfg.mostrarAvisoCatalogo}
+                    onChange={(e) => actualizarInventario("mostrarAvisoCatalogo", e.target.checked)}
+                    disabled={!inventarioCfg.autocompletarDescripcionCodigo}
+                  />
+                  Mostrar aviso al entrar a inventario
+                </label>
+                <p className="cfg-catalog-hint">
+                  Te recuerda que ya tienes miles de productos cargados y que puedes empezar
+                  escribiendo solo el codigo de barras.
+                </p>
+              </div>
+
+              <div className="cfg-billing-block">
+                <h4>Campos de productos</h4>
+                <label className="cfg-check-row">
+                  <input
+                    type="checkbox"
+                    checked={inventarioCfg.camposProductoCompletos}
+                    onChange={(e) =>
+                      actualizarInventario("camposProductoCompletos", e.target.checked)
+                    }
+                  />
+                  Usar formulario completo al capturar productos
+                </label>
+
+                <div className="cfg-company-managed">
+                  Modo actual del inventario
+                  <strong>{inventarioCfg.camposProductoCompletos ? "Completo" : "Sencillo"}</strong>
+                </div>
+
+                <p className="cfg-catalog-hint">
+                  Completo muestra todos los campos del producto. Sencillo deja solo captura
+                  rapida: codigo, nombre, categoria, marca, tipo, precio de venta, stock,
+                  stock minimo, descripcion y estado.
+                </p>
+              </div>
+
+              <div className="cfg-billing-block cfg-billing-block-wide">
+                <h4>Flujo sugerido</h4>
+                <ul className="cfg-catalog-list">
+                  <li>Captura primero el codigo de barras.</li>
+                  <li>Despues revisa nombre y SKU / clave interna.</li>
+                  <li>
+                    Si existe en alguna base, se actualiza la descripcion fiscal y los datos
+                    relacionados.
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <small className="cfg-pos-help">
+              Esta preferencia aplica al alta de inventario y a la descripcion fiscal del producto.
             </small>
           </div>
         )}
@@ -486,7 +604,13 @@ export default function ConfiguracionPOS() {
             <h4>Visualizador del ticket</h4>
 
             <div className="cfg-ticket-preview-frame">
-              <div className="cfg-ticket-preview-paper">
+              <div
+                className={
+                  ticketCfg.boldAllText
+                    ? "cfg-ticket-preview-paper cfg-ticket-preview-paper-all-bold"
+                    : "cfg-ticket-preview-paper"
+                }
+              >
                 <div className="cfg-ticket-preview-header">
                   {ticketCfg.showLogo && (
                     <div className="cfg-ticket-preview-logo">
@@ -670,6 +794,14 @@ export default function ConfiguracionPOS() {
             <label className="cfg-check-row">
               <input
                 type="checkbox"
+                checked={ticketCfg.boldAllText}
+                onChange={(e) => actualizarTicket("boldAllText", e.target.checked)}
+              />
+              Todas negritas
+            </label>
+            <label className="cfg-check-row">
+              <input
+                type="checkbox"
                 checked={ticketCfg.fullDescription}
                 onChange={(e) => actualizarTicket("fullDescription", e.target.checked)}
               />
@@ -681,7 +813,7 @@ export default function ConfiguracionPOS() {
                 checked={ticketCfg.showProductMeta}
                 onChange={(e) => actualizarTicket("showProductMeta", e.target.checked)}
               />
-              Mostrar tipo (producto/servicio)
+              {serviciosHabilitados ? "Mostrar tipo (producto/servicio)" : "Mostrar tipo del concepto"}
             </label>
             <label className="cfg-check-row">
               <input

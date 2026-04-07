@@ -22,8 +22,8 @@ export const PERMISOS_CATALOGO = [
   },
   {
     key: "productos.ver",
-    label: "Ver productos",
-    description: "Permite abrir y gestionar productos.",
+    label: "Ver inventario",
+    description: "Permite abrir y gestionar el inventario.",
   },
   {
     key: "reportes.ver",

@@ -1,9 +1,9 @@
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
+import { onSnapshot } from "firebase/firestore";
 import {
   isNotificationEnabled,
   readNotificacionesConfigCache,
 } from "./configure_notificaciones";
+import { dataBelongsToTenant, getTenantCollectionQuery } from "./tenant";
 
 function monedaMXN(valor) {
   return Number(valor || 0).toLocaleString("es-MX", {
@@ -53,16 +53,19 @@ export function suscribirNotificacionesGlobales(onNotify) {
 
   unsubs.push(
     onSnapshot(
-      collection(db, "servicios"),
+      getTenantCollectionQuery("servicios"),
       (snap) => {
         if (!listo.servicios) {
-          snap.docs.forEach((d) => cache.servicios.set(d.id, d.data()));
+          snap.docs.forEach((d) => {
+            if (dataBelongsToTenant(d.data())) cache.servicios.set(d.id, d.data());
+          });
           listo.servicios = true;
           return;
         }
 
         snap.docChanges().forEach((change) => {
           const data = change.doc.data();
+          if (!dataBelongsToTenant(data) && !cache.servicios.has(change.doc.id)) return;
           const prev = cache.servicios.get(change.doc.id);
 
           if (change.type === "added") {
@@ -124,16 +127,19 @@ export function suscribirNotificacionesGlobales(onNotify) {
 
   unsubs.push(
     onSnapshot(
-      collection(db, "clientes"),
+      getTenantCollectionQuery("clientes"),
       (snap) => {
         if (!listo.clientes) {
-          snap.docs.forEach((d) => cache.clientes.set(d.id, d.data()));
+          snap.docs.forEach((d) => {
+            if (dataBelongsToTenant(d.data())) cache.clientes.set(d.id, d.data());
+          });
           listo.clientes = true;
           return;
         }
 
         snap.docChanges().forEach((change) => {
           const data = change.doc.data();
+          if (!dataBelongsToTenant(data) && !cache.clientes.has(change.doc.id)) return;
           if (change.type === "added") {
             notificar("clientes_nuevos", {
               tipo: "cliente",
@@ -154,16 +160,19 @@ export function suscribirNotificacionesGlobales(onNotify) {
 
   unsubs.push(
     onSnapshot(
-      collection(db, "productos"),
+      getTenantCollectionQuery("productos"),
       (snap) => {
         if (!listo.productos) {
-          snap.docs.forEach((d) => cache.productos.set(d.id, d.data()));
+          snap.docs.forEach((d) => {
+            if (dataBelongsToTenant(d.data())) cache.productos.set(d.id, d.data());
+          });
           listo.productos = true;
           return;
         }
 
         snap.docChanges().forEach((change) => {
           const data = change.doc.data();
+          if (!dataBelongsToTenant(data) && !cache.productos.has(change.doc.id)) return;
           const prev = cache.productos.get(change.doc.id);
 
           if (change.type === "added") {
@@ -215,16 +224,19 @@ export function suscribirNotificacionesGlobales(onNotify) {
 
   unsubs.push(
     onSnapshot(
-      collection(db, "ventas"),
+      getTenantCollectionQuery("ventas"),
       (snap) => {
         if (!listo.ventas) {
-          snap.docs.forEach((d) => cache.ventas.set(d.id, d.data()));
+          snap.docs.forEach((d) => {
+            if (dataBelongsToTenant(d.data())) cache.ventas.set(d.id, d.data());
+          });
           listo.ventas = true;
           return;
         }
 
         snap.docChanges().forEach((change) => {
           const data = change.doc.data();
+          if (!dataBelongsToTenant(data) && !cache.ventas.has(change.doc.id)) return;
           if (change.type === "added") {
             notificar("ventas_nuevas", {
               tipo: "venta",
@@ -255,16 +267,19 @@ export function suscribirNotificacionesGlobales(onNotify) {
 
   unsubs.push(
     onSnapshot(
-      collection(db, "empleados"),
+      getTenantCollectionQuery("empleados"),
       (snap) => {
         if (!listo.empleados) {
-          snap.docs.forEach((d) => cache.empleados.set(d.id, d.data()));
+          snap.docs.forEach((d) => {
+            if (dataBelongsToTenant(d.data())) cache.empleados.set(d.id, d.data());
+          });
           listo.empleados = true;
           return;
         }
 
         snap.docChanges().forEach((change) => {
           const data = change.doc.data();
+          if (!dataBelongsToTenant(data) && !cache.empleados.has(change.doc.id)) return;
           const prev = cache.empleados.get(change.doc.id);
           const nombre = data?.nombre || prev?.nombre || "Empleado";
 

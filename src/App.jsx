@@ -8,6 +8,7 @@ import Login from "./pages/login";
 import ServicioDetalle from "./pages/servicio_detalle";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PermissionRoute from "./components/PermissionRoute";
+import ServiceModuleRoute from "./components/ServiceModuleRoute";
 import Ticket from "./pages/tickets";
 import StatusScan from "./pages/status_scan";
 import Clientes from "./pages/Clientes";
@@ -24,6 +25,10 @@ import ConfiguracionApariencia from "./pages/ConfiguracionApariencia";
 import ConfiguracionServicios from "./pages/ConfiguracionServicios";
 import ConfiguracionMetodosPago from "./pages/ConfiguracionMetodosPago";
 import ConfiguracionNotificaciones from "./pages/ConfiguracionNotificaciones";
+import ConfiguracionImpresoras from "./pages/ConfiguracionImpresoras";
+import ConfiguracionProveedores from "./pages/ConfiguracionProveedores";
+import ConfiguracionSuscripciones from "./pages/ConfiguracionSuscripciones";
+import ConfiguracionMiSuscripcion from "./pages/ConfiguracionMiSuscripcion";
 import Empleados from "./pages/empleados";
 import PanelGeneral from "./pages/panelgeneralCon";
 
@@ -49,28 +54,41 @@ export default function App() {
         <Route
           path="/hoja_servicio"
           element={
-            <PermissionRoute permission="servicios.crear">
-              <HojaServicio />
-            </PermissionRoute>
+            <ServiceModuleRoute>
+              <PermissionRoute permission="servicios.crear">
+                <HojaServicio />
+              </PermissionRoute>
+            </ServiceModuleRoute>
           }
         />
         <Route
           path="/servicios"
           element={
-            <PermissionRoute permission="servicios.ver">
-              <Servicios />
-            </PermissionRoute>
+            <ServiceModuleRoute>
+              <PermissionRoute permission="servicios.ver">
+                <Servicios />
+              </PermissionRoute>
+            </ServiceModuleRoute>
           }
         />
         <Route
           path="/servicios/:folio"
           element={
-            <PermissionRoute permission="servicios.ver">
-              <ServicioDetalle />
-            </PermissionRoute>
+            <ServiceModuleRoute>
+              <PermissionRoute permission="servicios.ver">
+                <ServicioDetalle />
+              </PermissionRoute>
+            </ServiceModuleRoute>
           }
         />
-        <Route path="/ticket/:folio" element={<Ticket />} />
+        <Route
+          path="/ticket/:folio"
+          element={(
+            <ServiceModuleRoute>
+              <Ticket />
+            </ServiceModuleRoute>
+          )}
+        />
         <Route
           path="/clientes"
           element={
@@ -130,10 +148,36 @@ export default function App() {
             }
           />
           <Route path="pos" element={<ConfiguracionPOS />} />
+          <Route
+            path="suscripciones"
+            element={
+              <PermissionRoute requireSuperAdmin fallbackPath="/configuracion">
+                <ConfiguracionSuscripciones />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="mi-suscripcion"
+            element={
+              <PermissionRoute requireSubscriptionOwner fallbackPath="/configuracion">
+                <ConfiguracionMiSuscripcion />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="inventario"
+            element={
+              <PermissionRoute permission="productos.ver">
+                <Productos embedded />
+              </PermissionRoute>
+            }
+          />
+          <Route path="proveedores" element={<ConfiguracionProveedores />} />
           <Route path="servicios" element={<ConfiguracionServicios />} />
           <Route path="metodos" element={<ConfiguracionMetodosPago />} />
           <Route path="apariencia" element={<ConfiguracionApariencia />} />
           <Route path="notificaciones" element={<ConfiguracionNotificaciones />} />
+          <Route path="impresoras" element={<ConfiguracionImpresoras />} />
         </Route>
       </Route>
 

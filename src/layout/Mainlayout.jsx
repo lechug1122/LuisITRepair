@@ -10,11 +10,16 @@ import {
 import { buildSystemUpdateNotification } from "../js/services/system_updates";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import usePresenciaEmpleado from "../hooks/usePresenciaEmpleado";
+import useSesionDispositivo from "../hooks/useSesionDispositivo";
 import "../css/notificaciones_globales.css";
+import "../css/sesion_dispositivo.css";
 
 export default function MainLayout() {
   const location = useLocation();
-  const { rol } = useAutorizacionActual();
+  const authInfo = useAutorizacionActual();
+  const { rol } = authInfo;
+  const { checking: checkingDeviceSession, conflicto, resolverConflicto, salir } =
+    useSesionDispositivo(authInfo);
   usePresenciaEmpleado();
   const [notificaciones, setNotificaciones] = useState([]);
   const [toasts, setToasts] = useState([]);
@@ -103,11 +108,21 @@ export default function MainLayout() {
     if (!isNotificationEnabled(config, "actualizaciones_sistema")) return;
 
     const updateNoti = buildSystemUpdateNotification();
-    setNotificaciones((prev) => {
-      if (prev.some((item) => item.id === updateNoti.id)) return prev;
-      return [updateNoti, ...prev].slice(0, 50);
+    const frameId = window.requestAnimationFrame(() => {
+      setNotificaciones((prev) => {
+        if (prev.some((item) => item.id === updateNoti.id)) return prev;
+        return [updateNoti, ...prev].slice(0, 50);
+      });
     });
+
+    return () => window.cancelAnimationFrame(frameId);
   }, [esAdmin]);
+
+  const cerrarNotificacion = useCallback((id) => {
+    const safeId = String(id || "");
+    setNotificaciones((prev) => prev.filter((item) => String(item.id || "") !== safeId));
+    setToasts((prev) => prev.filter((item) => String(item.id || "") !== safeId));
+  }, []);
 
   function togglePanelNotificaciones() {
     if (!esAdmin) return;
@@ -148,7 +163,7 @@ export default function MainLayout() {
     syncPOSMobileChrome();
     window.addEventListener("resize", syncPOSMobileChrome);
     return () => window.removeEventListener("resize", syncPOSMobileChrome);
-  }, [location.pathname]);
+  }, [path]);
 
   useEffect(() => {
     const usarFondoServicios = ["/", "/home", "/hoja_servicio", "/servicios"].includes(path);
@@ -165,11 +180,58 @@ export default function MainLayout() {
           notificaciones={notificacionesVisibles}
           noLeidas={noLeidasVisibles}
           mostrarNotificaciones={esAdmin}
+          onDismissNotification={cerrarNotificacion}
         />
       )}
       <main className={shellClassName}>
         <Outlet />
       </main>
+
+      {conflicto ? (
+        <div className="device-session-overlay">
+          <div className="device-session-card">
+            <span className="device-session-kicker">Limite de equipos</span>
+            <h2>Hay mas equipos abiertos de los permitidos</h2>
+            <p>
+              {conflicto.mensaje ||
+                "Esta cuenta principal ya tiene mas sesiones abiertas de las que permite su plan."}
+            </p>
+
+            {Array.isArray(conflicto.otrasSesionesActivas) && conflicto.otrasSesionesActivas.length > 0 ? (
+              <div className="device-session-list">
+                {conflicto.otrasSesionesActivas.map((item) => (
+                  <div key={item.id} className="device-session-item">
+                    <strong>{item.deviceLabel || "Equipo abierto"}</strong>
+                    <span>
+                      Ultima actividad:{" "}
+                      {(item.lastSeen || item.updatedAt || item.createdAt)?.toLocaleString("es-MX") || "Reciente"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="device-session-actions">
+              <button
+                type="button"
+                className="emp-btn emp-btn-primary"
+                onClick={() => resolverConflicto().catch(() => {})}
+                disabled={checkingDeviceSession}
+              >
+                {checkingDeviceSession ? "Cerrando sesiones..." : "Cerrar otras sesiones"}
+              </button>
+              <button
+                type="button"
+                className="emp-btn emp-btn-soft"
+                onClick={() => salir().catch(() => {})}
+                disabled={checkingDeviceSession}
+              >
+                Salir
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {esAdmin && !ocultarChromePOSMovil && (
         <div className="global-toast-stack no-print">
@@ -180,6 +242,14 @@ export default function MainLayout() {
                 <p className="global-toast-title">{n.titulo}</p>
                 <p className="global-toast-detail">{n.detalle}</p>
               </div>
+              <button
+                type="button"
+                className="global-toast-close"
+                aria-label={`Cerrar alerta ${n.titulo}`}
+                onClick={() => cerrarNotificacion(n.id)}
+              >
+                ×
+              </button>
             </div>
           ))}
         </div>

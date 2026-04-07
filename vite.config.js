@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { listLocalPrinters } from './scripts/local_printers.mjs'
+import { printImageBase64, printRawText } from './scripts/windows_raw_print.mjs'
 
 function decodeHtmlEntities(text) {
   return String(text || "")
@@ -48,6 +50,17 @@ function parseMlSearchHtml(html) {
   }
 
   return { results: results.filter((r) => r.title && r.price > 0) };
+}
+
+async function readJsonBody(req) {
+  const chunks = []
+
+  for await (const chunk of req) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+  }
+
+  if (!chunks.length) return {}
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"))
 }
 
 function mlComparatorProxy() {
@@ -126,7 +139,106 @@ function mlComparatorProxy() {
   };
 }
 
+function systemPrinterProxy() {
+  return {
+    name: "system-printer-proxy",
+    configureServer(server) {
+      server.middlewares.use("/api/system/printers", async (_req, res) => {
+        try {
+          const printers = await listLocalPrinters()
+          res.statusCode = 200
+          res.setHeader("Content-Type", "application/json; charset=utf-8")
+          res.setHeader("Access-Control-Allow-Origin", "*")
+          res.end(JSON.stringify({ ok: true, printers, total: printers.length }))
+        } catch (error) {
+          res.statusCode = 500
+          res.setHeader("Content-Type", "application/json; charset=utf-8")
+          res.setHeader("Access-Control-Allow-Origin", "*")
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "No se pudo leer la lista de impresoras de Windows.",
+              detail: error?.message || String(error),
+            })
+          )
+        }
+      })
+
+      server.middlewares.use("/api/system/print-text", async (req, res) => {
+        if ((req.method || "GET").toUpperCase() !== "POST") {
+          res.statusCode = 405
+          res.setHeader("Content-Type", "application/json; charset=utf-8")
+          res.setHeader("Access-Control-Allow-Origin", "*")
+          res.end(JSON.stringify({ ok: false, error: "Metodo no permitido." }))
+          return
+        }
+
+        try {
+          const body = await readJsonBody(req)
+          const result = await printRawText({
+            printerName: body?.printerName || "",
+            text: body?.content || body?.text || "",
+            jobName: body?.jobName || "LuisITRepair Ticket",
+          })
+
+          res.statusCode = 200
+          res.setHeader("Content-Type", "application/json; charset=utf-8")
+          res.setHeader("Access-Control-Allow-Origin", "*")
+          res.end(JSON.stringify(result))
+        } catch (error) {
+          res.statusCode = 500
+          res.setHeader("Content-Type", "application/json; charset=utf-8")
+          res.setHeader("Access-Control-Allow-Origin", "*")
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "No se pudo imprimir en la impresora seleccionada.",
+              detail: error?.message || String(error),
+            })
+          )
+        }
+      })
+
+      server.middlewares.use("/api/system/print-image", async (req, res) => {
+        if ((req.method || "GET").toUpperCase() !== "POST") {
+          res.statusCode = 405
+          res.setHeader("Content-Type", "application/json; charset=utf-8")
+          res.setHeader("Access-Control-Allow-Origin", "*")
+          res.end(JSON.stringify({ ok: false, error: "Metodo no permitido." }))
+          return
+        }
+
+        try {
+          const body = await readJsonBody(req)
+          const result = await printImageBase64({
+            printerName: body?.printerName || "",
+            imageBase64: body?.imageBase64 || body?.imageDataUrl || "",
+            jobName: body?.jobName || "LuisITRepair Ticket",
+            paperSize: body?.paperSize || "a4",
+          })
+
+          res.statusCode = 200
+          res.setHeader("Content-Type", "application/json; charset=utf-8")
+          res.setHeader("Access-Control-Allow-Origin", "*")
+          res.end(JSON.stringify(result))
+        } catch (error) {
+          res.statusCode = 500
+          res.setHeader("Content-Type", "application/json; charset=utf-8")
+          res.setHeader("Access-Control-Allow-Origin", "*")
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: "No se pudo imprimir la imagen del ticket.",
+              detail: error?.message || String(error),
+            })
+          )
+        }
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), mlComparatorProxy()],
+  plugins: [react(), mlComparatorProxy(), systemPrinterProxy()],
 })

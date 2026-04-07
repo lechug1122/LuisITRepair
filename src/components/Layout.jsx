@@ -5,18 +5,26 @@ import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 
 export default function Layout({ children }) {
+  const MOBILE_WORKSPACE_BREAKPOINT = 900;
+  const COMPACT_DESKTOP_BREAKPOINT = 1280;
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { puede } = useAutorizacionActual();
   const { nombreEmpresa } = useEmpresaConfig();
   const esRutaPOS = String(location.pathname || "").toLowerCase() === "/pos";
+  const vistaPOS = esRutaPOS
+    ? (new URLSearchParams(location.search).get("vista") === "clientes" ? "clientes" : "ventas")
+    : "";
 
   useEffect(() => {
     const syncSidebarForViewport = () => {
-      if (window.innerWidth <= 900) {
+      if (window.innerWidth <= MOBILE_WORKSPACE_BREAKPOINT) {
         setSidebarOpen(true);
+        return;
       }
+
+      setSidebarOpen(window.innerWidth > COMPACT_DESKTOP_BREAKPOINT);
     };
 
     syncSidebarForViewport();
@@ -31,11 +39,38 @@ export default function Layout({ children }) {
   }, [esRutaPOS]);
 
   const menuItems = [
-    { label: "Ventas", path: "/POS", emoji: "🛒", permission: "ventas.pos" },
-    { label: "Productos", path: "/productos", emoji: "📦", permission: "productos.ver" },
-    { label: "Clientes", path: "/clientes", emoji: "👥", permission: "clientes.ver" },
-    { label: "Reportes", path: "/reportes", emoji: "📊", permission: "reportes.ver" },
+    {
+      label: "Ventas",
+      path: "/POS",
+      emoji: "🛒",
+      permission: "ventas.pos",
+      active: esRutaPOS ? vistaPOS === "ventas" : location.pathname === "/POS",
+    },
+    {
+      label: "Inventario",
+      path: "/productos",
+      emoji: "📦",
+      permission: "productos.ver",
+      active: location.pathname === "/productos",
+    },
+    {
+      label: "Clientes",
+      path: esRutaPOS ? "/POS?vista=clientes" : "/clientes",
+      emoji: "👥",
+      permission: "clientes.ver",
+      active: esRutaPOS
+        ? vistaPOS === "clientes"
+        : String(location.pathname || "").startsWith("/clientes"),
+    },
+    {
+      label: "Reportes",
+      path: "/reportes",
+      emoji: "📊",
+      permission: "reportes.ver",
+      active: location.pathname === "/reportes",
+    },
   ].filter((item) => puede(item.permission));
+
   const marcaVisible = nombreEmpresa || "LuisITRepair";
   const inicialMarca = marcaVisible.trim().charAt(0).toUpperCase() || "L";
 
@@ -70,7 +105,7 @@ export default function Layout({ children }) {
           {menuItems.map((item) => (
             <li
               key={item.path}
-              className={location.pathname === item.path ? "active" : ""}
+              className={item.active ? "active" : ""}
               onClick={() => navigate(item.path)}
               title={item.label}
             >

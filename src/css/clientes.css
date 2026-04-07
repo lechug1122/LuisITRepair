@@ -709,10 +709,34 @@
 
 .detalle-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  gap: 14px;
   margin-bottom: 22px;
-  align-items: start;
+}
+
+.detalle-grid:not(.detalle-grid-comercial) {
+  grid-template-columns: minmax(0, 1.45fr) minmax(220px, 0.72fr) minmax(240px, 0.82fr);
+  grid-template-areas:
+    "resumen acciones notas"
+    "resumen ultimo actividad";
+  align-items: stretch;
+  width: min(100%, 1180px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.detalle-grid.detalle-grid-comercial {
+  grid-template-columns: minmax(0, 1.35fr) minmax(250px, 0.82fr) minmax(300px, 0.95fr);
+  grid-template-areas: "resumen acciones notas";
+  gap: 14px;
+  align-items: stretch;
+}
+
+.detalle-grid:not(.detalle-grid-comercial) .detalle-card {
+  height: 100%;
+}
+
+.detalle-grid:not(.detalle-grid-comercial) .detalle-card-actions {
+  align-self: stretch;
 }
 
 .detalle-card {
@@ -722,6 +746,43 @@
   padding: 16px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
   height: fit-content;
+}
+
+.detalle-card-resumen {
+  grid-area: resumen;
+  padding: 18px 20px;
+  background:
+    radial-gradient(circle at top right, rgba(59, 130, 246, 0.12), transparent 38%),
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.detalle-card-actions {
+  grid-area: acciones;
+  align-self: start;
+}
+
+.detalle-card-ultimo-servicio {
+  grid-area: ultimo;
+}
+
+.detalle-card-actividad {
+  grid-area: actividad;
+}
+
+.detalle-grid.detalle-grid-comercial .detalle-card {
+  height: 100%;
+}
+
+.detalle-grid.detalle-grid-comercial .detalle-card-actions {
+  position: static;
+}
+
+.detalle-grid.detalle-grid-comercial .detalle-card-notas {
+  min-height: 0;
+}
+
+.detalle-grid:not(.detalle-grid-comercial) .detalle-card-notas {
+  min-height: 0;
 }
 
 .detalle-title {
@@ -735,15 +796,94 @@
 
 .detalle-main {
   color: #1e293b;
-  font-size: 15px;
-  font-weight: 600;
-  margin-bottom: 8px;
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.05;
+  margin-bottom: 0;
 }
 
 .detalle-muted {
   margin: 0;
   color: #475569;
   font-size: 13px;
+}
+
+.detalle-resumen-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.detalle-resumen-total {
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 1rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.detalle-resumen-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.detalle-stat-pill {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid #dbeafe;
+  display: grid;
+  gap: 6px;
+}
+
+.detalle-stat-pill span {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.detalle-stat-pill strong {
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.detalle-productos-top {
+  display: grid;
+  gap: 10px;
+}
+
+.detalle-productos-label {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.detalle-productos-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.detalle-producto-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .mini-chart {
@@ -808,7 +948,109 @@
 }
 
 .detalle-card-notas {
-  grid-column: 1 / -1;
+  grid-area: notas;
+  min-height: 100%;
+}
+
+.compras-section {
+  margin-bottom: 22px;
+  padding: 18px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+}
+
+.compras-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.compras-section-head h3 {
+  margin: 2px 0 0;
+  font-size: 1.2rem;
+  color: #0f172a;
+}
+
+.compras-badge {
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 0.85rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.compras-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.compra-card {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #dbe7f3;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.compra-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.compra-card-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.compra-card-copy strong {
+  color: #0f172a;
+  font-size: 0.98rem;
+}
+
+.compra-card-copy span {
+  color: #64748b;
+  font-size: 0.87rem;
+}
+
+.compra-total {
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.compra-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.compra-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.compra-items {
+  margin: 0;
+  padding-left: 18px;
+  color: #334155;
+  display: grid;
+  gap: 4px;
 }
 
 .detalle-notas-head {
@@ -842,11 +1084,41 @@
 
 @media (max-width: 980px) {
   .detalle-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "resumen"
+      "acciones"
+      "ultimo"
+      "actividad"
+      "notas";
+  }
+
+  .detalle-grid:not(.detalle-grid-comercial) {
+    width: 100%;
   }
 
   .detalle-card-notas {
-    grid-column: 1 / -1;
+    min-height: auto;
+  }
+
+  .detalle-card-actions {
+    position: static;
+  }
+
+  .detalle-resumen-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .detalle-grid.detalle-grid-comercial {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "resumen"
+      "acciones"
+      "notas";
+  }
+
+  .compras-section-head {
+    flex-direction: column;
   }
 }
 
@@ -885,6 +1157,20 @@
 
   .detalle-grid {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "resumen"
+      "acciones"
+      "ultimo"
+      "actividad"
+      "notas";
+  }
+
+  .detalle-grid:not(.detalle-grid-comercial) {
+    width: 100%;
+  }
+
+  .detalle-resumen-head {
+    flex-direction: column;
   }
 }
 
@@ -975,6 +1261,10 @@
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
+  }
+
+  .compra-card-head {
+    flex-direction: column;
   }
 }
 
@@ -1358,11 +1648,94 @@
   text-align: center;
 }
 
+.clientes-page-embedded {
+  min-height: auto;
+  padding: 0;
+  background: transparent;
+}
+
+.clientes-container-embedded {
+  max-width: none;
+}
+
+.clientes-header-embedded {
+  margin-bottom: 20px;
+}
+
+.clientes-page-embedded .clientes-hero-animated {
+  padding: 32px 34px;
+  border-radius: 24px;
+  box-shadow: 0 18px 32px rgba(15, 23, 42, 0.14);
+}
+
+.clientes-page-embedded .clientes-hero-content h1 {
+  font-size: clamp(2rem, 4vw, 2.7rem);
+}
+
+.clientes-page-embedded .clientes-hero-content p {
+  max-width: 720px;
+  font-size: 15px;
+}
+
+.clientes-embed-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #eff6ff;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.clientes-search-embedded input {
+  margin-bottom: 24px;
+}
+
+.clientes-loyalty-strip-embedded {
+  margin-bottom: 26px;
+}
+
+.clientes-grid-embedded {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+.cliente-card-embedded {
+  min-height: 116px;
+}
+
+.cliente-card-embedded .cliente-arrow {
+  min-width: 52px;
+  height: 40px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cliente-card-embedded:hover .cliente-arrow {
+  transform: translateX(0);
+  color: #1d4ed8;
+}
+
 @media (max-width: 980px) {
   .clientes-loyalty-strip,
   .puntos-board,
   .canje-grid {
     grid-template-columns: 1fr;
+  }
+
+  .clientes-page-embedded .clientes-hero-top {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .puntos-board-stats {
@@ -1384,6 +1757,10 @@
   .canje-section-head-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .clientes-page-embedded .clientes-hero-animated {
+    padding: 24px 22px;
   }
 
   .stepper-box {

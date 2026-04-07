@@ -6,17 +6,20 @@
   justify-content: center;
   align-items: center;
   z-index: 10001;
+  padding: 16px;
+  overflow-y: auto;
 }
 
 .comparador-modal {
   width: 920px;
   max-width: 96%;
-  max-height: 90vh;
+  max-height: min(90dvh, 920px);
   overflow: auto;
   background: #ffffff;
   border-radius: 14px;
   padding: 18px;
   box-shadow: 0 20px 45px rgba(0, 0, 0, 0.25);
+  overscroll-behavior: contain;
 }
 
 .comparador-modal button {
@@ -160,6 +163,28 @@
 }
 
 @media (max-width: 760px) {
+  .comparador-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .comparador-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: min(92dvh, 100%);
+    border-radius: 18px 18px 0 0;
+    padding: 14px;
+  }
+
+  .comparador-header {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .comparador-busqueda {
+    grid-template-columns: 1fr;
+  }
+
   .comparador-metricas {
     grid-template-columns: 1fr;
   }

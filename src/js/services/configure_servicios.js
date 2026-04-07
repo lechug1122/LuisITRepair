@@ -1,7 +1,12 @@
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
+import { getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  allowLegacyTenantFallback,
+  buildTenantStorageKey,
+  getLegacyConfigDocRef,
+  getTenantConfigDocRef,
+  withTenantData,
+} from "./tenant";
 
-const serviciosRef = doc(db, "configuracion", "servicios");
 const SERVICIOS_STORAGE_KEY = "servicios_config_cache_v1";
 
 export const DEFAULT_TERMINOS_SERVICIO = [
@@ -155,7 +160,7 @@ function saveServiciosConfigCache(config) {
 
   try {
     localStorage.setItem(
-      SERVICIOS_STORAGE_KEY,
+      buildTenantStorageKey(SERVICIOS_STORAGE_KEY),
       JSON.stringify(normalizeServiciosConfig(config)),
     );
   } catch {
@@ -169,7 +174,7 @@ export function readServiciosConfigCache() {
   }
 
   try {
-    const raw = localStorage.getItem(SERVICIOS_STORAGE_KEY);
+    const raw = localStorage.getItem(buildTenantStorageKey(SERVICIOS_STORAGE_KEY));
     if (!raw) return normalizeServiciosConfig(DEFAULT_SERVICIOS_CONFIG);
     return normalizeServiciosConfig(JSON.parse(raw));
   } catch {
@@ -177,22 +182,38 @@ export function readServiciosConfigCache() {
   }
 }
 
+async function hydrateServiciosDoc(ref) {
+  if (allowLegacyTenantFallback()) {
+    const legacySnap = await getDoc(getLegacyConfigDocRef("servicios"));
+    if (legacySnap.exists()) {
+      const normalizedLegacy = normalizeServiciosConfig(legacySnap.data());
+      await setDoc(
+        ref,
+        { ...withTenantData(normalizedLegacy), updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      return normalizedLegacy;
+    }
+  }
+
+  const defaults = normalizeServiciosConfig(DEFAULT_SERVICIOS_CONFIG);
+  await setDoc(
+    ref,
+    { ...withTenantData(defaults), updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+  return defaults;
+}
+
 export async function obtenerServiciosConfig() {
   try {
+    const serviciosRef = getTenantConfigDocRef("servicios");
     const snap = await getDoc(serviciosRef);
 
     if (!snap.exists()) {
-      const defaults = normalizeServiciosConfig(DEFAULT_SERVICIOS_CONFIG);
-      saveServiciosConfigCache(defaults);
-      await setDoc(
-        serviciosRef,
-        {
-          ...defaults,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      return defaults;
+      const hydrated = await hydrateServiciosDoc(serviciosRef);
+      saveServiciosConfigCache(hydrated);
+      return hydrated;
     }
 
     const normalized = normalizeServiciosConfig(snap.data());
@@ -205,20 +226,19 @@ export async function obtenerServiciosConfig() {
 }
 
 export function escucharServiciosConfig(callback, onError) {
+  const serviciosRef = getTenantConfigDocRef("servicios");
   return onSnapshot(
     serviciosRef,
     (snap) => {
       if (!snap.exists()) {
         const defaults = readServiciosConfigCache();
         callback(defaults);
-        setDoc(
-          serviciosRef,
-          {
-            ...defaults,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        ).catch(() => {});
+        hydrateServiciosDoc(serviciosRef)
+          .then((normalized) => {
+            saveServiciosConfigCache(normalized);
+            callback(normalized);
+          })
+          .catch(() => {});
         return;
       }
 
@@ -235,13 +255,14 @@ export function escucharServiciosConfig(callback, onError) {
 }
 
 export async function actualizarServiciosConfig(config) {
+  const serviciosRef = getTenantConfigDocRef("servicios");
   const normalized = normalizeServiciosConfig(config);
 
   saveServiciosConfigCache(normalized);
   await setDoc(
     serviciosRef,
     {
-      ...normalized,
+      ...withTenantData(normalized),
       updatedAt: serverTimestamp(),
     },
     { merge: true },

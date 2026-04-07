@@ -8,6 +8,7 @@ export function createDefaultTicketConfig() {
   return {
     showLogo: true,
     showBusinessData: true,
+    boldAllText: true,
     businessName: empresa.nombre,
     businessAddress: "",
     businessPhone: "",
@@ -47,6 +48,7 @@ export function buildTicketConfig(raw = {}) {
   return {
     showLogo: toBool(raw.showLogo, defaults.showLogo),
     showBusinessData: toBool(raw.showBusinessData, defaults.showBusinessData),
+    boldAllText: toBool(raw.boldAllText, defaults.boldAllText),
     businessName: toText(raw.businessName, defaults.businessName),
     businessAddress: toText(raw.businessAddress, defaults.businessAddress),
     businessPhone: toText(raw.businessPhone, defaults.businessPhone),

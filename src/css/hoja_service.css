@@ -179,6 +179,12 @@
   background: rgba(63, 135, 166, 0.1);
 }
 
+.hoja-page .cliente-sug-item.active,
+.hoja-page .cliente-sug-item:focus-visible {
+  background: rgba(63, 135, 166, 0.16);
+  outline: none;
+}
+
 .hoja-page .cliente-sug-nombre {
   color: #111827;
   font-size: 14px;
@@ -241,6 +247,74 @@
   border: 1px solid #bfdaf1;
   border-radius: 14px;
   background: linear-gradient(180deg, #f8fcff, #ffffff);
+}
+
+.hoja-automotriz-visual-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #bfdaf1;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fbff, #ffffff);
+}
+
+.hoja-automotriz-visual-head {
+  display: grid;
+  gap: 4px;
+}
+
+.hoja-automotriz-visual-head strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.hoja-automotriz-visual-head span {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.hoja-automotriz-visual-img {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid #dbe7f7;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.hoja-service-terms-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #bfdaf1;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #f8fbff, #ffffff);
+}
+
+.hoja-service-terms-head {
+  display: grid;
+  gap: 4px;
+}
+
+.hoja-service-terms-head strong {
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.hoja-service-terms-head span {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.hoja-service-terms-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  color: #334155;
+}
+
+.hoja-service-terms-list li {
+  line-height: 1.55;
 }
 
 .hoja-service-policy-head {

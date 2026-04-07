@@ -3,13 +3,13 @@ import { useNavigate, useParams } from "react-router-dom";
 import "../css/status.css";
 
 import {
-  getFirestore,
   collection,
   query,
   where,
   limit,
   onSnapshot,
 } from "firebase/firestore";
+import { db } from "../initializer/firebase";
 
 const COLLECTION = "servicios";
 
@@ -22,6 +22,11 @@ function normalizarStatus(raw) {
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, "_")
     .trim();
+}
+
+function permitePrecioCero(status) {
+  const s = normalizarStatus(status);
+  return s === "cancelado" || s === "no_reparable";
 }
 
 function formatFecha(ts) {
@@ -335,7 +340,6 @@ export default function StatusDetalleCliente() {
     const f = (folio || "").trim();
     if (!f) return undefined;
 
-    const db = getFirestore();
     setLoading(true);
     setServicio(null);
     setLookupError("");
@@ -381,8 +385,17 @@ export default function StatusDetalleCliente() {
     }
 
     const raw = servicio?.costo;
-    const amount = Number(String(raw ?? "").replace(/[^\d.]/g, ""));
-    if (!Number.isFinite(amount) || amount <= 0) {
+    const sanitized = String(raw ?? "").replace(/[^\d.]/g, "");
+    if (!sanitized) {
+      return "El precio aparecera cuando el estatus sea actualizado.";
+    }
+
+    const amount = Number(sanitized);
+    if (
+      !Number.isFinite(amount) ||
+      amount < 0 ||
+      (amount === 0 && !permitePrecioCero(servicio?.status))
+    ) {
       return "El precio aparecera cuando el estatus sea actualizado.";
     }
 

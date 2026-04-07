@@ -1,7 +1,12 @@
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
+import { getDoc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  allowLegacyTenantFallback,
+  buildTenantStorageKey,
+  getLegacyConfigDocRef,
+  getTenantConfigDocRef,
+  withTenantData,
+} from "./tenant";
 
-const monedaRef = doc(db, "configuracion", "moneda");
 const MONEDA_STORAGE_KEY = "moneda_config_cache_v1";
 
 export const LATAM_CURRENCY_OPTIONS = [
@@ -64,7 +69,10 @@ function saveMonedaConfigCache(config) {
 
   try {
     const normalized = normalizeMonedaConfig(config);
-    localStorage.setItem(MONEDA_STORAGE_KEY, JSON.stringify({ code: normalized.code }));
+    localStorage.setItem(
+      buildTenantStorageKey(MONEDA_STORAGE_KEY),
+      JSON.stringify({ code: normalized.code }),
+    );
   } catch {
     // noop
   }
@@ -76,7 +84,7 @@ export function readMonedaConfigCache() {
   }
 
   try {
-    const raw = localStorage.getItem(MONEDA_STORAGE_KEY);
+    const raw = localStorage.getItem(buildTenantStorageKey(MONEDA_STORAGE_KEY));
     if (!raw) return { ...DEFAULT_MONEDA_CONFIG };
     const parsed = JSON.parse(raw);
     return normalizeMonedaConfig(parsed);
@@ -94,22 +102,38 @@ export function formatCurrency(value, config, options = {}) {
   }).format(toNumber(value));
 }
 
+async function hydrateMonedaDoc(ref) {
+  if (allowLegacyTenantFallback()) {
+    const legacySnap = await getDoc(getLegacyConfigDocRef("moneda"));
+    if (legacySnap.exists()) {
+      const normalizedLegacy = normalizeMonedaConfig(legacySnap.data());
+      await setDoc(
+        ref,
+        { ...withTenantData({ code: normalizedLegacy.code }), updatedAt: serverTimestamp() },
+        { merge: true },
+      );
+      return normalizedLegacy;
+    }
+  }
+
+  const defaults = { code: DEFAULT_MONEDA_CONFIG.code };
+  await setDoc(
+    ref,
+    { ...withTenantData(defaults), updatedAt: serverTimestamp() },
+    { merge: true },
+  );
+  return normalizeMonedaConfig(defaults);
+}
+
 export const obtenerMoneda = async () => {
   try {
+    const monedaRef = getTenantConfigDocRef("moneda");
     const snap = await getDoc(monedaRef);
 
     if (!snap.exists()) {
-      const defaults = { code: DEFAULT_MONEDA_CONFIG.code };
-      saveMonedaConfigCache(defaults);
-      await setDoc(
-        monedaRef,
-        {
-          ...defaults,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      return normalizeMonedaConfig(defaults);
+      const hydrated = await hydrateMonedaDoc(monedaRef);
+      saveMonedaConfigCache(hydrated);
+      return hydrated;
     }
 
     const normalized = normalizeMonedaConfig(snap.data());
@@ -122,20 +146,19 @@ export const obtenerMoneda = async () => {
 };
 
 export const escucharMoneda = (callback, onError) => {
+  const monedaRef = getTenantConfigDocRef("moneda");
   return onSnapshot(
     monedaRef,
     (snap) => {
       if (!snap.exists()) {
         const defaults = readMonedaConfigCache();
         callback(defaults);
-        setDoc(
-          monedaRef,
-          {
-            code: defaults.code,
-            updatedAt: serverTimestamp(),
-          },
-          { merge: true },
-        ).catch(() => {});
+        hydrateMonedaDoc(monedaRef)
+          .then((normalized) => {
+            saveMonedaConfigCache(normalized);
+            callback(normalized);
+          })
+          .catch(() => {});
         return;
       }
 
@@ -152,13 +175,14 @@ export const escucharMoneda = (callback, onError) => {
 };
 
 export const actualizarMoneda = async (code) => {
+  const monedaRef = getTenantConfigDocRef("moneda");
   const normalized = normalizeMonedaConfig({ code: toText(code, DEFAULT_MONEDA_CONFIG.code) });
   saveMonedaConfigCache(normalized);
 
   await setDoc(
     monedaRef,
     {
-      code: normalized.code,
+      ...withTenantData({ code: normalized.code }),
       updatedAt: serverTimestamp(),
     },
     { merge: true },

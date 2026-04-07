@@ -1,25 +1,41 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../initializer/firebase";
-import { esUsuarioAutorizado } from "../js/services/autorizacion";
+import { obtenerEstadoAutorizacion } from "../js/services/autorizacion";
 import PageLoader from "./PageLoader";
 
 export default function ProtectedRoute({ children }) {
   const [loading, setLoading] = useState(true);
   const [permitido, setPermitido] = useState(false);
+  const [mensajeAcceso, setMensajeAcceso] = useState("");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         setPermitido(false);
+        setMensajeAcceso("");
         setLoading(false);
         return;
       }
 
-      const ok = await esUsuarioAutorizado(user.uid);
-      setPermitido(ok);
-      setLoading(false);
+      try {
+        const estado = await obtenerEstadoAutorizacion(user.uid);
+        setPermitido(estado.permitido);
+        setMensajeAcceso(estado.mensaje || "");
+
+        if (!estado.permitido) {
+          await signOut(auth).catch(() => {});
+        }
+      } catch (error) {
+        setPermitido(false);
+        setMensajeAcceso(
+          String(error?.message || "").trim() || "No se pudo validar tu acceso.",
+        );
+        await signOut(auth).catch(() => {});
+      } finally {
+        setLoading(false);
+      }
     });
 
     return () => unsub();
@@ -27,7 +43,15 @@ export default function ProtectedRoute({ children }) {
 
   if (loading) return <PageLoader text="Validando acceso..." />;
 
-  if (!permitido) return <Navigate to="/login" replace />;
+  if (!permitido) {
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={mensajeAcceso ? { accessMessage: mensajeAcceso } : undefined}
+      />
+    );
+  }
 
   return children;
 }

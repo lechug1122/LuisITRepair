@@ -1,107 +1,148 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import "../css/hoja_service.css";
 import doneCsv from "../csv/mindfactory_done.csv?raw";
 import updatedCsv from "../csv/mindfactory_updated.csv?raw";
 import { guardarServicio } from "../js/services/servicios_firestore";
-import { useLocation, useNavigate } from "react-router-dom";
-
 import {
   cargarCatalogoEquiposDesdeTextos,
   obtenerSpecsPorModelo,
 } from "../js/models_equipos";
 import { generarPdfHojaServicio } from "../js/services/pdf_hoja_servicio";
+import useImpresorasConfig from "../hooks/useImpresorasConfig";
 import useServiciosConfig from "../hooks/useServiciosConfig";
-
-// ✅ NUEVO (buscador + create/update cliente)
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
+import {
+  buildCamposPersonalizados,
+  getCamposVisiblesTipoNegocio,
+  getTipoNegocioActivo,
+} from "../js/services/tipos_negocio";
 import {
   buscarClientesSimilares,
   crearCliente,
   actualizarCliente,
 } from "../js/services/clientes_firestore";
 
-const initialForm = {
-  // Cliente
-  nombre: "",
-  direccion: "",
-  telefono: "",
+function buildInitialForm(tipoNegocio) {
+  return {
+    nombre: "",
+    direccion: "",
+    telefono: "",
+    tipoDispositivo: "",
+    marca: "",
+    modelo: "",
+    numeroSerie: "",
+    omitirNumeroSerie: false,
+    trabajo: "",
+    costo: "",
+    precioDespues: false,
+    caracteristicasPendientes: false,
+    camposPersonalizados: buildCamposPersonalizados(tipoNegocio),
+  };
+}
 
-  // Dispositivo
-  tipoDispositivo: "",
-  marca: "",
-  modelo: "",
-  numeroSerie: "",
-  omitirNumeroSerie: false,
-
-  // Laptop/PC
-  procesador: "",
-  ram: "",
-  disco: "",
-  estadoPantalla: "Funciona bien",
-  estadoTeclado: "Funciona bien",
-  estadoMouse: "Funciona bien",
-  funciona: "Sí",
-  enciendeEquipo: "Sí",
-  contrasenaEquipo: "",
-
-  // Impresora
-  tipoImpresora: "Inyección de tinta",
-  imprime: "Sí",
-  condicionesImpresora: "",
-
-  // Monitor
-  tamanoMonitor: "",
-  colores: "Sí",
-  condicionesMonitor: "",
-
-  // Otros
-  trabajo: "",
-  costo: "",
-  precioDespues: false,
-  caracteristicasPendientes: false,
-};
+function hasValueByField(campo, value) {
+  if (campo.tipo === "checkbox") return !!value;
+  return String(value ?? "").trim().length > 0;
+}
 
 export default function HojaServicio() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { empresa } = useEmpresaConfig();
+  const {
+    imprimirAlIniciarServicio,
+    documentoAlIniciarServicio,
+    modoImpresion,
+    nombreImpresoraHojaServicio,
+    tamanoHojaServicio,
+  } = useImpresorasConfig();
+  const tipoNegocioActivo = useMemo(() => getTipoNegocioActivo(empresa), [empresa]);
   const {
     hojaServicioHabilitada,
     terminosServicio,
     politicaRetardo,
   } = useServiciosConfig();
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState(() => buildInitialForm(tipoNegocioActivo));
 
-  // ✅ catálogo desde CSV
   const [marcasModelos, setMarcasModelos] = useState({});
   const [modelosData, setModelosData] = useState({});
-
-  // ✅ autocomplete (clientes)
   const [sugerencias, setSugerencias] = useState([]);
   const [showSug, setShowSug] = useState(false);
-  const [selectedCliente, setSelectedCliente] = useState(null); // {id,...} o null
+  const [highlightedSugIndex, setHighlightedSugIndex] = useState(-1);
+  const [selectedCliente, setSelectedCliente] = useState(null);
 
   const lastQueryRef = useRef("");
   const nombreWrapRef = useRef(null);
+  const sugerenciaRefs = useRef([]);
+  const prevTipoNegocioIdRef = useRef(tipoNegocioActivo?.id || "");
 
   const marcas = useMemo(
     () => ["Apple", "MSI", "Lenovo", "Acer", "Dell", "Ateck", "Asus", "HP"],
     [],
   );
 
-  // ✅ cargar CSVs una sola vez
+  const deviceOptions = tipoNegocioActivo?.opcionesTipoDispositivo || [];
+  const camposVisibles = useMemo(
+    () => getCamposVisiblesTipoNegocio(tipoNegocioActivo, form.tipoDispositivo),
+    [tipoNegocioActivo, form.tipoDispositivo],
+  );
+  const usaCatalogoComputo =
+    tipoNegocioActivo?.id === "soporte-computo" &&
+    (form.tipoDispositivo === "laptop" || form.tipoDispositivo === "pc");
+  const modelos = useMemo(() => {
+    if (!usaCatalogoComputo) return [];
+    return marcasModelos[form.marca] || [];
+  }, [usaCatalogoComputo, marcasModelos, form.marca]);
+  const terminosHoja = useMemo(
+    () => (Array.isArray(terminosServicio) ? terminosServicio.filter(Boolean) : []),
+    [terminosServicio],
+  );
+
+  useEffect(() => {
+    setForm((prev) => {
+      const prevTipoNegocioId = prevTipoNegocioIdRef.current;
+      const currentTipoNegocioId = tipoNegocioActivo?.id || "";
+      const currentDeviceStillExists = deviceOptions.some(
+        (option) => option.value === prev.tipoDispositivo,
+      );
+
+      if (prevTipoNegocioId && currentTipoNegocioId && prevTipoNegocioId !== currentTipoNegocioId) {
+        prevTipoNegocioIdRef.current = currentTipoNegocioId;
+        return {
+          ...buildInitialForm(tipoNegocioActivo),
+          nombre: prev.nombre,
+          direccion: prev.direccion,
+          telefono: prev.telefono,
+        };
+      }
+
+      prevTipoNegocioIdRef.current = currentTipoNegocioId;
+
+      return {
+        ...prev,
+        tipoDispositivo: currentDeviceStillExists ? prev.tipoDispositivo : "",
+        camposPersonalizados: buildCamposPersonalizados(
+          tipoNegocioActivo,
+          prev.camposPersonalizados,
+        ),
+      };
+    });
+  }, [tipoNegocioActivo, deviceOptions]);
+
   useEffect(() => {
     let alive = true;
 
     async function load() {
       try {
-        const { marcasModelos, modelosData } =
-          await cargarCatalogoEquiposDesdeTextos({
-            marcas,
-            csvTexts: [doneCsv, updatedCsv],
-          });
+        const catalogo = await cargarCatalogoEquiposDesdeTextos({
+          marcas,
+          csvTexts: [doneCsv, updatedCsv],
+        });
 
         if (!alive) return;
-        setMarcasModelos(marcasModelos);
-        setModelosData(modelosData);
+        setMarcasModelos(catalogo.marcasModelos);
+        setModelosData(catalogo.modelosData);
       } catch (err) {
         console.error("Error cargando catalogo:", err);
       }
@@ -113,12 +154,6 @@ export default function HojaServicio() {
     };
   }, [marcas]);
 
-  // ✅ modelos filtrados por marca seleccionada
-  const modelos = useMemo(() => {
-    return marcasModelos[form.marca] || [];
-  }, [marcasModelos, form.marca]);
-
-  // ✅ prefill desde detalle de cliente
   useEffect(() => {
     const cli = location.state?.prefillCliente;
     if (!cli?.id) return;
@@ -143,39 +178,13 @@ export default function HojaServicio() {
     }));
     setSugerencias([]);
     setShowSug(false);
+    setHighlightedSugIndex(-1);
     lastQueryRef.current = "";
   }, [location.state]);
 
-  const cpuOpciones = useMemo(
-    () => [
-      "Intel Core i3",
-      "Intel Core i5",
-      "Intel Core i7",
-      "AMD Ryzen 5",
-      "AMD Ryzen 7",
-    ],
-    [],
-  );
-  const ramOpciones = useMemo(() => ["4 GB", "8 GB", "16 GB", "32 GB"], []);
-  const discoOpciones = useMemo(
-    () => ["HDD 500 GB", "HDD 1 TB", "SSD 256 GB", "SSD 512 GB", "SSD 1 TB"],
-    [],
-  );
-
-  const showLaptopPC =
-    form.tipoDispositivo === "laptop" || form.tipoDispositivo === "pc";
-  const showImpresora = form.tipoDispositivo === "impresora";
-  const showMonitor = form.tipoDispositivo === "monitor";
-  const terminosHoja = useMemo(
-    () => (Array.isArray(terminosServicio) ? terminosServicio.filter(Boolean) : []),
-    [terminosServicio],
-  );
-
-  // ✅ Buscar sugerencias al escribir nombre (debounce)
   useEffect(() => {
-    const nombre = (form.nombre || "").trim();
+    const nombre = String(form.nombre || "").trim();
 
-    // Si el usuario modifica el nombre manualmente, se "desselecciona"
     if (selectedCliente && nombre !== selectedCliente.nombre) {
       setSelectedCliente(null);
     }
@@ -183,15 +192,15 @@ export default function HojaServicio() {
     if (nombre.length < 3) {
       setSugerencias([]);
       setShowSug(false);
+      setHighlightedSugIndex(-1);
       lastQueryRef.current = "";
       return;
     }
 
-    // evita consultas repetidas por el mismo texto
     const qKey = nombre.toLowerCase();
     if (qKey === lastQueryRef.current) return;
 
-    const t = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
         lastQueryRef.current = qKey;
         const res = await buscarClientesSimilares(nombre, {
@@ -200,28 +209,42 @@ export default function HojaServicio() {
         });
         setSugerencias(res);
         setShowSug(res.length > 0);
-      } catch (e) {
-        console.error("Error buscando sugerencias:", e);
+        setHighlightedSugIndex(res.length > 0 ? 0 : -1);
+      } catch (error) {
+        console.error("Error buscando sugerencias:", error);
         setSugerencias([]);
         setShowSug(false);
+        setHighlightedSugIndex(-1);
       }
     }, 300);
 
-    return () => clearTimeout(t);
-  }, [form.nombre]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => clearTimeout(timer);
+  }, [form.nombre, selectedCliente]);
 
-  function seleccionarCliente(cli) {
-    setSelectedCliente(cli);
-    setForm((prev) => ({
-      ...prev,
-      nombre: cli.nombre || prev.nombre,
-      telefono: cli.telefono || "",
-      direccion: cli.direccion || "",
-      numeroSerie: cli.numeroSeriePreferido || "",
-      omitirNumeroSerie: !!cli.omitirNumeroSerie,
-    }));
-    setShowSug(false);
-  }
+  useEffect(() => {
+    function onDocClick(ev) {
+      if (!nombreWrapRef.current) return;
+      if (!nombreWrapRef.current.contains(ev.target)) setShowSug(false);
+    }
+
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  useEffect(() => {
+    if (!showSug || highlightedSugIndex < 0) return;
+
+    const activeItem = sugerenciaRefs.current[highlightedSugIndex];
+    activeItem?.scrollIntoView({ block: "nearest" });
+  }, [highlightedSugIndex, showSug]);
+
+  useEffect(() => {
+    const areas = document.querySelectorAll(".hoja-page textarea");
+    areas.forEach((el) => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    });
+  }, [form.trabajo, form.camposPersonalizados]);
 
   function autoGrowTextarea(el) {
     if (!el) return;
@@ -244,23 +267,21 @@ export default function HojaServicio() {
         next.numeroSerie = "";
       }
 
-      // si cambia marca, limpia modelo + specs
-      if (name === "marca") {
+      if (name === "marca" && usaCatalogoComputo) {
         next.modelo = "";
-        next.procesador = "";
-        next.ram = "";
-        next.disco = "";
         return next;
       }
 
-      // si cambia modelo, autollenar
-      if (name === "modelo") {
+      if (name === "modelo" && usaCatalogoComputo) {
         const specs = obtenerSpecsPorModelo(modelosData, next.marca, value);
 
         if (specs) {
-          next.procesador = specs.procesador;
-          next.ram = specs.ram;
-          next.disco = specs.disco;
+          next.camposPersonalizados = {
+            ...prev.camposPersonalizados,
+            procesador: specs.procesador || prev.camposPersonalizados?.procesador || "",
+            ram: specs.ram || prev.camposPersonalizados?.ram || "",
+            disco: specs.disco || prev.camposPersonalizados?.disco || "",
+          };
         }
       }
 
@@ -268,624 +289,563 @@ export default function HojaServicio() {
     });
   }
 
-  // ✅ cerrar sugerencias si clic fuera
-  useEffect(() => {
-    function onDocClick(ev) {
-      if (!nombreWrapRef.current) return;
-      if (!nombreWrapRef.current.contains(ev.target)) setShowSug(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
+  function handleCampoPersonalizadoChange(campoId, value) {
+    setForm((prev) => ({
+      ...prev,
+      camposPersonalizados: {
+        ...prev.camposPersonalizados,
+        [campoId]: value,
+      },
+    }));
+  }
 
-  useEffect(() => {
-    const areas = document.querySelectorAll(".hoja-page textarea");
-    areas.forEach((el) => autoGrowTextarea(el));
-  }, [form.condicionesImpresora, form.condicionesMonitor, form.trabajo]);
+  function seleccionarCliente(cli) {
+    setSelectedCliente(cli);
+    setForm((prev) => ({
+      ...prev,
+      nombre: cli.nombre || prev.nombre,
+      telefono: cli.telefono || "",
+      direccion: cli.direccion || "",
+      numeroSerie: cli.numeroSeriePreferido || "",
+      omitirNumeroSerie: !!cli.omitirNumeroSerie,
+    }));
+    setShowSug(false);
+    setHighlightedSugIndex(-1);
+  }
+
+  function handleNombreKeyDown(e) {
+    if (!sugerencias.length) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setShowSug(true);
+      setHighlightedSugIndex((prev) => {
+        if (prev < 0) return 0;
+        return Math.min(prev + 1, sugerencias.length - 1);
+      });
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setShowSug(true);
+      setHighlightedSugIndex((prev) => {
+        if (prev < 0) return sugerencias.length - 1;
+        return Math.max(prev - 1, 0);
+      });
+      return;
+    }
+
+    if (e.key === "Enter" && showSug && highlightedSugIndex >= 0) {
+      e.preventDefault();
+      seleccionarCliente(sugerencias[highlightedSugIndex]);
+      return;
+    }
+
+    if (e.key === "Escape" && showSug) {
+      e.preventDefault();
+      setShowSug(false);
+      setHighlightedSugIndex(-1);
+    }
+  }
 
   async function handleSubmit(e) {
-  e.preventDefault();
+    e.preventDefault();
 
-  try {
-    if (!form.omitirNumeroSerie && !String(form.numeroSerie || "").trim()) {
-      alert("Captura el numero de serie o activa 'No quiero poner el numero de serie'.");
-      return;
-    }
+    let hojaPrintWindow = null;
 
-    let clienteIdFinal = selectedCliente?.id;
-
-    // ✅ 1) Cliente
-    if (selectedCliente?.id) {
-      await actualizarCliente(selectedCliente.id, {
-        nombre: form.nombre,
-        telefono: form.telefono,
-        direccion: form.direccion,
-        numeroSeriePreferido: form.omitirNumeroSerie
-          ? ""
-          : String(form.numeroSerie || "").trim(),
-        omitirNumeroSerie: !!form.omitirNumeroSerie,
-      });
-    } else {
-      const nuevo = await crearCliente({
-        nombre: form.nombre,
-        telefono: form.telefono,
-        direccion: form.direccion,
-        numeroSeriePreferido: form.omitirNumeroSerie
-          ? ""
-          : String(form.numeroSerie || "").trim(),
-        omitirNumeroSerie: !!form.omitirNumeroSerie,
-      });
-
-      clienteIdFinal = nuevo.id; // 🔥 ESTE ERA EL FALTANTE
-    }
-
-    if (!clienteIdFinal) {
-      alert("❌ No se pudo determinar el cliente");
-      return;
-    }
-
-const hojaServicioSnapshot = {
-  habilitada: hojaServicioHabilitada,
-  terminos: terminosHoja,
-  retardo: politicaRetardo || {},
-};
-
-const res = await guardarServicio({
-  ...form,
-  clienteId: clienteIdFinal,
-  hojaServicio: hojaServicioSnapshot,
-});
-
-if (hojaServicioHabilitada) {
-  await generarPdfHojaServicio(
-    {
-      ...form,
-      hojaServicio: hojaServicioSnapshot,
-    },
-    res.folio,
-  );
-}
-
-navigate(`/ticket/${encodeURIComponent(String(res.folio || "").trim())}`);
-    // reset
-    setForm(initialForm);
-    setSelectedCliente(null);
-    setSugerencias([]);
-    setShowSug(false);
-    lastQueryRef.current = "";
-  } catch (err) {
-    console.error("Error guardando:", err);
-    if (err?.code === "DUPLICATE_SERVICE" && err?.duplicado?.folio) {
-      const abrir = confirm(
-        `${err.message}\n\n¿Quieres abrir ese servicio ahora?`
-      );
-      if (abrir) {
-        navigate(
-          `/servicios/${encodeURIComponent(String(err.duplicado.folio || "").trim())}`,
-        );
+    try {
+      if (!form.omitirNumeroSerie && !String(form.numeroSerie || "").trim()) {
+        alert("Captura el numero de serie o activa la opcion para omitirlo.");
+        return;
       }
-      return;
+
+      const campoFaltante = form.caracteristicasPendientes
+        ? null
+        : camposVisibles.find(
+            (campo) =>
+              campo.requerido &&
+              !hasValueByField(campo, form.camposPersonalizados?.[campo.id]),
+          );
+
+      if (campoFaltante) {
+        alert(`Completa el campo obligatorio: ${campoFaltante.etiqueta}.`);
+        return;
+      }
+
+      const shouldAutoPrintTicket =
+        imprimirAlIniciarServicio &&
+        (documentoAlIniciarServicio === "ticket" || documentoAlIniciarServicio === "ambos");
+      const shouldAutoPrintHoja =
+        hojaServicioHabilitada &&
+        imprimirAlIniciarServicio &&
+        (documentoAlIniciarServicio === "hoja" || documentoAlIniciarServicio === "ambos");
+      const shouldSilentPrintHoja = shouldAutoPrintHoja && modoImpresion === "silenciosa";
+      const shouldDialogPrintHoja = shouldAutoPrintHoja && !shouldSilentPrintHoja;
+
+      if (shouldDialogPrintHoja) {
+        hojaPrintWindow = window.open("", "_blank", "width=960,height=720");
+
+        if (hojaPrintWindow) {
+          hojaPrintWindow.document.write(`
+            <!DOCTYPE html>
+            <html lang="es">
+              <head>
+                <meta charset="UTF-8" />
+                <title>Preparando hoja de servicio</title>
+                <style>
+                  body {
+                    font-family: Arial, sans-serif;
+                    margin: 0;
+                    min-height: 100vh;
+                    display: grid;
+                    place-items: center;
+                    background: #f8fafc;
+                    color: #0f172a;
+                  }
+                  .print-loading {
+                    text-align: center;
+                    padding: 24px;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="print-loading">
+                  Preparando hoja de servicio para impresion...
+                </div>
+              </body>
+            </html>
+          `);
+          hojaPrintWindow.document.close();
+        } else {
+          alert("El navegador bloqueo la impresion automatica de la hoja. Permite popups para este sitio.");
+        }
+      }
+
+      let clienteIdFinal = selectedCliente?.id;
+
+      if (selectedCliente?.id) {
+        await actualizarCliente(selectedCliente.id, {
+          nombre: form.nombre,
+          telefono: form.telefono,
+          direccion: form.direccion,
+          numeroSeriePreferido: form.omitirNumeroSerie
+            ? ""
+            : String(form.numeroSerie || "").trim(),
+          omitirNumeroSerie: !!form.omitirNumeroSerie,
+        });
+      } else {
+        const nuevo = await crearCliente({
+          nombre: form.nombre,
+          telefono: form.telefono,
+          direccion: form.direccion,
+          numeroSeriePreferido: form.omitirNumeroSerie
+            ? ""
+            : String(form.numeroSerie || "").trim(),
+          omitirNumeroSerie: !!form.omitirNumeroSerie,
+        });
+
+        clienteIdFinal = nuevo.id;
+      }
+
+      if (!clienteIdFinal) {
+        alert("No se pudo determinar el cliente.");
+        return;
+      }
+
+      const hojaServicioSnapshot = {
+        habilitada: hojaServicioHabilitada,
+        terminos: terminosHoja,
+        retardo: politicaRetardo || {},
+      };
+
+      const payload = {
+        ...form,
+        clienteId: clienteIdFinal,
+        tipoNegocioId: tipoNegocioActivo?.id || "",
+        tipoNegocioNombre: tipoNegocioActivo?.nombre || "",
+        tipoNegocioSnapshot: tipoNegocioActivo,
+        hojaServicio: hojaServicioSnapshot,
+      };
+
+      const res = await guardarServicio(payload);
+
+      if (hojaServicioHabilitada) {
+        await generarPdfHojaServicio(payload, res.folio, {
+          download: true,
+          silentPrint: shouldSilentPrintHoja,
+          printerName: nombreImpresoraHojaServicio || "",
+          paperSize: tamanoHojaServicio || "a4",
+          openPrint: shouldDialogPrintHoja && !!hojaPrintWindow,
+          printWindow: hojaPrintWindow,
+        });
+      }
+
+      navigate(`/ticket/${encodeURIComponent(String(res.folio || "").trim())}`, {
+        state: {
+          autoPrint: shouldAutoPrintTicket,
+          autoPrintSource: "service-start",
+        },
+      });
+
+      setForm(buildInitialForm(tipoNegocioActivo));
+      setSelectedCliente(null);
+      setSugerencias([]);
+      setShowSug(false);
+      lastQueryRef.current = "";
+    } catch (err) {
+      if (hojaPrintWindow && !hojaPrintWindow.closed) {
+        hojaPrintWindow.close();
+      }
+      console.error("Error guardando:", err);
+      if (err?.code === "DUPLICATE_SERVICE" && err?.duplicado?.folio) {
+        const abrir = confirm(
+          `${err.message}\n\nQuieres abrir ese servicio ahora?`,
+        );
+        if (abrir) {
+          navigate(
+            `/servicios/${encodeURIComponent(String(err.duplicado.folio || "").trim())}`,
+          );
+        }
+        return;
+      }
+      alert(String(err?.message || "No se pudo guardar."));
     }
-    alert("❌ No se pudo guardar.");
   }
-}
+
+  function renderCampoPersonalizado(campo) {
+    const value = form.camposPersonalizados?.[campo.id];
+
+    if (campo.tipo === "textarea") {
+      return (
+        <div key={campo.id} className={campo.anchoCompleto ? "full" : ""}>
+          <label>{campo.etiqueta}:</label>
+          <textarea
+            value={String(value ?? "")}
+            placeholder={campo.placeholder || ""}
+            required={campo.requerido}
+            onChange={(e) => {
+              handleCampoPersonalizadoChange(campo.id, e.target.value);
+              autoGrowTextarea(e.target);
+            }}
+          />
+        </div>
+      );
+    }
+
+    if (campo.tipo === "select") {
+      return (
+        <div key={campo.id} className={campo.anchoCompleto ? "full" : ""}>
+          <label>{campo.etiqueta}:</label>
+          <select
+            value={String(value ?? "")}
+            required={campo.requerido}
+            onChange={(e) => handleCampoPersonalizadoChange(campo.id, e.target.value)}
+          >
+            <option value="">-- Selecciona --</option>
+            {(campo.opciones || []).map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
+      );
+    }
+
+    if (campo.tipo === "checkbox") {
+      return (
+        <div key={campo.id} className={`form-check ms-2${campo.anchoCompleto ? " full" : ""}`}>
+          <input
+            className="form-check-input"
+            type="checkbox"
+            id={`campo-${campo.id}`}
+            checked={!!value}
+            onChange={(e) => handleCampoPersonalizadoChange(campo.id, e.target.checked)}
+          />
+          <label className="form-check-label" htmlFor={`campo-${campo.id}`}>
+            {campo.etiqueta}
+          </label>
+        </div>
+      );
+    }
+
+    return (
+      <div key={campo.id} className={campo.anchoCompleto ? "full" : ""}>
+        <label>{campo.etiqueta}:</label>
+        <input
+          type={campo.tipo === "number" ? "number" : "text"}
+          value={String(value ?? "")}
+          placeholder={campo.placeholder || ""}
+          required={campo.requerido}
+          onChange={(e) => handleCampoPersonalizadoChange(campo.id, e.target.value)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="hoja-page">
       <div className="hoja-form-shell">
-          <div className="card shadow-lg border-0">
-            <div className="card-body">
-              <h2 className="text-center mb-4">Registro de Servicio Técnico</h2>
+        <div className="card shadow-lg border-0">
+          <div className="card-body">
+            <h2 className="text-center mb-4">
+              {tipoNegocioActivo?.tituloHoja || "Registro de servicio"}
+            </h2>
 
-              <form id="formRegistro" onSubmit={handleSubmit}>
-                {/* ===== Cliente ===== */}
-                <div ref={nombreWrapRef} style={{ position: "relative" }}>
-                  <label>Nombre del Cliente:</label>
-                  <input
-                    type="text"
-                    name="nombre"
-                    value={form.nombre}
-                    onChange={(e) => {
-                      handleChange(e);
-                      setShowSug(true);
-                    }}
-                    onFocus={() => sugerencias.length > 0 && setShowSug(true)}
-                    autoComplete="off"
-                    required
-                  />
+            <form id="formRegistro" onSubmit={handleSubmit}>
+              <div ref={nombreWrapRef} style={{ position: "relative" }}>
+                <label>Nombre del cliente:</label>
+                <input
+                  type="text"
+                  name="nombre"
+                  value={form.nombre}
+                  onChange={(e) => {
+                    handleChange(e);
+                    setShowSug(true);
+                  }}
+                  onFocus={() => sugerencias.length > 0 && setShowSug(true)}
+                  onKeyDown={handleNombreKeyDown}
+                  autoComplete="off"
+                  required
+                />
 
-                  {/* ✅ Lista de sugerencias */}
-                  {showSug && sugerencias.length > 0 && (
-                    <div className="cliente-sugerencias">
-                      {sugerencias.map((c) => (
-                        <button
-                          type="button"
-                          key={c.id}
-                          className="cliente-sug-item"
-                          onMouseDown={() => seleccionarCliente(c)}
-                        >
-                          <div className="cliente-sug-nombre">{c.nombre}</div>
-                          <div className="cliente-sug-sub">
-                            {c.telefono
-                              ? `📞 ${c.telefono}`
-                              : "📞 (sin teléfono)"}
-                            {c.direccion ? ` • 📍 ${c.direccion}` : ""}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* indicador cuando se seleccionó */}
-                  {selectedCliente?.id && (
-                    <div className="cliente-selected-hint">
-                      ✅ Cliente seleccionado: <b>{selectedCliente.nombre}</b>
+                {showSug && sugerencias.length > 0 && (
+                  <div className="cliente-sugerencias">
+                    {sugerencias.map((c, index) => (
                       <button
                         type="button"
-                        className="cliente-clear"
-                        onClick={() => {
-                          setSelectedCliente(null);
-                          setSugerencias([]);
-                          setShowSug(false);
-                          // 🔥 LIMPIA LOS CAMPOS DEL CLIENTE
-                          setForm((prev) => ({
-                            ...prev,
-                            nombre: "",
-                            telefono: "",
-                            direccion: "",
-                            numeroSerie: "",
-                            omitirNumeroSerie: false,
-                          }));
+                        key={c.id}
+                        ref={(el) => {
+                          sugerenciaRefs.current[index] = el;
                         }}
+                        className={`cliente-sug-item${highlightedSugIndex === index ? " active" : ""}`}
+                        onMouseDown={() => seleccionarCliente(c)}
+                        onMouseEnter={() => setHighlightedSugIndex(index)}
                       >
-                        Quitar
+                        <div className="cliente-sug-nombre">{c.nombre}</div>
+                        <div className="cliente-sug-sub">
+                          {c.telefono ? `Tel. ${c.telefono}` : "Sin telefono"}
+                          {c.direccion ? ` • ${c.direccion}` : ""}
+                        </div>
                       </button>
-                    </div>
-                  )}
-                </div>
+                    ))}
+                  </div>
+                )}
 
-                <div>
-                  <label>Dirección:</label>
-                  <input
-                    type="text"
-                    name="direccion"
-                    value={form.direccion}
-                    onChange={handleChange}
-                  />
-                </div>
+                {selectedCliente?.id && (
+                  <div className="cliente-selected-hint">
+                    Cliente seleccionado: <b>{selectedCliente.nombre}</b>
+                    <button
+                      type="button"
+                      className="cliente-clear"
+                      onClick={() => {
+                        setSelectedCliente(null);
+                        setSugerencias([]);
+                        setShowSug(false);
+                        setForm((prev) => ({
+                          ...prev,
+                          nombre: "",
+                          telefono: "",
+                          direccion: "",
+                          numeroSerie: "",
+                          omitirNumeroSerie: false,
+                        }));
+                      }}
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                )}
+              </div>
 
-                <div>
-                  <label>Teléfono:</label>
-                  <input
-                    type="tel"
-                    name="telefono"
-                    value={form.telefono}
-                    maxLength={10}
-                    inputMode="numeric"
-                    pattern="[0-9]{10}"
-                    placeholder="10 dígitos"
-                    onChange={(e) => {
-                      // 🔒 solo números
-                      const soloNumeros = e.target.value.replace(/\D/g, "");
-                      setForm((prev) => ({
-                        ...prev,
-                        telefono: soloNumeros.slice(0, 10), // máximo 10
-                      }));
-                    }}
-                  />
-                </div>
+              <div>
+                <label>Direccion:</label>
+                <input
+                  type="text"
+                  name="direccion"
+                  value={form.direccion}
+                  onChange={handleChange}
+                />
+              </div>
 
-                {/* Selección del dispositivo */}
-                <div className="full">
-                  <label>Tipo de Dispositivo:</label>
-                  <select
-                    id="tipoDispositivo"
-                    name="tipoDispositivo"
-                    value={form.tipoDispositivo}
-                    onChange={handleChange}
-                    required
-                  >
-                    <option value="">-- Selecciona --</option>
-                    <option value="laptop">Laptop</option>
-                    <option value="pc">Computadora de Escritorio</option>
-                    <option value="impresora">Impresora</option>
-                    <option value="monitor">Monitor</option>
-                  </select>
-                </div>
+              <div>
+                <label>Telefono:</label>
+                <input
+                  type="tel"
+                  name="telefono"
+                  value={form.telefono}
+                  maxLength={10}
+                  inputMode="numeric"
+                  pattern="[0-9]{10}"
+                  placeholder="10 digitos"
+                  onChange={(e) => {
+                    const soloNumeros = e.target.value.replace(/\D/g, "");
+                    setForm((prev) => ({
+                      ...prev,
+                      telefono: soloNumeros.slice(0, 10),
+                    }));
+                  }}
+                />
+              </div>
 
-                {/* Marca */}
-                <div>
-                  <label>Marca:</label>
-                  <input
-                    list="listaMarcas"
-                    name="marca"
-                    id="marcaInput"
-                    placeholder="Escribe o selecciona"
-                    value={form.marca}
-                    onChange={handleChange}
-                  />
+              <div className="full">
+                <label>{tipoNegocioActivo?.etiquetaTipoDispositivo || "Tipo de dispositivo"}:</label>
+                <select
+                  name="tipoDispositivo"
+                  value={form.tipoDispositivo}
+                  onChange={handleChange}
+                  required
+                >
+                  <option value="">-- Selecciona --</option>
+                  {deviceOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label>{tipoNegocioActivo?.etiquetaMarca || "Marca"}:</label>
+                <input
+                  list={usaCatalogoComputo ? "listaMarcas" : undefined}
+                  name="marca"
+                  placeholder="Escribe o selecciona"
+                  value={form.marca}
+                  onChange={handleChange}
+                />
+                {usaCatalogoComputo && (
                   <datalist id="listaMarcas">
                     {marcas.map((m) => (
                       <option key={m} value={m} />
                     ))}
                   </datalist>
-                </div>
+                )}
+              </div>
 
-                {/* Modelo */}
-                <div>
-                  <label>Modelo:</label>
-                  <input
-                    list="listaModelos"
-                    name="modelo"
-                    id="modeloInput"
-                    placeholder="Selecciona un modelo"
-                    value={form.modelo}
-                    onChange={handleChange}
-                  />
+              <div>
+                <label>{tipoNegocioActivo?.etiquetaModelo || "Modelo"}:</label>
+                <input
+                  list={usaCatalogoComputo ? "listaModelos" : undefined}
+                  name="modelo"
+                  placeholder={usaCatalogoComputo ? "Selecciona un modelo" : "Modelo"}
+                  value={form.modelo}
+                  onChange={handleChange}
+                />
+                {usaCatalogoComputo && (
                   <datalist id="listaModelos">
                     {modelos.map((m) => (
                       <option key={m} value={m} />
                     ))}
                   </datalist>
-                </div>
+                )}
+              </div>
 
-                <div className="full">
-                  <label>Numero de serie:</label>
+              <div className="full">
+                <label>{tipoNegocioActivo?.etiquetaSerie || "Numero de serie"}:</label>
+                <input
+                  type="text"
+                  name="numeroSerie"
+                  placeholder="Dato identificador del equipo"
+                  value={form.numeroSerie}
+                  onChange={handleChange}
+                  disabled={form.omitirNumeroSerie}
+                  required={!form.omitirNumeroSerie}
+                />
+
+                <div className="form-check ms-2">
                   <input
-                    type="text"
-                    name="numeroSerie"
-                    placeholder="Ej: SN12345ABC"
-                    value={form.numeroSerie}
+                    className="form-check-input"
+                    type="checkbox"
+                    id="omitirNumeroSerie"
+                    name="omitirNumeroSerie"
+                    checked={!!form.omitirNumeroSerie}
                     onChange={handleChange}
-                    disabled={form.omitirNumeroSerie}
-                    required={!form.omitirNumeroSerie}
                   />
-
-                  <div className="form-check ms-2">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="omitirNumeroSerie"
-                      name="omitirNumeroSerie"
-                      checked={!!form.omitirNumeroSerie}
-                      onChange={handleChange}
-                    />
-                    <label className="form-check-label" htmlFor="omitirNumeroSerie">
-                      No quiero poner el numero de serie
-                    </label>
-                  </div>
-                </div>
-
-                {/* Campos específicos Laptop/PC */}
-                {showLaptopPC && (
-                  <div id="camposLaptopPC" className="full">
-                    <fieldset className="fieldset-equipo">
-                      <legend>Características Laptop/PC</legend>
-
-                      <div>
-                        <div>
-                          <label>Procesador:</label>
-                          <input
-                            type="text"
-                            id="procesador"
-                            name="procesador"
-                            list="cpuOpciones"
-                            value={form.procesador}
-                            onChange={handleChange}
-                          />
-                          <datalist id="cpuOpciones">
-                            {cpuOpciones.map((c) => (
-                              <option key={c} value={c} />
-                            ))}
-                          </datalist>
-                        </div>
-
-                        <div>
-                          <label>Memoria RAM:</label>
-                          <input
-                            type="text"
-                            id="ram"
-                            name="ram"
-                            list="ramOpciones"
-                            value={form.ram}
-                            onChange={handleChange}
-                          />
-                          <datalist id="ramOpciones">
-                            {ramOpciones.map((r) => (
-                              <option key={r} value={r} />
-                            ))}
-                          </datalist>
-                        </div>
-
-                        <div>
-                          <label>Disco Duro:</label>
-                          <input
-                            type="text"
-                            id="disco"
-                            name="disco"
-                            list="discoOpciones"
-                            value={form.disco}
-                            onChange={handleChange}
-                          />
-                          <datalist id="discoOpciones">
-                            {discoOpciones.map((d) => (
-                              <option key={d} value={d} />
-                            ))}
-                          </datalist>
-                        </div>
-
-                        <div>
-                          <label>Pantalla:</label>
-                          <select
-                            id="estadoPantalla"
-                            name="estadoPantalla"
-                            value={form.estadoPantalla}
-                            onChange={handleChange}
-                          >
-                            <option value="Funciona bien">Funciona bien</option>
-                            <option value="Con detalles">
-                              Con detalles (rayas, manchas, etc.)
-                            </option>
-                            <option value="Dañada">Dañada / No funciona</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label>Teclado:</label>
-                          <select
-                            id="estadoTeclado"
-                            name="estadoTeclado"
-                            value={form.estadoTeclado}
-                            onChange={handleChange}
-                          >
-                            <option value="Funciona bien">Funciona bien</option>
-                            <option value="Algunas teclas no funcionan">
-                              Solo algunas teclas no funcionan
-                            </option>
-                            <option value="La mayoría no funciona">
-                              La mayoría no funciona
-                            </option>
-                            <option value="No funciona">No funciona</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label>Mouse/Touchpad:</label>
-                          <select
-                            id="estadoMouse"
-                            name="estadoMouse"
-                            value={form.estadoMouse}
-                            onChange={handleChange}
-                          >
-                            <option value="Funciona bien">Funciona bien</option>
-                            <option value="A veces falla">A veces falla</option>
-                            <option value="No funciona">No funciona</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label>¿Funciona Correctamente?:</label>
-                          <select
-                            name="funciona"
-                            value={form.funciona}
-                            onChange={handleChange}
-                          >
-                            <option>Sí</option>
-                            <option>No</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label>¿Enciende el equipo?:</label>
-                          <select
-                            name="enciendeEquipo"
-                            id="enciendeEquipo"
-                            value={form.enciendeEquipo}
-                            onChange={handleChange}
-                          >
-                            <option>Sí</option>
-                            <option>No</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label>Contraseña del equipo (si aplica):</label>
-                          <input
-                            type="text"
-                            name="contrasenaEquipo"
-                            placeholder="Dejar en blanco si no aplica"
-                            id="contrasenaEquipo"
-                            value={form.contrasenaEquipo}
-                            onChange={handleChange}
-                          />
-                        </div>
-                      </div>
-                    </fieldset>
-                  </div>
-                )}
-
-                {/* Impresora */}
-                {showImpresora && (
-                  <div id="camposImpresora" className="full">
-                    <fieldset
-                      style={{
-                        border: "2px solid #3f87a6",
-                        borderRadius: 10,
-                        padding: 15,
-                      }}
-                    >
-                      <legend style={{ color: "#3f87a6", fontWeight: "bold" }}>
-                        Características Impresora
-                      </legend>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: 15,
-                        }}
-                      >
-                        <div>
-                          <label>Tipo de Impresora:</label>
-                          <select
-                            name="tipoImpresora"
-                            value={form.tipoImpresora}
-                            onChange={handleChange}
-                          >
-                            <option>Inyección de tinta</option>
-                            <option>Láser</option>
-                            <option>Multifuncional</option>
-                          </select>
-                        </div>
-
-                        <div>
-                          <label>¿Imprime correctamente?</label>
-                          <select
-                            name="imprime"
-                            value={form.imprime}
-                            onChange={handleChange}
-                          >
-                            <option>Sí</option>
-                            <option>No</option>
-                          </select>
-                        </div>
-
-                        <div className="full">
-                          <label>Condiciones físicas:</label>
-                          <textarea
-                            name="condicionesImpresora"
-                            value={form.condicionesImpresora}
-                            onChange={handleTextareaChange}
-                          />
-                        </div>
-                      </div>
-                    </fieldset>
-                  </div>
-                )}
-
-                {/* Monitor */}
-                {showMonitor && (
-                  <div id="camposMonitor" className="full">
-                    <fieldset
-                      style={{
-                        border: "2px solid #3f87a6",
-                        borderRadius: 10,
-                        padding: 15,
-                      }}
-                    >
-                      <legend style={{ color: "#3f87a6", fontWeight: "bold" }}>
-                        Características Monitor
-                      </legend>
-
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: 15,
-                        }}
-                      >
-                        <div>
-                          <label>Tamaño (pulgadas):</label>
-                          <input
-                            type="text"
-                            name="tamanoMonitor"
-                            value={form.tamanoMonitor}
-                            onChange={handleChange}
-                          />
-                        </div>
-
-                        <div>
-                          <label>¿Colores correctos?:</label>
-                          <select
-                            name="colores"
-                            value={form.colores}
-                            onChange={handleChange}
-                          >
-                            <option>Sí</option>
-                            <option>No</option>
-                          </select>
-                        </div>
-
-                        <div className="full">
-                          <label>Condiciones físicas:</label>
-                          <textarea
-                            name="condicionesMonitor"
-                            value={form.condicionesMonitor}
-                            onChange={handleTextareaChange}
-                          />
-                        </div>
-                      </div>
-                    </fieldset>
-                  </div>
-                )}
-
-                {(showLaptopPC || showImpresora || showMonitor) && (
-                  <div className="full form-check ms-2">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="caracteristicasPendientes"
-                      name="caracteristicasPendientes"
-                      checked={!!form.caracteristicasPendientes}
-                      onChange={handleChange}
-                    />
-                    <label className="form-check-label" htmlFor="caracteristicasPendientes">
-                      Rellenar caracteristicas despues
-                    </label>
-                  </div>
-                )}
-
-                {/* Otros */}
-                <div className="full">
-                  <label>Trabajo a Realizar:</label>
-                  <textarea
-                    name="trabajo"
-                    value={form.trabajo}
-                    onChange={handleTextareaChange}
-                  />
-                </div>
-
-                <div className="full costo-row">
-                  <label htmlFor="costo" className="me-3">
-                    Costo estimado:
+                  <label className="form-check-label" htmlFor="omitirNumeroSerie">
+                    No quiero poner este dato
                   </label>
-
-                  <input
-                    type="number"
-                    name="costo"
-                    id="costo"
-                    min="0"
-                    step="0.01"
-                    value={form.costo}
-                    onChange={handleChange}
-                    className="me-3"
-                    style={{ width: 140 }}
-                    disabled={form.precioDespues}
-                  />
-
-                  <div className="form-check ms-2">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      id="precioDespues"
-                      name="precioDespues"
-                      checked={form.precioDespues}
-                      onChange={handleChange}
-                    />
-                    <label className="form-check-label" htmlFor="precioDespues">
-                      Precio se define después del mantenimiento
-                    </label>
-                  </div>
                 </div>
+              </div>
 
-                <button type="submit">
-                  {hojaServicioHabilitada
-                    ? "Guardar registro y generar PDF"
-                    : "Guardar registro sin PDF"}
-                </button>
-              </form>
-            </div>
+              {camposVisibles.length > 0 && (
+                <div className="full hoja-custom-block">
+                  <fieldset className="fieldset-equipo">
+                    <legend>Campos del servicio</legend>
+                    <div className="hoja-custom-grid">
+                      {camposVisibles.map((campo) => renderCampoPersonalizado(campo))}
+                    </div>
+                  </fieldset>
+                </div>
+              )}
+
+              <div className="full form-check ms-2">
+                <input
+                  className="form-check-input"
+                  type="checkbox"
+                  id="caracteristicasPendientes"
+                  name="caracteristicasPendientes"
+                  checked={!!form.caracteristicasPendientes}
+                  onChange={handleChange}
+                />
+                <label className="form-check-label" htmlFor="caracteristicasPendientes">
+                  {tipoNegocioActivo?.etiquetaCaracteristicasPendientes ||
+                    "Completar caracteristicas despues"}
+                </label>
+              </div>
+
+              <div className="full">
+                <label>{tipoNegocioActivo?.etiquetaTrabajo || "Trabajo a realizar"}:</label>
+                <textarea
+                  name="trabajo"
+                  value={form.trabajo}
+                  placeholder={tipoNegocioActivo?.placeholderTrabajo || ""}
+                  onChange={handleTextareaChange}
+                />
+              </div>
+
+              <div className="full costo-row">
+                <label htmlFor="costo" className="me-3">
+                  {tipoNegocioActivo?.etiquetaCosto || "Costo estimado"}:
+                </label>
+
+                <input
+                  type="number"
+                  name="costo"
+                  id="costo"
+                  min="0"
+                  step="0.01"
+                  value={form.costo}
+                  onChange={handleChange}
+                  className="me-3"
+                  style={{ width: 140 }}
+                  disabled={form.precioDespues}
+                />
+
+                <div className="form-check ms-2">
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    id="precioDespues"
+                    name="precioDespues"
+                    checked={form.precioDespues}
+                    onChange={handleChange}
+                  />
+                  <label className="form-check-label" htmlFor="precioDespues">
+                    Precio se define despues del diagnostico
+                  </label>
+                </div>
+              </div>
+
+              <button type="submit">
+                {hojaServicioHabilitada
+                  ? "Guardar registro y generar PDF"
+                  : "Guardar registro sin PDF"}
+              </button>
+            </form>
           </div>
+        </div>
       </div>
     </div>
   );

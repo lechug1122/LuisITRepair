@@ -1,16 +1,22 @@
 import {
+  arrayUnion,
   doc,
   getDoc,
   setDoc,
-  arrayUnion,
 } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
+import { allowLegacyTenantFallback, resolveTenantId, withTenantData } from "./tenant";
 
 function getDateKeyLocal(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+function buildEgresosDocId(fechaKey = getDateKeyLocal()) {
+  const tenantId = resolveTenantId();
+  return tenantId ? `${tenantId}__${fechaKey}` : fechaKey;
 }
 
 export async function guardarEgreso(egreso = {}) {
@@ -22,38 +28,49 @@ export async function guardarEgreso(egreso = {}) {
     descripcion: String(egreso?.descripcion || "").trim(),
     monto: Number(egreso?.monto || 0),
     usuario: String(egreso?.usuario || "").trim(),
-    criadoEn: new Date(), // ✅ CORREGIDO (ya no usa serverTimestamp)
+    criadoEn: new Date(),
   };
 
-  const docRef = doc(db, "egresos_diarios", fechaKey);
+  const docRef = doc(db, "egresos_diarios", buildEgresosDocId(fechaKey));
   const docSnap = await getDoc(docRef);
 
   if (docSnap.exists()) {
-    // Actualizar documento existente con arrayUnion
     await setDoc(
       docRef,
-      {
+      withTenantData({
         egresos: arrayUnion(egresoData),
-      },
-      { merge: true }
+      }),
+      { merge: true },
     );
   } else {
-    // Crear documento nuevo
-    await setDoc(docRef, {
-      fechaKey,
-      egresos: [egresoData],
-      creadoEn: new Date(), // también aquí lo dejamos consistente
-    });
+    await setDoc(
+      docRef,
+      withTenantData({
+        fechaKey,
+        egresos: [egresoData],
+        creadoEn: new Date(),
+      }),
+    );
   }
 
   return egresoData;
 }
 
 export async function obtenerEgresosDia(fechaKey = getDateKeyLocal()) {
-  const docRef = doc(db, "egresos_diarios", fechaKey);
+  const docRef = doc(db, "egresos_diarios", buildEgresosDocId(fechaKey));
   const docSnap = await getDoc(docRef);
 
   if (!docSnap.exists()) {
+    if (allowLegacyTenantFallback()) {
+      const legacySnap = await getDoc(doc(db, "egresos_diarios", fechaKey));
+      if (legacySnap.exists()) {
+        return {
+          id: legacySnap.id,
+          ...legacySnap.data(),
+        };
+      }
+    }
+
     return {
       fechaKey,
       egresos: [],
@@ -68,15 +85,15 @@ export async function obtenerEgresosDia(fechaKey = getDateKeyLocal()) {
 
 export async function eliminarEgreso(
   egresoId = "",
-  fechaKey = getDateKeyLocal()
+  fechaKey = getDateKeyLocal(),
 ) {
-  const docRef = doc(db, "egresos_diarios", fechaKey);
+  const docRef = doc(db, "egresos_diarios", buildEgresosDocId(fechaKey));
   const docSnap = await getDoc(docRef);
 
   if (!docSnap.exists()) return null;
 
   const egresos = (docSnap.data()?.egresos || []).filter(
-    (e) => e.id !== egresoId
+    (e) => e.id !== egresoId,
   );
 
   await setDoc(docRef, { egresos }, { merge: true });
@@ -87,9 +104,9 @@ export async function eliminarEgreso(
 export async function actualizarEgreso(
   egresoId = "",
   actualizacion = {},
-  fechaKey = getDateKeyLocal()
+  fechaKey = getDateKeyLocal(),
 ) {
-  const docRef = doc(db, "egresos_diarios", fechaKey);
+  const docRef = doc(db, "egresos_diarios", buildEgresosDocId(fechaKey));
   const docSnap = await getDoc(docRef);
 
   if (!docSnap.exists()) return null;
@@ -97,11 +114,11 @@ export async function actualizarEgreso(
   const egresos = (docSnap.data()?.egresos || []).map((e) =>
     e.id === egresoId
       ? {
-          ...e,
-          ...actualizacion,
-          actualizadoEn: new Date(), // opcional: marca actualización
-        }
-      : e
+        ...e,
+        ...actualizacion,
+        actualizadoEn: new Date(),
+      }
+      : e,
   );
 
   await setDoc(docRef, { egresos }, { merge: true });
@@ -110,7 +127,7 @@ export async function actualizarEgreso(
 }
 
 export async function copiarEgresosAlCorte(
-  fechaKey = getDateKeyLocal()
+  fechaKey = getDateKeyLocal(),
 ) {
   const egresosDia = await obtenerEgresosDia(fechaKey);
   return egresosDia?.egresos || [];
@@ -119,7 +136,7 @@ export async function copiarEgresosAlCorte(
 export const TIPOS_EGRESOS = [
   { id: "factura", label: "Factura", emoji: "🧾" },
   { id: "boleta_venta", label: "Boleta de venta", emoji: "🛒" },
-  { id: "nota_credito", label: "Nota de crédito", emoji: "➕" },
-  { id: "nota_debito", label: "Nota de débito", emoji: "➖" },
+  { id: "nota_credito", label: "Nota de credito", emoji: "➕" },
+  { id: "nota_debito", label: "Nota de debito", emoji: "➖" },
   { id: "otro", label: "Otro", emoji: "📝" },
 ];
