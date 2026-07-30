@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../../initializer/firebase";
 import { toDate } from "./suscripciones";
+import { readTenantContext } from "./tenant";
 
 const DEVICE_SESSION_COLLECTION = "sesiones_dispositivo";
 const DEVICE_ID_STORAGE_KEY = "current_device_session_id_v1";
@@ -113,6 +114,7 @@ export function normalizeDeviceSession(raw = {}, id = "") {
     id: normalizeId(id || raw?.id),
     uid: normalizeId(raw?.uid),
     cuentaPrincipalUid: normalizeId(raw?.cuentaPrincipalUid),
+    negocioId: normalizeId(raw?.negocioId || raw?.cuentaPrincipalUid),
     deviceId: normalizeId(raw?.deviceId),
     deviceLabel: String(raw?.deviceLabel || "").trim() || "Equipo",
     activa: raw?.activa === true,
@@ -141,10 +143,12 @@ async function fetchUserDeviceSessions(uid) {
 function buildCurrentSessionPayload(uid, autorizado = {}) {
   const safeUid = normalizeId(uid);
   const cuentaPrincipalUid = normalizeId(autorizado?.cuentaPrincipalUid || safeUid);
+  const negocioId = normalizeId(autorizado?.negocioId || cuentaPrincipalUid);
 
   return {
     uid: safeUid,
     cuentaPrincipalUid,
+    negocioId,
     deviceId: getCurrentDeviceId(),
     deviceLabel: getCurrentDeviceLabel(),
     activa: true,
@@ -257,11 +261,16 @@ export async function closeOtherSessionsAndKeepCurrent({
 export async function heartbeatCurrentDeviceSession(uid) {
   const safeUid = normalizeId(uid);
   if (!safeUid) return;
+  const tenant = readTenantContext();
+  const cuentaPrincipalUid = normalizeId(tenant.cuentaPrincipalUid || auth.currentUser?.uid || safeUid);
+  const negocioId = normalizeId(tenant.negocioId || cuentaPrincipalUid);
 
   await setDoc(
     getCurrentSessionDocRef(safeUid),
     {
       uid: safeUid,
+      cuentaPrincipalUid,
+      negocioId,
       deviceId: getCurrentDeviceId(),
       deviceLabel: getCurrentDeviceLabel(),
       activa: true,
@@ -277,11 +286,16 @@ export async function heartbeatCurrentDeviceSession(uid) {
 export async function closeCurrentDeviceSession(uid, reason = "manual_logout") {
   const safeUid = normalizeId(uid);
   if (!safeUid) return;
+  const tenant = readTenantContext();
+  const cuentaPrincipalUid = normalizeId(tenant.cuentaPrincipalUid || auth.currentUser?.uid || safeUid);
+  const negocioId = normalizeId(tenant.negocioId || cuentaPrincipalUid);
 
   await setDoc(
     getCurrentSessionDocRef(safeUid),
     {
       uid: safeUid,
+      cuentaPrincipalUid,
+      negocioId,
       deviceId: getCurrentDeviceId(),
       deviceLabel: getCurrentDeviceLabel(),
       activa: false,

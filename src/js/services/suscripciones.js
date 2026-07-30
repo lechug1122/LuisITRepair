@@ -235,9 +235,11 @@ export function resolverAccesoSuscripcion({
   uid = "",
   autorizado = {},
   suscripcion = null,
+  negocio = null,
   now = new Date(),
 } = {}) {
   const cuentaPrincipalUid = String(autorizado?.cuentaPrincipalUid || uid || "").trim();
+  const negocioId = String(autorizado?.negocioId || cuentaPrincipalUid || uid || "").trim();
   const activo = autorizado?.activo !== false;
   const superAdmin = autorizado?.superAdmin === true;
   const suscripcionControlada = autorizado?.suscripcionControlada === true;
@@ -252,8 +254,47 @@ export function resolverAccesoSuscripcion({
       motivo: "usuario_inactivo",
       mensaje: "Usuario inactivo. Contacta al administrador.",
       cuentaPrincipalUid,
+      negocioId,
       suscripcion: suscripcionEvaluada,
     };
+  }
+
+  if (!superAdmin && negocio) {
+    if (negocio.terminosAceptados !== true || autorizado.terminosAceptados !== true) {
+      return {
+        permitido: false,
+        motivo: "terminos_pendientes",
+        mensaje: "Debes aceptar los Terminos y Condiciones de CajaLibre para continuar.",
+        cuentaPrincipalUid,
+        negocioId,
+        negocio,
+        suscripcion: suscripcionEvaluada,
+      };
+    }
+
+    if (negocio.setupCompleto !== true || autorizado.setupCompleto !== true) {
+      return {
+        permitido: false,
+        motivo: "configuracion_inicial_pendiente",
+        mensaje: "Completa la configuracion inicial de tu negocio para continuar.",
+        cuentaPrincipalUid,
+        negocioId,
+        negocio,
+        suscripcion: suscripcionEvaluada,
+      };
+    }
+
+    if (negocio.estado === "bloqueado" || negocio.estado === "suspendido") {
+      return {
+        permitido: false,
+        motivo: "negocio_bloqueado",
+        mensaje: negocio.bloqueoRazon || "Tu negocio no tiene acceso operativo actualmente.",
+        cuentaPrincipalUid,
+        negocioId,
+        negocio,
+        suscripcion: suscripcionEvaluada,
+      };
+    }
   }
 
   if (superAdmin || !suscripcionControlada) {
@@ -262,6 +303,8 @@ export function resolverAccesoSuscripcion({
       motivo: "sin_control_suscripcion",
       mensaje: "",
       cuentaPrincipalUid,
+      negocioId,
+      negocio,
       suscripcion: suscripcionEvaluada,
     };
   }
@@ -272,6 +315,8 @@ export function resolverAccesoSuscripcion({
       motivo: "suscripcion_no_configurada",
       mensaje: "",
       cuentaPrincipalUid,
+      negocioId,
+      negocio,
       suscripcion: null,
     };
   }
@@ -283,6 +328,8 @@ export function resolverAccesoSuscripcion({
       mensaje:
         "Tu suscripcion esta vencida y ya supero el lapso de gracia de 7 dias. Contacta al administrador del sistema.",
       cuentaPrincipalUid,
+      negocioId,
+      negocio,
       suscripcion: suscripcionEvaluada,
     };
   }
@@ -292,6 +339,8 @@ export function resolverAccesoSuscripcion({
     motivo: suscripcionEvaluada.codigo,
     mensaje: "",
     cuentaPrincipalUid,
+    negocioId,
+    negocio,
     suscripcion: suscripcionEvaluada,
   };
 }

@@ -21,16 +21,45 @@ service cloud.firestore {
     function currentTenantId() {
       return authDocExists()
         ? (
-            authData().cuentaPrincipalUid is string &&
-            authData().cuentaPrincipalUid != ""
-              ? authData().cuentaPrincipalUid
-              : request.auth.uid
+            authData().negocioId is string && authData().negocioId != ""
+              ? authData().negocioId
+              : (
+                  authData().cuentaPrincipalUid is string &&
+                  authData().cuentaPrincipalUid != ""
+                    ? authData().cuentaPrincipalUid
+                    : request.auth.uid
+                )
           )
         : request.auth.uid;
     }
 
     function isSuperAdmin() {
       return authDocExists() && authData().superAdmin == true;
+    }
+
+    function hasAnalyticsAccess() {
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        (authDocExists() && authData().accesoAnalitica == true) ||
+        (
+          request.auth.token.email == 'lechugapapayero@gmail.com'
+        )
+      );
+    }
+
+    function isBusinessAdmin() {
+      return authDocExists() && (
+        authData().rol == "Administrador" ||
+        authData().rol == "administrador"
+      );
+    }
+
+    function hasPermission(key) {
+      return isBusinessAdmin() || (
+        authDocExists() &&
+        authData().permisos is map &&
+        authData().permisos[key] == true
+      );
     }
 
     function sameTenantValue(value) {
@@ -40,14 +69,20 @@ service cloud.firestore {
     function sameTenantResource() {
       return isSuperAdmin() || (
         resource != null &&
-        sameTenantValue(resource.data.cuentaPrincipalUid)
+        (
+          sameTenantValue(resource.data.negocioId) ||
+          sameTenantValue(resource.data.cuentaPrincipalUid)
+        )
       );
     }
 
     function sameTenantRequest() {
       return isSuperAdmin() || (
         request.resource != null &&
-        sameTenantValue(request.resource.data.cuentaPrincipalUid)
+        (
+          sameTenantValue(request.resource.data.negocioId) ||
+          sameTenantValue(request.resource.data.cuentaPrincipalUid)
+        )
       );
     }
 
@@ -63,30 +98,173 @@ service cloud.firestore {
           'activo',
           'online',
           'lastActive',
-          'versionVista'
+          'versionVista',
+          'terminosAceptados',
+          'terminosVersion',
+          'terminosAceptadosAt',
+          'setupCompleto'
         ]);
+    }
+
+    function noSuperAdminWrite() {
+      return request.resource == null || (
+        request.resource.data.superAdmin != true &&
+        request.resource.data.accesoAnalitica != true
+      );
+    }
+
+    function tenantUserCreateAllowed() {
+      return sameTenantRequest() &&
+        noSuperAdminWrite() &&
+        request.resource.data.negocioId == currentTenantId() &&
+        request.resource.data.cuentaPrincipalUid == currentTenantId();
+    }
+
+    function tenantUserUpdateAllowed() {
+      return isBusinessAdmin() &&
+        sameTenantResource() &&
+        sameTenantRequest() &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'superAdmin',
+          'accesoAnalitica',
+          'negocioId',
+          'cuentaPrincipalUid',
+          'suscripcionControlada',
+          'esCuentaPrincipal'
+        ]);
+    }
+
+    function negocioOwnerUpdateAllowed(document) {
+      return sameTenantValue(document) &&
+        request.resource.data.cobrosAutomaticos != true &&
+        (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'estado',
+            'bloqueoRazon',
+            'bloqueoFecha',
+            'updatedByUid',
+            'costosInternosVisibles'
+          ]) ||
+          (
+            resource.data.estado == 'pendiente' &&
+            request.resource.data.estado == 'gratuito' &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'bloqueoRazon',
+              'bloqueoFecha',
+              'updatedByUid',
+              'costosInternosVisibles'
+            ])
+          )
+        );
     }
     
     // Acceso a usuarios autorizados.
     match /autorizados/{document} {
       allow read: if isSignedIn() && (
-        isSuperAdmin() ||
+        hasAnalyticsAccess() ||
         request.auth.uid == document ||
+        sameTenantValue(resource.data.negocioId) ||
         sameTenantValue(resource.data.cuentaPrincipalUid)
       );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        sameTenantRequest()
+        tenantUserCreateAllowed() ||
+        (
+          request.auth.uid == document &&
+          request.resource.data.negocioId == request.auth.uid &&
+          request.resource.data.cuentaPrincipalUid == request.auth.uid &&
+          request.resource.data.esCuentaPrincipal == true &&
+          request.resource.data.rol == "Administrador" &&
+          request.resource.data.superAdmin == false &&
+          request.resource.data.accesoAnalitica == false &&
+          request.resource.data.suscripcionControlada == false
+        )
       );
       allow update: if isSignedIn() && (
         isSuperAdmin() ||
-        sameTenantRequest() ||
+        tenantUserUpdateAllowed() ||
         selfAutorizadoMutableFieldsOnly(document)
       );
       allow delete: if isSignedIn() && (
         isSuperAdmin() ||
-        sameTenantResource()
+        (isBusinessAdmin() && sameTenantResource() && resource.data.superAdmin != true)
       );
+    }
+
+    // Negocios registrados en CajaLibre.
+    match /negocios/{document} {
+      allow read: if isSignedIn() && (
+        hasAnalyticsAccess() ||
+        sameTenantValue(document) ||
+        sameTenantValue(resource.data.negocioId) ||
+        sameTenantValue(resource.data.cuentaPrincipalUid)
+      );
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          request.auth.uid == document &&
+          request.resource.data.negocioId == request.auth.uid &&
+          request.resource.data.cuentaPrincipalUid == request.auth.uid &&
+          request.resource.data.estado in ['pendiente', 'gratuito'] &&
+          request.resource.data.cobrosAutomaticos != true
+        )
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        negocioOwnerUpdateAllowed(document)
+      );
+      allow delete: if isSignedIn() && isSuperAdmin();
+    }
+
+    match /terminos_aceptaciones/{document} {
+      allow read: if isSignedIn() && (
+        isSuperAdmin() ||
+        sameTenantValue(resource.data.negocioId) ||
+        request.auth.uid == resource.data.uid
+      );
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          request.auth.uid == request.resource.data.uid &&
+          sameTenantValue(request.resource.data.negocioId) &&
+          request.resource.data.aceptado == true
+        )
+      );
+      allow update: if false;
+      allow delete: if isSignedIn() && isSuperAdmin();
+    }
+
+    match /admin_bitacora/{document} {
+      allow read: if isSignedIn() && isSuperAdmin();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          sameTenantValue(request.resource.data.negocioId) &&
+          request.resource.data.tipo in [
+            'terminos_aceptados',
+            'configuracion_inicial_completa'
+          ]
+        )
+      );
+      allow update, delete: if false;
+    }
+
+    // Telemetria sin contenido de formularios. Cada usuario escribe su actividad;
+    // solo los superadministradores pueden consultar o eliminar el historial.
+    match /analitica_eventos/{document} {
+      allow read: if hasAnalyticsAccess();
+      allow delete: if isSignedIn() && isSuperAdmin();
+      allow create: if isSignedIn() &&
+        request.resource.data.uid == request.auth.uid &&
+        sameTenantValue(request.resource.data.negocioId) &&
+        request.resource.data.tipo in [
+          'vista_pagina',
+          'tiempo_pagina',
+          'click',
+          'error',
+          'rendimiento'
+        ];
+      allow update: if false;
     }
 
     // Suscripciones del sistema. Solo el super admin edita; cada cuenta puede leer la suya.
@@ -107,12 +285,14 @@ service cloud.firestore {
     
     // Colecciones de negocio aisladas por cuenta principal.
     match /clientes/{document} {
-      allow read, update, delete: if isSignedIn() && sameTenantResource();
+      allow read: if isSignedIn() && (hasAnalyticsAccess() || sameTenantResource());
+      allow update, delete: if isSignedIn() && sameTenantResource();
       allow create: if isSignedIn() && sameTenantRequest();
     }
     
     match /productos/{document} {
-      allow read, update, delete: if isSignedIn() && sameTenantResource();
+      allow read: if isSignedIn() && (hasAnalyticsAccess() || sameTenantResource());
+      allow update, delete: if isSignedIn() && sameTenantResource();
       allow create: if isSignedIn() && sameTenantRequest();
     }
 
@@ -122,8 +302,88 @@ service cloud.firestore {
     }
     
     match /ventas/{document} {
-      allow read, update, delete: if isSignedIn() && sameTenantResource();
+      allow read: if isSignedIn() && (hasAnalyticsAccess() || sameTenantResource());
+      allow update, delete: if isSignedIn() && sameTenantResource();
       allow create: if isSignedIn() && sameTenantRequest();
+    }
+
+    match /restaurante_ordenes/{document} {
+      allow read: if isSignedIn() && sameTenantResource();
+      allow create: if isSignedIn() && sameTenantRequest();
+      allow update: if isSignedIn() && sameTenantResource() && sameTenantRequest() && (
+        (
+          resource.data.status == 'nueva' &&
+          request.resource.data.status == 'preparando' &&
+          request.resource.data.atendidaPorUid == request.auth.uid
+        ) ||
+        (
+          resource.data.status == 'preparando' &&
+          request.resource.data.status == 'lista' &&
+          resource.data.atendidaPorUid == request.auth.uid &&
+          request.resource.data.atendidaPorUid == request.auth.uid
+        ) ||
+        (
+          resource.data.status == 'lista' &&
+          request.resource.data.status == 'cobrada' &&
+          authDocExists() &&
+          authData().rol in [
+            'Caja',
+            'caja',
+            'Cajero',
+            'cajero',
+            'Administrador',
+            'administrador'
+          ]
+        ) ||
+        (
+          resource.data.status in ['nueva', 'preparando', 'lista'] &&
+          request.resource.data.status == 'cancelada' &&
+          hasPermission('restaurante.caja') &&
+          request.resource.data.canceladaPorUid == request.auth.uid &&
+          request.resource.data.cancelacionMotivo is string &&
+          request.resource.data.cancelacionMotivo.size() >= 3
+        ) ||
+        (
+          resource.data.tipoServicio == 'comer_aqui' &&
+          resource.data.mesaAsignada == false &&
+          request.resource.data.mesaAsignada == true &&
+          authDocExists() &&
+          authData().rol in ['Mesero', 'mesero', 'Administrador', 'administrador'] &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'pisoId',
+            'pisoNombre',
+            'mesaNumero',
+            'mesaKey',
+            'mesaKeys',
+            'mesaEtiqueta',
+            'mesaAsignada',
+            'mesaAsignadaPorUid',
+            'mesaAsignadaPorNombre',
+            'mesaAsignadaAt',
+            'updatedAt'
+          ])
+        )
+      );
+      allow delete: if isSignedIn() && sameTenantResource() && isBusinessAdmin();
+    }
+
+    match /restaurante_reservaciones/{document} {
+      allow read: if isSignedIn() && sameTenantResource() && hasPermission('restaurante.mesero');
+      allow create: if isSignedIn() && sameTenantRequest() && hasPermission('restaurante.mesero');
+      allow update: if isSignedIn() && sameTenantResource() && sameTenantRequest() && hasPermission('restaurante.mesero');
+      allow delete: if isSignedIn() && sameTenantResource() && isBusinessAdmin();
+    }
+
+    match /restaurante_turnos/{document} {
+      allow read: if isSignedIn() && sameTenantResource() && (
+        resource.data.actorUid == request.auth.uid || isBusinessAdmin()
+      );
+      allow create: if isSignedIn() && sameTenantRequest() &&
+        request.resource.data.actorUid == request.auth.uid;
+      allow update: if isSignedIn() && sameTenantResource() && sameTenantRequest() && (
+        resource.data.actorUid == request.auth.uid || isBusinessAdmin()
+      );
+      allow delete: if isSignedIn() && sameTenantResource() && isBusinessAdmin();
     }
     
     match /cortes_caja/{document} {
@@ -146,13 +406,43 @@ service cloud.firestore {
     }
 
     match /empleados/{document} {
-      allow read, update, delete: if isSignedIn() && sameTenantResource();
-      allow create: if isSignedIn() && sameTenantRequest();
+      allow read: if isSignedIn() && sameTenantResource();
+      allow create: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isBusinessAdmin() && sameTenantRequest() && noSuperAdminWrite()) ||
+        (
+          request.auth.uid == request.resource.data.uid &&
+          request.resource.data.negocioId == request.auth.uid &&
+          request.resource.data.cuentaPrincipalUid == request.auth.uid &&
+          noSuperAdminWrite()
+        )
+      );
+      allow update: if isSignedIn() && (
+        isSuperAdmin() ||
+        (
+          isBusinessAdmin() &&
+          sameTenantResource() &&
+          sameTenantRequest() &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'superAdmin',
+            'accesoAnalitica',
+            'negocioId',
+            'cuentaPrincipalUid',
+            'suscripcionControlada',
+            'esCuentaPrincipal'
+          ])
+        )
+      );
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (isBusinessAdmin() && sameTenantResource() && resource.data.superAdmin != true)
+      );
     }
 
     // Configuracion compartida por tenant.
     match /configuracion/{document} {
       allow read: if isSignedIn() && (
+        hasAnalyticsAccess() ||
         sameTenantResource() ||
         isTenantConfigDocument(document)
       );
@@ -163,22 +453,40 @@ service cloud.firestore {
     // Sesiones por dispositivo para limitar equipos del titular.
     match /sesiones_dispositivo/{document} {
       allow read: if isSignedIn() && (
-        isSuperAdmin() ||
-        request.auth.uid == resource.data.uid
+        hasAnalyticsAccess() ||
+        request.auth.uid == resource.data.uid ||
+        sameTenantResource()
       );
       allow create: if isSignedIn() && (
         isSuperAdmin() ||
-        request.auth.uid == request.resource.data.uid
+        (
+          request.auth.uid == request.resource.data.uid &&
+          sameTenantRequest()
+        )
       );
       allow update, delete: if isSignedIn() && (
         isSuperAdmin() ||
-        request.auth.uid == resource.data.uid
+        (
+          request.auth.uid == resource.data.uid &&
+          sameTenantRequest()
+        )
       );
     }
 
     // Cola temporal del POS movil.
     match /pos_mobile_scans/{document} {
       allow read, write: if isSignedIn();
+    }
+
+    // Encuesta voluntaria de recomendacion de CajaLibre.
+    match /recomendaciones/{document} {
+      allow create: if isSignedIn()
+        && sameTenantRequest()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.calificacion is int
+        && request.resource.data.calificacion >= 0
+        && request.resource.data.calificacion <= 10;
+      allow read: if isSignedIn() && hasAnalyticsAccess();
     }
   }
 }

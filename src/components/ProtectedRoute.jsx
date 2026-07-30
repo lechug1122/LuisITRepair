@@ -1,20 +1,28 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../initializer/firebase";
 import { obtenerEstadoAutorizacion } from "../js/services/autorizacion";
 import PageLoader from "./PageLoader";
 
-export default function ProtectedRoute({ children }) {
+const MOTIVE_ROUTE = {
+  terminos_pendientes: "/terminos",
+  configuracion_inicial_pendiente: "/configuracion-inicial",
+  negocio_bloqueado: "/negocio-bloqueado",
+};
+
+export default function ProtectedRoute({ allowMotives = [], children }) {
   const [loading, setLoading] = useState(true);
   const [permitido, setPermitido] = useState(false);
   const [mensajeAcceso, setMensajeAcceso] = useState("");
+  const [motivo, setMotivo] = useState("");
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         setPermitido(false);
         setMensajeAcceso("");
+        setMotivo("");
         setLoading(false);
         return;
       }
@@ -23,16 +31,13 @@ export default function ProtectedRoute({ children }) {
         const estado = await obtenerEstadoAutorizacion(user.uid);
         setPermitido(estado.permitido);
         setMensajeAcceso(estado.mensaje || "");
-
-        if (!estado.permitido) {
-          await signOut(auth).catch(() => {});
-        }
+        setMotivo(estado.motivo || "");
       } catch (error) {
         setPermitido(false);
+        setMotivo("");
         setMensajeAcceso(
           String(error?.message || "").trim() || "No se pudo validar tu acceso.",
         );
-        await signOut(auth).catch(() => {});
       } finally {
         setLoading(false);
       }
@@ -43,7 +48,24 @@ export default function ProtectedRoute({ children }) {
 
   if (loading) return <PageLoader text="Validando acceso..." />;
 
+  if (!auth.currentUser) return <Navigate to="/login" replace />;
+
+  if (!permitido && allowMotives.includes(motivo)) {
+    return children;
+  }
+
   if (!permitido) {
+    const route = MOTIVE_ROUTE[motivo];
+    if (route) {
+      return (
+        <Navigate
+          to={route}
+          replace
+          state={mensajeAcceso ? { accessMessage: mensajeAcceso } : undefined}
+        />
+      );
+    }
+
     return (
       <Navigate
         to="/login"

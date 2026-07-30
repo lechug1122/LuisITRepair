@@ -228,6 +228,12 @@
   border-color: #e5e7eb;
 }
 
+.servicio-status-badge-abandonado{
+  background: #fff7ed;
+  color: #92400e;
+  border-color: #fed7aa;
+}
+
 /* =========================
    BOTONES
 ========================= */

@@ -7,6 +7,7 @@ export const STATUS = [
   { value: "entregado", label: "Entregado", color: "#16a34a" },
   { value: "cancelado", label: "Cancelado", color: "#ef4444" },
   { value: "no_reparable", label: "No reparable", color: "#6b7280" },
+  { value: "abandonado", label: "Abandonado", color: "#92400e" },
 ];
 
 export function statusInfo(value) {

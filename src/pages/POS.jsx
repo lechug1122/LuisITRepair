@@ -47,6 +47,8 @@ import useImpresorasConfig from "../hooks/useImpresorasConfig";
 import useMonedaConfig from "../hooks/useMonedaConfig";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useServiciosConfig from "../hooks/useServiciosConfig";
+import useTarjetaRecargoConfig from "../hooks/useTarjetaRecargoConfig";
+import { calcularRecargoTarjeta } from "../js/services/tarjeta_recargo_config";
 
 const IVA_RATE_DEFAULT = 0.16;
 
@@ -112,6 +114,7 @@ export default function POS() {
   const { formatCurrency } = useMonedaConfig();
   const { serviciosHabilitados } = useEmpresaConfig();
   const { habilitarCanjes, catalogoCanjes } = useServiciosConfig();
+  const { config: tarjetaRecargoConfig } = useTarjetaRecargoConfig();
   const { imprimirAlCobrar } = useImpresorasConfig();
   const mostrarProgramaCliente = !habilitarCanjes;
   const vistaPOS = searchParams.get("vista") === "clientes" ? "clientes" : "ventas";
@@ -147,6 +150,9 @@ export default function POS() {
   const [serviciosPorEntregar, setServiciosPorEntregar] = useState([]);
   const [mostrarComparador, setMostrarComparador] = useState(false);
   const [productoComparar, setProductoComparar] = useState(null);
+  const [mostrarVentaExtra, setMostrarVentaExtra] = useState(false);
+  const [ventaExtraDescripcion, setVentaExtraDescripcion] = useState("");
+  const [ventaExtraPrecio, setVentaExtraPrecio] = useState("");
 
   // 🔹 Modal Profesional
   const [mostrarPago, setMostrarPago] = useState(false);
@@ -846,6 +852,45 @@ export default function POS() {
     inputRef.current?.focus();
   };
 
+  const cerrarVentaExtra = () => {
+    setMostrarVentaExtra(false);
+    setVentaExtraDescripcion("");
+    setVentaExtraPrecio("");
+    inputRef.current?.focus();
+  };
+
+  const agregarVentaExtra = (event) => {
+    event.preventDefault();
+    if (cajaCerradaHoy || faltaFondoInicial) return;
+
+    const descripcion = String(ventaExtraDescripcion || "").trim();
+    const precio = Number(String(ventaExtraPrecio || "").trim().replace(",", "."));
+
+    if (!descripcion) {
+      alert("Ingresa una descripcion para la venta extra.");
+      return;
+    }
+
+    if (!Number.isFinite(precio) || precio <= 0) {
+      alert("Ingresa un precio valido mayor que cero.");
+      return;
+    }
+
+    setCarrito((prev) => [
+      ...prev,
+      {
+        id: `venta-extra-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        nombre: descripcion,
+        descripcion,
+        codigo: "",
+        precioVenta: Math.round(precio * 100) / 100,
+        cantidad: 1,
+        esVentaExtra: true,
+      },
+    ]);
+    cerrarVentaExtra();
+  };
+
   const agregarAlCarrito = (producto) => {
     if (cajaCerradaHoy || faltaFondoInicial) return;
 
@@ -902,8 +947,8 @@ export default function POS() {
   };
 
   const abrirComparador = (item) => {
-    if (item?.esServicio) {
-      alert("La comparativa por marketplace aplica solo para productos.");
+    if (item?.esServicio || item?.esVentaExtra) {
+      alert("La comparativa por marketplace aplica solo para productos de inventario.");
       return;
     }
 
@@ -917,7 +962,7 @@ export default function POS() {
     const reservados = new Map();
 
     carrito.forEach((item) => {
-      if (item?.esServicio) return;
+      if (item?.esServicio || item?.esVentaExtra) return;
       const productoId = String(item?.id || "").trim();
       const cantidad = parseCantidad(item?.cantidad);
       if (!productoId || cantidad <= 0) return;
@@ -1141,13 +1186,17 @@ export default function POS() {
   const ivaRate = aplicarIVA ? IVA_RATE_DEFAULT : 0;
   const iva = subtotalConDescuento * ivaRate;
   const total = subtotalConDescuento + iva;
+  const recargoTarjeta = calcularRecargoTarjeta(total, tarjetaRecargoConfig);
+  const recargoTarjetaMonto =
+    tipoPago === "tarjeta" && recargoTarjeta.habilitado ? recargoTarjeta.recargo : 0;
+  const totalCobro = total + recargoTarjetaMonto;
 
   const totalPagado =
     Number(montoEfectivo) +
     Number(montoTarjeta) +
     Number(montoTransferencia);
 
-  const cambio = totalPagado - total;
+  const cambio = totalPagado - totalCobro;
 
   const puntosGenerados = Math.floor(total / 10);
   const clienteComprasResumen = useMemo(
@@ -1158,6 +1207,22 @@ export default function POS() {
     () => construirResumenServiciosCliente(clienteServiciosHistorial),
     [clienteServiciosHistorial],
   );
+
+  useEffect(() => {
+    if (!mostrarPago) return;
+
+    if (tipoPago === "tarjeta") {
+      setMontoTarjeta(recargoTarjeta.habilitado ? recargoTarjeta.totalConRecargo : total);
+      setMontoEfectivo(0);
+      setMontoTransferencia(0);
+      return;
+    }
+
+    if (tipoPago === "efectivo") {
+      setMontoTarjeta(0);
+      setMontoTransferencia(0);
+    }
+  }, [mostrarPago, tipoPago, recargoTarjeta.habilitado, recargoTarjeta.totalConRecargo, total]);
 
   /* ================= VENTA PROFESIONAL ================= */
 
@@ -1175,7 +1240,7 @@ export default function POS() {
       return;
     }
 
-    if (totalPagado < total) {
+    if (totalPagado < totalCobro) {
       alert("Pago insuficiente");
       return;
     }
@@ -1220,7 +1285,7 @@ export default function POS() {
     });
 
     carrito.forEach((item) => {
-      if (item?.esServicio) return;
+      if (item?.esServicio || item?.esVentaExtra) return;
       const id = String(item?.id || "").trim();
       if (!id) return;
       const qty = parseCantidad(item?.cantidad);
@@ -1304,13 +1369,19 @@ export default function POS() {
       aplicarIVA,
       ivaPorcentaje: ivaRate,
       iva,
-      total,
+      total: totalCobro,
+      totalProductos: total,
+      recargoTarjeta: recargoTarjetaMonto,
       tipoPago,
       pagoDetalle: {
         efectivo: montoEfectivo,
         tarjeta: montoTarjeta,
         transferencia: montoTransferencia,
         referenciaTarjeta: referenciaPago.trim() || null,
+        recargoTarjeta: recargoTarjetaMonto,
+        totalSinRecargo: total,
+        proveedorRecargoTarjeta: recargoTarjeta.proveedor || null,
+        porcentajeRecargoTarjeta: recargoTarjeta.porcentajeTotal,
       },
       puntosGenerados,
       puntosCanjeados,
@@ -1397,7 +1468,10 @@ export default function POS() {
         aplicaIVA: aplicarIVA,
         ivaPorcentaje: ivaRate,
         iva,
+        recargoTarjeta: recargoTarjetaMonto,
+        proveedorRecargoTarjeta: recargoTarjeta.proveedor,
         total,
+        totalCobro,
       });
     }
 
@@ -1580,8 +1654,16 @@ export default function POS() {
             </div>
           )}
 
-          {serviciosHabilitados && (
-            <div className="pos-actions">
+          <div className="pos-actions">
+            <button
+              type="button"
+              className="btn-venta-extra"
+              disabled={cajaCerradaHoy || faltaFondoInicial}
+              onClick={() => setMostrarVentaExtra(true)}
+            >
+              Venta extra
+            </button>
+            {serviciosHabilitados && (
               <button
                 type="button"
                 className="btn-servicio-listo"
@@ -1590,8 +1672,8 @@ export default function POS() {
               >
                 Pagar servicio
               </button>
-            </div>
-          )}
+            )}
+          </div>
 
           <input
             ref={inputRef}
@@ -1636,6 +1718,8 @@ export default function POS() {
                     ? `Canje por puntos · ${p.puntosCanjeados || 0} pts`
                     : p.esServicio
                       ? `Servicio ${p.servicioFolio || ""}`.trim()
+                      : p.esVentaExtra
+                        ? "Venta extra"
                       : p.codigo
                         ? `Codigo: ${p.codigo}`
                         : "Producto de inventario";
@@ -1643,7 +1727,15 @@ export default function POS() {
                   return (
                     <tr
                       key={p.id}
-                      className={p.esCanje ? "tabla-fila-canje" : p.esServicio ? "tabla-fila-servicio" : ""}
+                      className={
+                        p.esCanje
+                          ? "tabla-fila-canje"
+                          : p.esServicio
+                            ? "tabla-fila-servicio"
+                            : p.esVentaExtra
+                              ? "tabla-fila-extra"
+                              : ""
+                      }
                     >
                       <td className="tabla-producto-cell" data-label="Producto">
                         <div className="tabla-producto">
@@ -1661,6 +1753,8 @@ export default function POS() {
                           <span className="tabla-tag tabla-tag-canje">Canje $0</span>
                         ) : p.esServicio ? (
                           <span className="tabla-tag tabla-tag-servicio">Servicio</span>
+                        ) : p.esVentaExtra ? (
+                          <span className="tabla-tag tabla-tag-extra">Extra</span>
                         ) : (
                           <button
                             type="button"
@@ -1980,6 +2074,14 @@ export default function POS() {
             <p>Subtotal: {formatCurrency(subtotal)}</p>
             <p>IVA ({aplicarIVA ? "16%" : "0%"}): {formatCurrency(iva)}</p>
             <h2>Total: {formatCurrency(total)}</h2>
+            {recargoTarjeta.habilitado && recargoTarjeta.recargo > 0 && (
+              <p>
+                Tarjeta: {formatCurrency(recargoTarjeta.totalConRecargo)}{" "}
+                <span className="resumen-muted">
+                  (+{formatCurrency(recargoTarjeta.recargo)})
+                </span>
+              </p>
+            )}
           </div>
 
           <button
@@ -2017,7 +2119,74 @@ export default function POS() {
         </div>
       </div>
 
-      {/* 🔹 MODAL SEPARADO */}
+      {/* MODALES DEL POS */}
+      {mostrarVentaExtra && (
+        <div
+          className="venta-extra-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) cerrarVentaExtra();
+          }}
+        >
+          <form
+            className="venta-extra-modal"
+            onSubmit={agregarVentaExtra}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="venta-extra-title"
+          >
+            <div className="venta-extra-header">
+              <div>
+                <h2 id="venta-extra-title">Agregar venta extra</h2>
+                <p>Captura un concepto que no pertenece al inventario.</p>
+              </div>
+              <button
+                type="button"
+                className="venta-extra-close"
+                onClick={cerrarVentaExtra}
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+
+            <label htmlFor="venta-extra-descripcion">Descripcion</label>
+            <input
+              id="venta-extra-descripcion"
+              type="text"
+              maxLength={120}
+              value={ventaExtraDescripcion}
+              onChange={(event) => setVentaExtraDescripcion(event.target.value)}
+              placeholder="Ej. Instalacion, envio o ajuste"
+              autoFocus
+              required
+            />
+
+            <label htmlFor="venta-extra-precio">Precio</label>
+            <input
+              id="venta-extra-precio"
+              type="number"
+              inputMode="decimal"
+              min="0.01"
+              step="0.01"
+              value={ventaExtraPrecio}
+              onChange={(event) => setVentaExtraPrecio(event.target.value)}
+              placeholder="0.00"
+              required
+            />
+
+            <div className="venta-extra-actions">
+              <button type="button" className="venta-extra-cancel" onClick={cerrarVentaExtra}>
+                Cancelar
+              </button>
+              <button type="submit" className="venta-extra-submit">
+                Agregar a la venta
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {serviciosHabilitados && (
         <ModalSelectorServicio
           mostrar={mostrarSelectorServicio}
@@ -2044,6 +2213,9 @@ export default function POS() {
         mostrar={mostrarPago && !cajaCerradaHoy && !faltaFondoInicial}
         onClose={() => setMostrarPago(false)}
         total={total}
+        totalCobro={totalCobro}
+        recargoTarjeta={recargoTarjeta}
+        recargoTarjetaMonto={recargoTarjetaMonto}
         imprimirAlCobrar={imprimirAlCobrar}
         clienteData={clienteData}
         usarPuntos={usarPuntos}

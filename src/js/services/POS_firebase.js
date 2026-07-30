@@ -28,7 +28,28 @@ export const obtenerProductos = async () => {
     id: docSnap.id,
     ...docSnap.data(),
   }));
-  return filterItemsByTenant(items);
+  const tenantItems = filterItemsByTenant(items);
+  const now = new Date();
+  const localToday = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+  const expiredDailyMenus = tenantItems.filter((item) => (
+    item.menuDelDia === true
+    && /^\d{4}-\d{2}-\d{2}$/.test(String(item.fechaMenu || ""))
+    && String(item.fechaMenu) < localToday
+  ));
+
+  if (expiredDailyMenus.length) {
+    try {
+      const batch = writeBatch(db);
+      expiredDailyMenus.forEach((item) => batch.delete(doc(db, "productos", item.id)));
+      await batch.commit();
+    } catch (error) {
+      console.warn("No se pudieron eliminar los menús del día vencidos:", error?.code || error);
+    }
+  }
+
+  return tenantItems.filter((item) => !expiredDailyMenus.some((expired) => expired.id === item.id));
 };
 
 

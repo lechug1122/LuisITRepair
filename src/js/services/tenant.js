@@ -12,6 +12,7 @@ export function readTenantContext() {
     return {
       uid: "",
       cuentaPrincipalUid: "",
+      negocioId: "",
       superAdmin: false,
       suscripcionControlada: false,
     };
@@ -23,6 +24,7 @@ export function readTenantContext() {
       return {
         uid: "",
         cuentaPrincipalUid: "",
+        negocioId: "",
         superAdmin: false,
         suscripcionControlada: false,
       };
@@ -32,6 +34,7 @@ export function readTenantContext() {
     return {
       uid: normalizeId(parsed?.uid),
       cuentaPrincipalUid: normalizeId(parsed?.cuentaPrincipalUid),
+      negocioId: normalizeId(parsed?.negocioId || parsed?.cuentaPrincipalUid),
       superAdmin: parsed?.superAdmin === true,
       suscripcionControlada: parsed?.suscripcionControlada === true,
     };
@@ -39,6 +42,7 @@ export function readTenantContext() {
     return {
       uid: "",
       cuentaPrincipalUid: "",
+      negocioId: "",
       superAdmin: false,
       suscripcionControlada: false,
     };
@@ -50,7 +54,8 @@ export function saveTenantContext(context = {}) {
 
   const normalized = {
     uid: normalizeId(context?.uid),
-    cuentaPrincipalUid: normalizeId(context?.cuentaPrincipalUid || context?.uid),
+    cuentaPrincipalUid: normalizeId(context?.cuentaPrincipalUid || context?.negocioId || context?.uid),
+    negocioId: normalizeId(context?.negocioId || context?.cuentaPrincipalUid || context?.uid),
     superAdmin: context?.superAdmin === true,
     suscripcionControlada: context?.suscripcionControlada === true,
   };
@@ -77,6 +82,7 @@ export function resolveTenantId(explicitTenantId = "") {
   if (provided) return provided;
 
   const cached = readTenantContext();
+  if (cached.negocioId) return cached.negocioId;
   if (cached.cuentaPrincipalUid) return cached.cuentaPrincipalUid;
 
   try {
@@ -88,7 +94,9 @@ export function resolveTenantId(explicitTenantId = "") {
 
 export function allowLegacyTenantFallback() {
   const context = readTenantContext();
-  return context.superAdmin === true || context.suscripcionControlada !== true;
+  // Los documentos legacy no contienen tenant y las reglas modernas bloquean
+  // correctamente su lectura. Solo el superadministrador puede migrarlos.
+  return context.superAdmin === true;
 }
 
 export function dataBelongsToTenant(raw = {}, tenantId = "", options = {}) {
@@ -97,6 +105,8 @@ export function dataBelongsToTenant(raw = {}, tenantId = "", options = {}) {
 
   const owner = normalizeId(raw?.cuentaPrincipalUid);
   if (owner) return owner === resolvedTenantId;
+  const negocioId = normalizeId(raw?.negocioId);
+  if (negocioId) return negocioId === resolvedTenantId;
 
   return options.allowLegacyFallback ?? allowLegacyTenantFallback();
 }
@@ -114,6 +124,7 @@ export function withTenantData(raw = {}, tenantId = "") {
   return {
     ...raw,
     cuentaPrincipalUid: resolvedTenantId,
+    negocioId: resolvedTenantId,
   };
 }
 

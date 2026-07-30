@@ -18,6 +18,7 @@ import { actualizarCliente } from "../js/services/clientes_firestore";
 import { obtenerProductos } from "../js/services/POS_firebase";
 import useServiciosConfig from "../hooks/useServiciosConfig";
 import useNotificacionesConfig from "../hooks/useNotificacionesConfig";
+import { generarPdfBoletaVenta } from "../js/services/pdf_boleta_venta";
 import { STATUS } from "../js/utils/status_map";
 import {
   buildCamposPersonalizados,
@@ -40,9 +41,6 @@ import {
 /* =========================
    CONFIG
 ========================= */
-const GOOGLE_SHEETS_WEBAPP_URL =
-  "https://script.google.com/macros/s/AKfycbwzaBlvaMtMlEfyvOHWORy46lm_lqt8xCAYNe-xxvZN41D9EXw3_UP7ZZGC-ZUNuIr1/exec";
-
 const storage = getStorage();
 const STATUS_VALUE_SET = new Set(STATUS.map((s) => s.value));
 const BOLETA_SCANNER_ID = "boleta-reader";
@@ -63,7 +61,7 @@ function normalizarStatus(raw) {
 
 function isFinalStatus(status) {
   const s = normalizarStatus(status);
-  return s === "entregado";
+  return s === "entregado" || s === "abandonado";
 }
 
 function statusValueFromRaw(raw) {
@@ -168,35 +166,6 @@ function uid() {
  * ✅ PDF SIN CORS (abre webapp con payload)
  * NO tocamos correo/telefono (tu plantilla ya lo trae)
  */
-function abrirPDFGoogleSheets({
-  servicio,
-  boletaFecha,
-  boletaFormaPago,
-  boletaNotas,
-  items,
-  folio,
-}) {
-  const payload = {
-    folio: servicio?.folio || folio || "",
-    nombre: servicio?.nombre || "",
-    direccion: servicio?.direccion || "S/N",
-    fecha: boletaFecha || "",
-    formaPago: boletaFormaPago || "",
-    notas: boletaNotas || "", // ✅ NOTAS RESPETADAS
-    items: (items || []).map((it) => ({
-      item: it?.item || "",
-      descripcion: it?.descripcion || "",
-      pUnitario: num(it?.pUnitario),
-      cantidad: num(it?.cantidad),
-    })),
-  };
-
-  const url = `${GOOGLE_SHEETS_WEBAPP_URL}?payload=${encodeURIComponent(
-    JSON.stringify(payload),
-  )}`;
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-
 /* =========================
    Wizard
 ========================= */
@@ -577,8 +546,8 @@ export default function ServicioDetalle() {
   const statusPrevioRef = useRef("pendiente");
 
   const locked =
-    normalizarStatus(servicio?.status) === "entregado" ||
-    (!!servicio?.locked && normalizarStatus(servicio?.lockedReason) === "entregado");
+    isFinalStatus(servicio?.status) ||
+    (!!servicio?.locked && isFinalStatus(servicio?.lockedReason));
   const tipoEquipoEdit = normalizarStatus(
     equipoEdit?.tipoDispositivo || servicio?.tipoDispositivo,
   );
@@ -1456,6 +1425,12 @@ const guardarTodo = async ({ silent = false } = {}) => {
   const costoSinBoleta = costoManualCapturado ?? 0;
   const costoConBoleta = totalBoleta;
   const nextStatus = statusValueFromRaw(status);
+  const statusNormalizado = normalizarStatus(nextStatus);
+  const statusGuardar =
+    ["cancelado", "no_reparable"].includes(statusNormalizado) && abandonoActivo
+      ? "abandonado"
+      : nextStatus;
+  const statusGuardarNormalizado = normalizarStatus(statusGuardar);
   const pidePrecio = requierePrecioFinal(nextStatus);
   const aceptaPrecioCero = permitePrecioCero(nextStatus);
   const costoPersistidoVacio =
@@ -1497,7 +1472,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
   // 🚫 BLOQUEAR ENTREGADO SI NO ESTÁ COBRADO
   // ===============================
 
-  if (normalizarStatus(nextStatus) === "entregado") {
+  if (statusGuardarNormalizado === "entregado") {
     const estaCobradoEnPOS = !!servicio?.cobradoEnPOS;
     if (!estaCobradoEnPOS) {
       if (!silent) {
@@ -1507,20 +1482,19 @@ const guardarTodo = async ({ silent = false } = {}) => {
     }
   }
 
-  const willLock = isFinalStatus(nextStatus);
+  const willLock = isFinalStatus(statusGuardar);
 
   if (willLock) {
     const ok = confirm(
-      `⚠️ Vas a marcar el servicio como "${nextStatus}".\n\nEsto lo CERRARÁ y YA NO se podrá modificar.\n\n¿Confirmas?`
+      `⚠️ Vas a marcar el servicio como "${statusGuardar}".\n\nEsto lo CERRARÁ y YA NO se podrá modificar.\n\n¿Confirmas?`
     );
     if (!ok) return false;
   }
 
-  const statusNormalizado = normalizarStatus(nextStatus);
   const costoRevision = Number(precioRevision || 0);
   const aplicarRetardo =
     !!retardoConfig?.habilitado &&
-    statusNormalizado !== "entregado";
+    statusGuardarNormalizado !== "entregado";
   const cargoRetardoGuardar = aplicarRetardo ? cargoRetardoTotal : 0;
   const costoGuardar = usarBoleta
     ? costoConBoleta + cargoRetardoGuardar
@@ -1533,7 +1507,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
           : servicio?.costo;
 
   const patch = {
-    status: nextStatus,
+    status: statusGuardar,
     fechaAprox: fechaAprox || "",
     observaciones: observaciones || "",
     ...(esAdmin ? { notaAdmin: String(notaAdminEdit || "").trim() } : {}),
@@ -1585,7 +1559,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
     ...(willLock
       ? {
           locked: true,
-          lockedReason: normalizarStatus(nextStatus),
+          lockedReason: statusGuardarNormalizado,
         }
       : {}),
   };
@@ -1818,14 +1792,20 @@ const guardarTodo = async ({ silent = false } = {}) => {
       // guarda silencioso (asegura formaPago + notas + items en BD)
       await guardarTodo({ silent: true });
 
-      abrirPDFGoogleSheets({
-        servicio,
-        boletaFecha,
-        boletaFormaPago,
-        boletaNotas,
+      await generarPdfBoletaVenta({
+        folio: servicio?.folio || folio || "",
+        nombre: servicio?.nombre || "",
+        direccion: servicio?.direccion || "S/N",
+        telefono: servicio?.telefono || "",
+        fecha: boletaFecha || "",
+        formaPago: boletaFormaPago || "",
+        notas: boletaNotas || "",
         items,
-        folio,
+        total: totalBoleta,
       });
+    } catch (error) {
+      console.error("No se pudo generar la boleta PDF:", error);
+      alert("No se pudo generar la boleta PDF. Intenta nuevamente.");
     } finally {
       setExportingPdf(false);
     }
@@ -2526,7 +2506,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
                 >
                   {exportingPdf
                     ? "Generando PDF..."
-                    : "Generar PDF (Plantilla)"}
+                    : "Descargar boleta PDF"}
                 </button>
               </div>
             </div>

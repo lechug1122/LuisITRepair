@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Layout from "../components/Layout";
 import "../css/productos.css";
 import imgProductsUrl from "../img/img_products.png";
+import { auth } from "../initializer/firebase";
 import {
   obtenerProductos,
   crearProducto,
@@ -26,6 +27,34 @@ const OBJETO_IMPUESTO_OPTIONS = [
   { value: "03", label: "03 - Si objeto y no obligado al desglose" },
 ];
 const IVA_OPTIONS = ["0", "8", "16"];
+const CONTEO_INVENTARIO_STORAGE_KEY = "inventario_conteo_meta_v1";
+const INVENTARIO_EXCEL_COLUMNS = [
+  { key: "codigo", label: "Codigo" },
+  { key: "nombre", label: "Producto" },
+  { key: "sku", label: "SKU" },
+  { key: "categoria", label: "Categoria" },
+  { key: "marca", label: "Marca" },
+  { key: "tipo", label: "Tipo" },
+  { key: "proveedorPrincipal", label: "Proveedor" },
+  { key: "ubicacion", label: "Ubicacion" },
+  { key: "unidadMedida", label: "Unidad" },
+  { key: "descripcion", label: "Descripcion" },
+  { key: "precioCompra", label: "Precio compra" },
+  { key: "ultimoCosto", label: "Ultimo costo" },
+  { key: "precioVenta", label: "Precio venta" },
+  { key: "stock", label: "Stock" },
+  { key: "stockMinimo", label: "Stock minimo" },
+  { key: "stockMaximo", label: "Stock maximo" },
+  { key: "puntoReorden", label: "Punto reorden" },
+  { key: "compatibilidad", label: "Compatibilidad" },
+  { key: "claveSat", label: "Clave SAT" },
+  { key: "claveUnidadSat", label: "Clave unidad SAT" },
+  { key: "descripcionFactura", label: "Descripcion factura" },
+  { key: "objetoImpuesto", label: "Objeto impuesto" },
+  { key: "iva", label: "IVA" },
+  { key: "notasInternas", label: "Notas internas" },
+  { key: "estadoInventario", label: "Estado" },
+];
 const CAMPOS_AUTOCOMPLETE_CATALOGO = [
   "nombre",
   "descripcion",
@@ -170,6 +199,100 @@ function toNumber(value) {
 
 function uniqueOptions(values = []) {
   return [...new Set(values.map((item) => text(item)).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+}
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function buildExcelFilename(prefix) {
+  return `${prefix}_${getTodayKey()}.xlsx`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatDateOnly(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function addMonths(value, months = 1) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return new Date();
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function readConteoInventarioMeta() {
+  try {
+    const raw = localStorage.getItem(CONTEO_INVENTARIO_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveConteoInventarioMeta(meta) {
+  try {
+    localStorage.setItem(CONTEO_INVENTARIO_STORAGE_KEY, JSON.stringify(meta));
+  } catch {
+    // La bitacora local es auxiliar; el inventario ya se guardo en Firebase.
+  }
+}
+
+function normalizeExcelHeader(value) {
+  return normalizedText(value).replace(/\s+/g, "");
+}
+
+function getExcelValue(row, key, label) {
+  const aliases = [key, label, normalizeExcelHeader(key), normalizeExcelHeader(label)];
+  const entry = Object.entries(row).find(([rawKey]) => aliases.includes(normalizeExcelHeader(rawKey)));
+  return entry ? entry[1] : "";
+}
+
+function productoToExcelRow(producto = {}) {
+  return INVENTARIO_EXCEL_COLUMNS.reduce((acc, column) => {
+    acc[column.label] = producto[column.key] ?? "";
+    return acc;
+  }, {});
+}
+
+function excelRowToForm(row = {}) {
+  const next = { ...productoVacio };
+
+  INVENTARIO_EXCEL_COLUMNS.forEach((column) => {
+    const value = getExcelValue(row, column.key, column.label);
+    if (value !== "" && value !== null && value !== undefined) {
+      next[column.key] = value;
+    }
+  });
+
+  return {
+    ...next,
+    estadoInventario: text(next.estadoInventario) || "Activo",
+    tipo: text(next.tipo) || "producto",
+    unidadMedida: text(next.unidadMedida) || "Pza",
+    objetoImpuesto: text(next.objetoImpuesto) || "02",
+    iva: text(next.iva) || "16",
+  };
 }
 
 function toFormState(producto = {}) {
@@ -328,6 +451,15 @@ export default function Productos({ embedded = false }) {
   const catalogoAutocompletadoRef = useRef(null);
   const [mostrarModalCatalogo, setMostrarModalCatalogo] = useState(false);
   const [noMostrarModalCatalogo, setNoMostrarModalCatalogo] = useState(false);
+  const [mostrarAvisoConteo, setMostrarAvisoConteo] = useState(false);
+  const [mostrarConteoInventario, setMostrarConteoInventario] = useState(false);
+  const [mostrarConfirmacionConteo, setMostrarConfirmacionConteo] = useState(false);
+  const [busquedaConteo, setBusquedaConteo] = useState("");
+  const [filtroConteo, setFiltroConteo] = useState("todos");
+  const [conteoInventario, setConteoInventario] = useState({});
+  const [conteoMeta, setConteoMeta] = useState(readConteoInventarioMeta);
+  const [importandoExcel, setImportandoExcel] = useState(false);
+  const inputImportarExcelRef = useRef(null);
   const inventarioPages = useMemo(
     () =>
       inventarioCfg.camposProductoCompletos
@@ -546,6 +678,86 @@ export default function Productos({ embedded = false }) {
     );
   }, [busquedaProductoCategoria, categoriaActiva]);
 
+  const productosConteo = useMemo(
+    () =>
+      [...productos].sort((a, b) =>
+        text(a.categoria).localeCompare(text(b.categoria), "es") ||
+        text(a.nombre).localeCompare(text(b.nombre), "es"),
+      ),
+    [productos],
+  );
+
+  const resumenConteo = useMemo(() => {
+    const revisados = Object.values(conteoInventario).filter((value) => text(value) !== "").length;
+    const productosConDiferencia = productosConteo.filter((producto) => {
+      const value = conteoInventario[producto.id];
+      if (text(value) === "") return false;
+      return toNumber(value) !== toNumber(producto.stock);
+    });
+    const prioridadAlta = productosConteo.filter((producto) => {
+      const stock = toNumber(producto.stock);
+      const minimo = toNumber(producto.stockMinimo);
+      return minimo > 0 && stock <= minimo;
+    }).length;
+    const aumentos = productosConDiferencia.filter((producto) => toNumber(conteoInventario[producto.id]) > toNumber(producto.stock)).length;
+    const faltantes = productosConDiferencia.filter((producto) => toNumber(conteoInventario[producto.id]) < toNumber(producto.stock)).length;
+
+    return {
+      revisados,
+      pendientes: Math.max(0, productosConteo.length - revisados),
+      diferencias: productosConDiferencia.length,
+      aumentos,
+      faltantes,
+      prioridadAlta,
+      total: productosConteo.length,
+    };
+  }, [conteoInventario, productosConteo]);
+
+  const avanceConteo = resumenConteo.total > 0
+    ? Math.round((resumenConteo.revisados / resumenConteo.total) * 100)
+    : 0;
+
+  const productosConteoVisibles = useMemo(() => {
+    const query = normalizedText(busquedaConteo);
+
+    return productosConteo.filter((producto) => {
+      const contadoRaw = conteoInventario[producto.id];
+      const tieneConteo = text(contadoRaw) !== "";
+      const diferencia = tieneConteo ? toNumber(contadoRaw) - toNumber(producto.stock) : 0;
+      const prioridadAlta = toNumber(producto.stockMinimo) > 0 && toNumber(producto.stock) <= toNumber(producto.stockMinimo);
+
+      if (query) {
+        const coincide = [
+          producto.nombre,
+          producto.codigo,
+          producto.sku,
+          producto.categoria,
+          producto.marca,
+          producto.proveedorPrincipal,
+        ].some((value) => normalizedText(value).includes(query));
+        if (!coincide) return false;
+      }
+
+      if (filtroConteo === "pendientes") return !tieneConteo;
+      if (filtroConteo === "contados") return tieneConteo;
+      if (filtroConteo === "diferencias") return diferencia !== 0;
+      if (filtroConteo === "prioridad") return prioridadAlta;
+      return true;
+    });
+  }, [busquedaConteo, conteoInventario, filtroConteo, productosConteo]);
+
+  const conteoResumenCard = useMemo(() => {
+    const lastAt = conteoMeta?.lastAt || "";
+    const lastUser = text(conteoMeta?.userName) || "Sistema";
+    const nextDate = addMonths(lastAt || new Date(), 1);
+
+    return {
+      frecuencia: "Cada mes",
+      ultimo: lastAt ? `${formatDateTime(lastAt)} por ${lastUser}` : "Sin conteos registrados",
+      proximo: formatDateOnly(nextDate),
+    };
+  }, [conteoMeta]);
+
   const cargarProductos = useCallback(async () => {
     const data = await obtenerProductos();
     setProductos(Array.isArray(data) ? data : []);
@@ -660,6 +872,151 @@ export default function Productos({ embedded = false }) {
     setBusquedaCategoria("");
     setBusquedaProductoCategoria("");
     setCategoriaActivaKey("");
+  };
+
+  const abrirAvisoConteo = () => {
+    setMostrarAvisoConteo(true);
+  };
+
+  const iniciarConteoInventario = () => {
+    setMostrarAvisoConteo(false);
+    setMostrarConteoInventario(true);
+    setBusquedaConteo("");
+    setFiltroConteo("todos");
+  };
+
+  const descargarWorkbook = async (rows, sheetName, filename) => {
+    const XLSX = await import("xlsx");
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    XLSX.writeFile(workbook, filename);
+  };
+
+  const exportarExcel = async () => {
+    try {
+      await descargarWorkbook(
+        productos.map(productoToExcelRow),
+        "Inventario",
+        buildExcelFilename("inventario"),
+      );
+    } catch (error) {
+      console.error("No se pudo exportar inventario:", error);
+      alert("No se pudo exportar el inventario.");
+    }
+  };
+
+  const descargarPlantillaExcel = async () => {
+    try {
+      await descargarWorkbook(
+        [productoToExcelRow(productoVacio)],
+        "Plantilla",
+        buildExcelFilename("plantilla_inventario"),
+      );
+    } catch (error) {
+      console.error("No se pudo crear plantilla:", error);
+      alert("No se pudo descargar la plantilla.");
+    }
+  };
+
+  const abrirImportarExcel = () => {
+    inputImportarExcelRef.current?.click();
+  };
+
+  const importarExcel = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setImportandoExcel(true);
+    try {
+      const XLSX = await import("xlsx");
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+      const productosValidos = rows
+        .map(excelRowToForm)
+        .filter((item) => text(item.codigo) && text(item.nombre) && text(item.precioVenta));
+
+      if (!productosValidos.length) {
+        alert("El archivo no tiene productos validos. Revisa Codigo, Producto y Precio venta.");
+        return;
+      }
+
+      if (!confirm(`Se importaran ${productosValidos.length} producto(s). Los codigos existentes se actualizaran. Continuar?`)) {
+        return;
+      }
+
+      for (const item of productosValidos) {
+        const existente = productos.find((producto) => normalizarCodigo(producto.codigo) === normalizarCodigo(item.codigo));
+        const payload = toPayload(item);
+        if (existente?.id) {
+          await actualizarProducto(existente.id, payload);
+        } else {
+          await crearProducto(payload);
+        }
+      }
+
+      await cargarTodoInventario();
+      alert("Inventario importado correctamente.");
+    } catch (error) {
+      console.error("No se pudo importar Excel:", error);
+      alert("No se pudo importar el archivo Excel.");
+    } finally {
+      setImportandoExcel(false);
+    }
+  };
+
+  const actualizarConteo = (productoId, value) => {
+    setConteoInventario((prev) => ({ ...prev, [productoId]: value }));
+  };
+
+  const finalizarConteoInventario = () => {
+    const cambios = productosConteo.filter((producto) => {
+      const value = conteoInventario[producto.id];
+      return text(value) !== "" && toNumber(value) !== toNumber(producto.stock);
+    });
+
+    if (!cambios.length) {
+      alert("No hay diferencias para aplicar.");
+      return;
+    }
+
+    setMostrarConfirmacionConteo(true);
+  };
+
+  const aplicarConteoInventario = async () => {
+    const cambios = productosConteo.filter((producto) => {
+      const value = conteoInventario[producto.id];
+      return text(value) !== "" && toNumber(value) !== toNumber(producto.stock);
+    });
+
+    try {
+      for (const producto of cambios) {
+        await actualizarProducto(producto.id, {
+          ...producto,
+          stock: toNumber(conteoInventario[producto.id]),
+        });
+      }
+
+      const user = auth.currentUser;
+      const meta = {
+        lastAt: new Date().toISOString(),
+        userName: text(user?.displayName) || text(user?.email) || "Sistema",
+      };
+      saveConteoInventarioMeta(meta);
+      setConteoMeta(meta);
+      setConteoInventario({});
+      setMostrarConfirmacionConteo(false);
+      await cargarProductos();
+      setMostrarConteoInventario(false);
+      alert("Conteo aplicado al inventario.");
+    } catch (error) {
+      console.error("No se pudo aplicar conteo:", error);
+      alert("No se pudo aplicar el conteo.");
+    }
   };
 
   const buscarProductoPorCodigo = () => {
@@ -816,28 +1173,66 @@ export default function Productos({ embedded = false }) {
           <h1>Inventario</h1>
           <p>{embedded ? "Este es el mismo inventario que utiliza el POS." : "Administra productos, stock, facturacion y datos de compra del negocio."}</p>
         </div>
-        <div className="acciones-header-productos">
-          <button
-            className="btn-accion-header btn-modificar-codigo"
-            onClick={abrirModalEditarCodigo}
-            type="button"
-          >
-            Modificar por codigo
-          </button>
-          <button
-            className="btn-accion-header btn-categorias"
-            onClick={abrirModalCategorias}
-            type="button"
-          >
-            {mostrarModalCategorias ? "Ocultar categorias" : "Categorias"}
-          </button>
-          <button
-            className="btn-accion-header btn-nuevo"
-            onClick={abrirNuevoProducto}
-            type="button"
-          >
-            + Nuevo producto
-          </button>
+        <div className="prod-action-nav">
+          <div className="acciones-header-productos">
+            <button
+              className="btn-accion-header btn-nuevo"
+              onClick={abrirNuevoProducto}
+              type="button"
+            >
+              + Nuevo producto
+            </button>
+            <button
+              className="btn-accion-header btn-modificar-codigo"
+              onClick={abrirModalEditarCodigo}
+              type="button"
+            >
+              Modificar por codigo
+            </button>
+            <button
+              className="btn-accion-header btn-conteo"
+              onClick={abrirAvisoConteo}
+              type="button"
+            >
+              Conteo inventario
+            </button>
+            <button
+              className="btn-accion-header btn-categorias"
+              onClick={abrirModalCategorias}
+              type="button"
+            >
+              {mostrarModalCategorias ? "Ocultar categorias" : "Categorias"}
+            </button>
+            <button
+              className="btn-accion-header btn-exportar-excel"
+              onClick={exportarExcel}
+              type="button"
+            >
+              Exportar Excel
+            </button>
+            <button
+              className="btn-accion-header btn-importar-excel"
+              onClick={abrirImportarExcel}
+              type="button"
+              disabled={importandoExcel}
+            >
+              {importandoExcel ? "Importando..." : "Importar Excel"}
+            </button>
+            <button
+              className="btn-accion-header btn-plantilla-excel"
+              onClick={descargarPlantillaExcel}
+              type="button"
+            >
+              Plantilla Excel
+            </button>
+          </div>
+          <input
+            ref={inputImportarExcelRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="prod-hidden-file-input"
+            onChange={importarExcel}
+          />
         </div>
       </div>
 
@@ -1017,6 +1412,225 @@ export default function Productos({ embedded = false }) {
             </section>
           </div>
         </section>
+      )}
+
+      {!mostrarModalCategorias && (
+        <section className="prod-count-summary">
+          <div className="prod-count-copy">
+            <strong>{conteoResumenCard.frecuencia}</strong>
+            <span>Ultimo conteo: {conteoResumenCard.ultimo}</span>
+            <span>Proximo sugerido: {conteoResumenCard.proximo}</span>
+          </div>
+          <div className="prod-count-metrics">
+            <span>{resumenConteo.total} producto(s)</span>
+            <span>{resumenConteo.diferencias} con diferencia</span>
+            <span>{resumenConteo.prioridadAlta} prioridad alta</span>
+          </div>
+        </section>
+      )}
+
+      {mostrarAvisoConteo && (
+        <div className="prod-modal-overlay">
+          <div className="prod-modal-center prod-modal-conteo-aviso">
+            <h2 className="prod-conteo-aviso-title">Iniciar conteo de inventario</h2>
+            <p className="prod-conteo-aviso-copy">
+              Se abrira una pagina especial para hacer el conteo completo del inventario.
+            </p>
+
+            <div className="prod-conteo-warning">
+              <strong>Importante</strong>
+              <p>Una vez que entres al conteo, no se puede regresar y no se puede cancelar.</p>
+            </div>
+
+            <div className="prod-conteo-aviso-actions">
+              <button
+                className="prod-btn-modal prod-btn-cancelar"
+                type="button"
+                onClick={() => setMostrarAvisoConteo(false)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="prod-btn-modal prod-btn-guardar"
+                type="button"
+                onClick={iniciarConteoInventario}
+              >
+                Entendido, entrar al conteo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mostrarConteoInventario && !mostrarModalCategorias && (
+        <div className="prod-modal-overlay prod-conteo-overlay">
+          <section className="prod-modal-center prod-conteo-wrapper">
+            <div className="prod-conteo-head">
+              <div>
+                <h2 className="prod-modal-title">Conteo de inventario</h2>
+                <p className="prod-categorias-subtitle">Captura el stock fisico contado y aplica solo las diferencias.</p>
+              </div>
+              <div className="prod-conteo-actions">
+                <span>{resumenConteo.revisados} de {resumenConteo.total} revisado(s)</span>
+                <span>{resumenConteo.diferencias} diferencia(s)</span>
+                <button
+                  type="button"
+                  className="prod-btn-modal prod-btn-guardar"
+                  onClick={finalizarConteoInventario}
+                >
+                  Finalizar conteo
+                </button>
+              </div>
+            </div>
+
+            <div className="prod-conteo-dashboard">
+              <div className="prod-conteo-progress">
+                <div>
+                  <strong>{avanceConteo}% completado</strong>
+                  <span>{resumenConteo.pendientes} pendiente(s) por contar</span>
+                </div>
+                <div className="prod-conteo-progressbar" aria-hidden="true">
+                  <span style={{ width: `${avanceConteo}%` }} />
+                </div>
+              </div>
+              <div className="prod-conteo-stats">
+                <span>{resumenConteo.faltantes} faltante(s)</span>
+                <span>{resumenConteo.aumentos} sobrante(s)</span>
+                <span>{resumenConteo.prioridadAlta} prioridad alta</span>
+              </div>
+            </div>
+
+            <div className="prod-conteo-toolbar">
+              <input
+                type="search"
+                value={busquedaConteo}
+                onChange={(event) => setBusquedaConteo(event.target.value)}
+                placeholder="Escanea o busca por producto, codigo, SKU, categoria..."
+              />
+              <div className="prod-conteo-filtros">
+                {[
+                  ["todos", "Todos"],
+                  ["pendientes", "Pendientes"],
+                  ["contados", "Contados"],
+                  ["diferencias", "Con diferencia"],
+                  ["prioridad", "Prioridad alta"],
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    className={filtroConteo === key ? "active" : ""}
+                    onClick={() => setFiltroConteo(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="prod-conteo-table-wrap">
+              <table className="prod-conteo-table">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Codigo</th>
+                    <th>Categoria</th>
+                    <th>Stock sistema</th>
+                    <th>Stock contado</th>
+                    <th>Diferencia</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {productosConteoVisibles.map((producto) => {
+                    const contadoRaw = conteoInventario[producto.id] ?? "";
+                    const tieneConteo = text(contadoRaw) !== "";
+                    const diferencia = tieneConteo ? toNumber(contadoRaw) - toNumber(producto.stock) : 0;
+                    const estadoConteo = !tieneConteo ? "Pendiente" : diferencia === 0 ? "Contado" : "Diferencia";
+
+                    return (
+                      <tr key={producto.id}>
+                        <td>
+                          <div className="prod-conteo-producto">
+                            <strong>{producto.nombre || "-"}</strong>
+                            <small>{producto.marca || producto.proveedorPrincipal || "Sin marca/proveedor"}</small>
+                          </div>
+                        </td>
+                        <td>{producto.codigo || "-"}</td>
+                        <td>{producto.categoria || "-"}</td>
+                        <td>{toNumber(producto.stock)}</td>
+                        <td>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={contadoRaw}
+                            onChange={(event) => actualizarConteo(producto.id, event.target.value)}
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className={diferencia < 0 ? "prod-conteo-negativo" : diferencia > 0 ? "prod-conteo-positivo" : ""}>
+                          {tieneConteo ? diferencia : "-"}
+                        </td>
+                        <td>
+                          <span className={`prod-conteo-status ${estadoConteo === "Diferencia" ? "diff" : estadoConteo === "Contado" ? "done" : "pending"}`}>
+                            {estadoConteo}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {productosConteoVisibles.length === 0 && (
+                    <tr>
+                      <td colSpan="7" className="prod-conteo-empty">
+                        No hay productos con ese filtro.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {mostrarConfirmacionConteo && (
+        <div className="prod-modal-overlay">
+          <div className="prod-modal-center prod-conteo-confirmacion">
+            <h2 className="prod-conteo-aviso-title">Confirmar ajustes de inventario</h2>
+            <p className="prod-conteo-aviso-copy">
+              Se actualizaran solamente los productos que tienen diferencia entre sistema y conteo fisico.
+            </p>
+
+            <div className="prod-conteo-confirm-grid">
+              <span><strong>{resumenConteo.diferencias}</strong> producto(s) ajustados</span>
+              <span><strong>{resumenConteo.faltantes}</strong> faltante(s)</span>
+              <span><strong>{resumenConteo.aumentos}</strong> sobrante(s)</span>
+              <span><strong>{resumenConteo.revisados}</strong> producto(s) revisados</span>
+            </div>
+
+            <div className="prod-conteo-warning">
+              <strong>Revision final</strong>
+              <p>Esta accion cambiara el stock actual del inventario. Revisa las diferencias antes de aplicar.</p>
+            </div>
+
+            <div className="prod-conteo-aviso-actions">
+              <button
+                className="prod-btn-modal prod-btn-cancelar"
+                type="button"
+                onClick={() => setMostrarConfirmacionConteo(false)}
+              >
+                Seguir revisando
+              </button>
+              <button
+                className="prod-btn-modal prod-btn-guardar"
+                type="button"
+                onClick={aplicarConteoInventario}
+              >
+                Aplicar ajustes
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {!mostrarModalCategorias && (

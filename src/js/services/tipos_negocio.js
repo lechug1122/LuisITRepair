@@ -388,6 +388,26 @@ export const TIPOS_NEGOCIO_PRESET = [
     campos: [],
   }),
   normalizeTipoNegocio({
+    id: "restaurante",
+    nombre: "Restaurante",
+    descripcion: "Mesas, comandas, cocina, caja y administracion",
+    tituloHoja: "Operacion del restaurante",
+    etiquetaTipoDispositivo: "Area",
+    etiquetaMarca: "Categoria",
+    etiquetaSerie: "Numero de mesa",
+    etiquetaTrabajo: "Comanda",
+    etiquetaCosto: "Total",
+    etiquetaCaracteristicasPendientes: "Pendiente por preparar",
+    placeholderTrabajo: "Agrega indicaciones para cocina",
+    serviciosHabilitados: false,
+    opcionesTipoDispositivo: [
+      { value: "mesas", label: "Mesas" },
+      { value: "cocina", label: "Cocina" },
+      { value: "caja", label: "Caja" },
+    ],
+    campos: [],
+  }),
+  normalizeTipoNegocio({
     id: "automotriz",
     nombre: "Taller automotriz",
     descripcion: "Servicios para autos, motos y camionetas",
@@ -466,8 +486,15 @@ export const TIPOS_NEGOCIO_PRESET = [
   }),
 ];
 
+// Modos temporalmente deshabilitados.
+export const TIPOS_NEGOCIO_OCULTOS = new Set();
+
+export function tipoNegocioEstaVisible(tipo) {
+  return !TIPOS_NEGOCIO_OCULTOS.has(toText(tipo?.id || tipo));
+}
+
 export function getTiposNegocioPreset() {
-  return cloneData(TIPOS_NEGOCIO_PRESET);
+  return cloneData(TIPOS_NEGOCIO_PRESET.filter(tipoNegocioEstaVisible));
 }
 
 export function findTipoNegocioPreset(id) {
@@ -478,7 +505,7 @@ export function normalizeTiposNegocio(raw) {
   const source = Array.isArray(raw) && raw.length ? raw : getTiposNegocioPreset();
   const usedIds = new Set();
 
-  return source.map((item, index) => {
+  return source.filter(tipoNegocioEstaVisible).map((item, index) => {
     const tipo = normalizeTipoNegocio(item, index);
     return {
       ...tipo,

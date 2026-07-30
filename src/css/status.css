@@ -451,6 +451,14 @@
   background: linear-gradient(180deg, #ffffff, #f8fafc);
 }
 
+.status-stepper-theme-warning {
+  --stepper-main: #92400e;
+  --stepper-main-soft: #fed7aa;
+  --stepper-main-text: #92400e;
+  border-color: #fed7aa;
+  background: linear-gradient(180deg, #ffffff, #fff7ed);
+}
+
 .status-stepper-step {
   display: flex;
   position: relative;
@@ -613,6 +621,12 @@
   color: #0f172a;
   background: #f8fafc;
   border-color: #94a3b8;
+}
+
+.estado-abandonado {
+  color: #92400e;
+  background: #fff7ed;
+  border-color: #fed7aa;
 }
 
 @media (max-width: 900px) {

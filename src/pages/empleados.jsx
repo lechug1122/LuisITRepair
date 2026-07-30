@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { createUserWithEmailAndPassword, sendPasswordResetEmail, signOut } from "firebase/auth";
 import { auth, createSecondaryAuthClient, db } from "../initializer/firebase";
+import { useLocation } from "react-router-dom";
 import "../css/empleados.css";
 import {
   getCreateAccountErrorMessage,
@@ -25,7 +26,7 @@ import {
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 
-const ROLE_OPTIONS = ["Administrador", "Tecnico", "Vendedor", "Cajero"];
+const ROLE_OPTIONS = ["Administrador", "Tecnico", "Vendedor", "Cajero", "Mesero", "Cocina", "Caja"];
 
 function esRolTecnico(raw = "") {
   return String(raw || "")
@@ -33,6 +34,12 @@ function esRolTecnico(raw = "") {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .includes("tecn");
+}
+
+function esRolRestaurante(raw = "") {
+  return ["mesero", "cocina", "caja"].includes(
+    String(raw || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(),
+  );
 }
 
 // Crea la estructura base del formulario para altas y ediciones.
@@ -45,12 +52,15 @@ function createInitialForm() {
     estado: "Activo",
     password: "",
     superAdmin: false,
+    accesoAnalitica: false,
     permisos: permisosBasePorRol(""),
   };
 }
 
 function Empleados() {
-  const { serviciosHabilitados } = useEmpresaConfig();
+  const location = useLocation();
+  const { serviciosHabilitados, tipoNegocioActivo } = useEmpresaConfig();
+  const esRestaurante = tipoNegocioActivo?.id === "restaurante";
   const {
     cuentaPrincipalUid,
     puede,
@@ -63,8 +73,13 @@ function Empleados() {
   const [showPermisosModal, setShowPermisosModal] = useState(false);
   const [form, setForm] = useState(createInitialForm());
   const [permisosDraft, setPermisosDraft] = useState(permisosBasePorRol(""));
+  const [onboardingFormOpened, setOnboardingFormOpened] = useState(false);
   const currentUid = auth.currentUser?.uid || null;
   const puedeGestionarActual = puede("empleados.gestionar");
+  const permisosCatalogoDisponible = useMemo(
+    () => PERMISOS_CATALOGO.filter((permiso) => esRestaurante || permiso.restaurantOnly !== true),
+    [esRestaurante],
+  );
   const empleadoEditado = useMemo(
     () => empleados.find((e) => e.id === editingId) || null,
     [empleados, editingId],
@@ -89,21 +104,24 @@ function Empleados() {
   );
 
   const permisosActivos = useMemo(
-    () => PERMISOS_CATALOGO.filter((p) => !!form.permisos?.[p.key]),
-    [form.permisos],
+    () => permisosCatalogoDisponible.filter((p) => !!form.permisos?.[p.key]),
+    [form.permisos, permisosCatalogoDisponible],
   );
 
   const permisosActivosDraft = useMemo(
-    () => PERMISOS_CATALOGO.filter((p) => !!permisosDraft?.[p.key]),
-    [permisosDraft],
+    () => permisosCatalogoDisponible.filter((p) => !!permisosDraft?.[p.key]),
+    [permisosCatalogoDisponible, permisosDraft],
   );
   const rolesDisponibles = useMemo(
-    () => ROLE_OPTIONS.filter((rol) => serviciosHabilitados || rol !== "Tecnico"),
-    [serviciosHabilitados],
+    () => tipoNegocioActivo?.id === "restaurante"
+      ? ["Administrador", "Mesero", "Cocina", "Caja"]
+      : ROLE_OPTIONS.filter((rol) => !esRolRestaurante(rol) && (serviciosHabilitados || rol !== "Tecnico")),
+    [serviciosHabilitados, tipoNegocioActivo?.id],
   );
   const rolBloqueadoPorTipoNegocio = useMemo(
-    () => !serviciosHabilitados && esRolTecnico(form.rol),
-    [form.rol, serviciosHabilitados],
+    () => (!esRestaurante && esRolRestaurante(form.rol))
+      || (!serviciosHabilitados && esRolTecnico(form.rol)),
+    [esRestaurante, form.rol, serviciosHabilitados],
   );
 
   const empleadosVisibles = useMemo(() => {
@@ -170,6 +188,27 @@ function Empleados() {
     setShowForm(true);
   };
 
+  useEffect(() => {
+    if (
+      !location.state?.onboardingEquipo ||
+      !puedeGestionarActual ||
+      onboardingFormOpened
+    ) return;
+
+    const suggestedRole = Array.isArray(location.state?.onboardingRoles)
+      ? location.state.onboardingRoles[0] || ""
+      : "";
+    const permisos = permisosBasePorRol(suggestedRole);
+    setForm({ ...createInitialForm(), rol: suggestedRole, permisos });
+    setPermisosDraft(permisos);
+    setShowForm(true);
+    setOnboardingFormOpened(true);
+  }, [
+    location.state,
+    onboardingFormOpened,
+    puedeGestionarActual,
+  ]);
+
   const handleEdit = (emp) => {
     const permisos = normalizarPermisos(emp.rol || "", emp.permisos || {});
     setForm({
@@ -180,6 +219,7 @@ function Empleados() {
       estado: emp.estado || "Activo",
       password: "",
       superAdmin: emp.superAdmin === true,
+      accesoAnalitica: emp.accesoAnalitica === true,
       permisos,
     });
     setPermisosDraft(permisos);
@@ -228,7 +268,13 @@ function Empleados() {
       }
 
       if (rolBloqueadoPorTipoNegocio) {
-        alert("El rol Tecnico no esta disponible cuando la empresa esta en modo abarrotes.");
+        alert(
+          !esRestaurante && esRolRestaurante(form.rol)
+            ? "Los roles Mesero, Cocina y Caja solo están disponibles para negocios Restaurante."
+            : esRestaurante
+            ? "El rol Tecnico no esta disponible en la version Restaurante."
+            : "El rol Tecnico no esta disponible cuando el negocio no utiliza el modulo de servicios.",
+        );
         return;
       }
 
@@ -238,13 +284,18 @@ function Empleados() {
       }
 
       const permisosFinal = normalizarPermisos(form.rol, form.permisos || {});
-      const quiereSuperAdmin = form.rol === "Administrador" && form.superAdmin === true;
+      const quiereSuperAdmin =
+        esSuperAdminActual && form.rol === "Administrador" && form.superAdmin === true;
+      const quiereAccesoAnalitica = esSuperAdminActual
+        ? form.accesoAnalitica === true
+        : empleadoEditado?.accesoAnalitica === true;
       const cuentaPrincipalDestino =
         empleadoEditado?.cuentaPrincipalUid ||
         cuentaPrincipalUid ||
         empleadoEditado?.uid ||
         currentUid ||
         "";
+      const negocioDestino = empleadoEditado?.negocioId || cuentaPrincipalDestino;
       const suscripcionControladaDestino =
         empleadoEditado?.suscripcionControlada === true ||
         (suscripcionControladaActual === true && !esSuperAdminActual);
@@ -283,7 +334,9 @@ function Empleados() {
           estado: form.estado,
           permisos: permisosFinal,
           superAdmin: quiereSuperAdmin,
+          accesoAnalitica: quiereAccesoAnalitica,
           cuentaPrincipalUid: cuentaPrincipalDestino || empleadoEditado.uid,
+          negocioId: negocioDestino || empleadoEditado.uid,
           suscripcionControlada: suscripcionControladaDestino,
           esCuentaPrincipal: esCuentaPrincipalDestino,
         });
@@ -293,10 +346,12 @@ function Empleados() {
           activo: form.estado === "Activo",
           permisos: permisosFinal,
           superAdmin: quiereSuperAdmin,
+          accesoAnalitica: quiereAccesoAnalitica,
           nombre: form.nombre,
           correo: form.correo,
           correoNormalizado,
           cuentaPrincipalUid: cuentaPrincipalDestino || empleadoEditado.uid,
+          negocioId: negocioDestino || empleadoEditado.uid,
           suscripcionControlada: suscripcionControladaDestino,
           esCuentaPrincipal: esCuentaPrincipalDestino,
         });
@@ -355,7 +410,9 @@ function Empleados() {
           estado: form.estado,
           permisos: permisosFinal,
           superAdmin: quiereSuperAdmin,
+          accesoAnalitica: quiereAccesoAnalitica,
           cuentaPrincipalUid: cuentaPrincipalUid || currentUid || uid,
+          negocioId: cuentaPrincipalUid || currentUid || uid,
           suscripcionControlada: suscripcionControladaActual === true && !esSuperAdminActual,
           esCuentaPrincipal: false,
           createdAt: new Date(),
@@ -366,10 +423,12 @@ function Empleados() {
           rol: form.rol,
           permisos: permisosFinal,
           superAdmin: quiereSuperAdmin,
+          accesoAnalitica: quiereAccesoAnalitica,
           nombre: form.nombre,
           correo: form.correo,
           correoNormalizado,
           cuentaPrincipalUid: cuentaPrincipalUid || currentUid || uid,
+          negocioId: cuentaPrincipalUid || currentUid || uid,
           suscripcionControlada: suscripcionControladaActual === true && !esSuperAdminActual,
           esCuentaPrincipal: false,
         });
@@ -442,6 +501,15 @@ function Empleados() {
 
   return (
     <div className="emp-container">
+      {location.state?.onboardingEquipo ? (
+        <div className="emp-onboarding-note">
+          <strong>Último paso: agrega a tu equipo</strong>
+          <p>
+            Crea {Number(location.state?.onboardingCantidad || 1)} cuenta(s) con su
+            correo, contraseña temporal y rol. Después podrás entrar al resto del sistema.
+          </p>
+        </div>
+      ) : null}
       <div className="emp-header">
         <div>
           <h1>Gestion de Empleados</h1>
@@ -531,7 +599,9 @@ function Empleados() {
               </select>
               {!serviciosHabilitados && (
                 <small className="emp-field-help">
-                  En modo abarrotes el rol tecnico queda oculto y ya no se puede asignar.
+                  {esRestaurante
+                    ? "En Restaurante se utilizan los roles Administrador, Mesero, Cocina y Caja."
+                    : "El rol Tecnico solo esta disponible para negocios con el modulo de servicios habilitado."}
                 </small>
               )}
             </label>
@@ -565,6 +635,25 @@ function Empleados() {
                       {editaSuPropioCargoSuperAdmin
                         ? " Para cambiarlo debes transferir el cargo editando a otro administrador."
                         : ""}
+                    </small>
+                  </div>
+                </div>
+              </label>
+            )}
+
+            {esSuperAdminActual && (
+              <label className="emp-field">
+                <span>Analítica</span>
+                <div className="emp-super-admin-box">
+                  <input
+                    type="checkbox"
+                    checked={form.accesoAnalitica === true}
+                    onChange={(e) => setForm({ ...form, accesoAnalitica: e.target.checked })}
+                  />
+                  <div>
+                    <strong>Permitir acceso al panel de Analítica</strong>
+                    <small>
+                      Podrá consultar métricas globales, errores y exportaciones, sin modificar la administración.
                     </small>
                   </div>
                 </div>
@@ -623,7 +712,7 @@ function Empleados() {
             </div>
 
             <div className="emp-permisos-grid">
-              {PERMISOS_CATALOGO.map((perm) => (
+              {permisosCatalogoDisponible.map((perm) => (
                 <label key={perm.key} className="emp-perm-item">
                   <input
                     type="checkbox"

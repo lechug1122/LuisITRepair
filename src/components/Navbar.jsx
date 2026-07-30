@@ -1,10 +1,11 @@
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "firebase/auth";
-import { doc, updateDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import { auth, db } from "../initializer/firebase";
+import { hasAnalyticsAccess } from "../js/services/analytics_access";
 
 function formatoHora(fechaMs) {
   if (!fechaMs) return "";
@@ -18,6 +19,16 @@ function formatoHora(fechaMs) {
   }
 }
 
+const PRESENCE_TTL_MS = 2 * 60 * 1000;
+
+function toMillis(value) {
+  if (!value) return 0;
+  if (typeof value?.toDate === "function") return value.toDate().getTime();
+  if (typeof value?.seconds === "number") return value.seconds * 1000;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
 export default function Navbar({
   panelAbierto = false,
   togglePanelNotificaciones = () => {},
@@ -26,28 +37,74 @@ export default function Navbar({
   mostrarNotificaciones = true,
   onDismissNotification = () => {},
 }) {
-  const navigate = useNavigate();
   const location = useLocation();
-  const { puede, nombre } = useAutorizacionActual();
-  const { nombreEmpresa, serviciosHabilitados } = useEmpresaConfig();
+  const { puede, nombre, rol, cuentaPrincipalUid, uid, superAdmin, accesoAnalitica } = useAutorizacionActual();
+  const analyticsAccess = hasAnalyticsAccess({
+    superAdmin,
+    accesoAnalitica,
+    email: auth.currentUser?.email,
+  });
+  const ownerBase = cuentaPrincipalUid || uid;
+  const { nombreEmpresa, serviciosHabilitados, tipoNegocioActivo } = useEmpresaConfig();
   const [usuarioNombre, setUsuarioNombre] = useState("Usuario");
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
   const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false);
+  const [panelEmpleadosAbierto, setPanelEmpleadosAbierto] = useState(false);
+  const [empleadosActivos, setEmpleadosActivos] = useState([]);
+  const [presenciaAhora, setPresenciaAhora] = useState(() => Date.now());
   const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
   const menuUsuarioRef = useRef(null);
+  const empleadosRef = useRef(null);
 
-  const navItems = [
+  const navItemsBase = [
     { label: "Generar Servicio", to: "/hoja_servicio", permission: "servicios.crear" },
     { label: "Servicios", to: "/servicios", permission: "servicios.ver" },
     { label: "Clientes", to: "/clientes", permission: "clientes.ver" },
     { label: "Punto de venta", to: "/POS", permission: "ventas.pos" },
     { label: "Configuracion", to: "/configuracion", permission: "configuracion.ver" },
+    ...(analyticsAccess && !puede("configuracion.ver")
+      ? [{ label: "Analítica", to: "/configuracion/suscripciones?vista=analitica", analyticsOnly: true }]
+      : []),
   ].filter((item) => {
+    if (item.analyticsOnly) return analyticsAccess;
     if (!serviciosHabilitados && ["/hoja_servicio", "/servicios"].includes(item.to)) {
       return false;
     }
     return puede(item.permission);
   });
+  const restaurantMode = tipoNegocioActivo?.id === "restaurante";
+  const rolNormalizado = String(rol || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+  const esAdministrador = rolNormalizado.includes("admin");
+  const vistaRestaurantePorRol = rolNormalizado.includes("meser")
+    ? "mesero"
+    : rolNormalizado.includes("cocin") || rolNormalizado.includes("chef")
+      ? "cocina"
+      : rolNormalizado.includes("caj")
+        ? "caja"
+        : "";
+  const restaurantAdminHome = esAdministrador
+    ? [{ label: "Inicio", to: "/home", adminHome: true }]
+    : [];
+  const restaurantHomes = [
+    { label: "Mesas", to: "/home?vista=mesero", restaurantView: "mesero", permission: "restaurante.mesero" },
+    { label: "Cocina", to: "/home?vista=cocina", restaurantView: "cocina", permission: "restaurante.cocina" },
+    { label: "Caja", to: "/POS", permission: "restaurante.caja" },
+  ].filter((item) => puede(item.permission));
+  const restaurantTools = [
+    { label: "Platillos", to: "/productos", permission: "productos.ver" },
+    ...(puede("configuracion.ver")
+      ? [
+          { label: "Configuración", to: "/configuracion", permission: "configuracion.ver" },
+        ]
+      : []),
+  ].filter((item) => puede(item.permission));
+  const navItems = restaurantMode
+    ? [...restaurantAdminHome, ...restaurantHomes, ...restaurantTools]
+    : navItemsBase;
 
   useEffect(() => {
     const fallback =
@@ -61,7 +118,67 @@ export default function Navbar({
   useEffect(() => {
     setMenuMovilAbierto(false);
     setMenuUsuarioAbierto(false);
-  }, [location.pathname]);
+    setPanelEmpleadosAbierto(false);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!ownerBase) {
+      setEmpleadosActivos([]);
+      return undefined;
+    }
+
+    let empleados = [];
+    let presencia = {};
+
+    const actualizar = () => {
+      setEmpleadosActivos(
+        empleados.map((empleado) => ({
+          ...empleado,
+          online: presencia[empleado.uid]?.online === true,
+          lastActive: presencia[empleado.uid]?.lastActive || null,
+        })),
+      );
+    };
+
+    const unsubEmpleados = onSnapshot(
+      query(collection(db, "empleados"), where("cuentaPrincipalUid", "==", ownerBase)),
+      (snapshot) => {
+        empleados = snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .filter((empleado) => empleado.estado === "Activo");
+        actualizar();
+      },
+      () => {
+        empleados = [];
+        actualizar();
+      },
+    );
+
+    const unsubPresencia = onSnapshot(
+      query(collection(db, "autorizados"), where("cuentaPrincipalUid", "==", ownerBase)),
+      (snapshot) => {
+        presencia = {};
+        snapshot.docs.forEach((item) => {
+          const data = item.data() || {};
+          presencia[item.id] = {
+            online: data.online === true,
+            lastActive: data.lastActive || null,
+          };
+        });
+        actualizar();
+      },
+    );
+
+    return () => {
+      unsubEmpleados();
+      unsubPresencia();
+    };
+  }, [ownerBase]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setPresenciaAhora(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const onResize = () => {
@@ -80,6 +197,9 @@ export default function Navbar({
       if (!menuUsuarioRef.current) return;
       if (!menuUsuarioRef.current.contains(event.target)) {
         setMenuUsuarioAbierto(false);
+      }
+      if (empleadosRef.current && !empleadosRef.current.contains(event.target)) {
+        setPanelEmpleadosAbierto(false);
       }
     };
 
@@ -108,11 +228,11 @@ export default function Navbar({
 
     try {
       await signOut(auth);
-      navigate("/login", { replace: true });
     } catch (e) {
       console.error("Error al cerrar sesion:", e);
     } finally {
       setCerrandoSesion(false);
+      window.location.replace("/");
     }
   };
 
@@ -146,7 +266,18 @@ export default function Navbar({
             {navItems.map((item) => (
               <li key={item.to} className="nav-item">
                 <NavLink
-                  className="nav-link"
+                  className={({ isActive }) => {
+                    if (item.adminHome) {
+                      return `nav-link${location.pathname === "/home" && !location.search ? " active" : ""}`;
+                    }
+                    if (item.restaurantView) {
+                      const currentView = new URLSearchParams(location.search).get("vista")
+                        || vistaRestaurantePorRol
+                        || "";
+                      return `nav-link${location.pathname === "/home" && currentView === item.restaurantView ? " active" : ""}`;
+                    }
+                    return `nav-link${isActive ? " active" : ""}`;
+                  }}
                   to={item.to}
                   end={item.to === "/hoja_servicio"}
                   onClick={() => setMenuMovilAbierto(false)}
@@ -166,7 +297,7 @@ export default function Navbar({
                   onClick={togglePanelNotificaciones}
                   title="Notificaciones"
                 >
-                  <span className="bell-icon">{"\u{1F514}"}</span>
+                  <i className="fi fi-br-bell navbar-tool-icon" aria-hidden="true" />
                   {noLeidas > 0 && <span className="bell-badge">{noLeidas}</span>}
                 </button>
 
@@ -213,6 +344,52 @@ export default function Navbar({
               </>
             )}
 
+            <div ref={empleadosRef} className="position-relative">
+              <button
+                type="button"
+                className="btn btn-light btn-sm rounded-circle employees-btn"
+                onClick={() => {
+                  setPanelEmpleadosAbierto((abierto) => !abierto);
+                  setMenuUsuarioAbierto(false);
+                }}
+                title="Empleados activos"
+                aria-label="Mostrar empleados activos"
+                aria-expanded={panelEmpleadosAbierto}
+              >
+                <i className="fi fi-br-users-alt navbar-tool-icon" aria-hidden="true" />
+              </button>
+
+              {panelEmpleadosAbierto && (
+                <div className="employees-panel">
+                  <div className="employees-panel-header">
+                    <strong>Empleados activos</strong>
+                    <span>{empleadosActivos.length}</span>
+                  </div>
+
+                  <ul>
+                    {empleadosActivos.map((empleado) => {
+                      const online =
+                        empleado.online &&
+                        presenciaAhora - toMillis(empleado.lastActive) <= PRESENCE_TTL_MS;
+
+                      return (
+                        <li key={empleado.id}>
+                          <span>{empleado.nombre}</span>
+                          <span className={online ? "employees-online" : "employees-offline"}>
+                            {online ? "En línea" : "Offline"}
+                          </span>
+                        </li>
+                      );
+                    })}
+
+                    {empleadosActivos.length === 0 && (
+                      <li className="employees-panel-empty">Sin empleados activos</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+            </div>
+
             <div
               ref={menuUsuarioRef}
               className="position-relative"
@@ -220,10 +397,13 @@ export default function Navbar({
               <button
                 type="button"
                 className="btn btn-light btn-sm rounded-circle user-menu-trigger"
-                onClick={() => setMenuUsuarioAbierto((v) => !v)}
+                onClick={() => {
+                  setMenuUsuarioAbierto((v) => !v);
+                  setPanelEmpleadosAbierto(false);
+                }}
                 title={usuarioNombre}
               >
-                {"\u{1F464}"}
+                <i className="fi fi-br-user navbar-tool-icon" aria-hidden="true" />
               </button>
 
               {menuUsuarioAbierto && (

@@ -12,14 +12,33 @@ const EMPRESA_STORAGE_KEY = "empresa_config_cache_v1";
 export const DEFAULT_EMPRESA_CONFIG = {
   nombre: import.meta.env.VITE_NEGOCIO_NOMBRE || "LuisITRepair",
   subtitulo: import.meta.env.VITE_NEGOCIO_SUBTITULO || "Servicios tecnicos y punto de venta",
+  telefono: import.meta.env.VITE_NEGOCIO_TELEFONO || "",
+  correoTickets: import.meta.env.VITE_NEGOCIO_CORREO_TICKETS || "",
+  correoNotas: import.meta.env.VITE_NEGOCIO_CORREO_NOTAS || "",
   tipoNegocioId: "soporte-computo",
   tiposNegocio: getTiposNegocioPreset(),
+  restaurante: {
+    pisos: [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 12 }],
+  },
 };
 
 // Limpia campos de texto antes de persistirlos o mostrarlos.
 function toText(value, fallback = "") {
   if (typeof value !== "string") return fallback;
   return value.trim();
+}
+
+function normalizeRestauranteConfig(raw = {}) {
+  const source = Array.isArray(raw?.pisos) && raw.pisos.length
+    ? raw.pisos
+    : DEFAULT_EMPRESA_CONFIG.restaurante.pisos;
+  return {
+    pisos: source.slice(0, 20).map((piso, index) => ({
+      id: toText(piso?.id, `piso-${index + 1}`) || `piso-${index + 1}`,
+      nombre: toText(piso?.nombre, `Piso ${index + 1}`) || `Piso ${index + 1}`,
+      cantidadMesas: Math.min(200, Math.max(1, Math.trunc(Number(piso?.cantidadMesas) || 1))),
+    })),
+  };
 }
 
 // Mantiene estable la estructura de configuracion de empresa.
@@ -34,8 +53,12 @@ export function normalizeEmpresaConfig(raw = {}) {
   return {
     nombre: toText(raw?.nombre, DEFAULT_EMPRESA_CONFIG.nombre) || DEFAULT_EMPRESA_CONFIG.nombre,
     subtitulo: toText(raw?.subtitulo, DEFAULT_EMPRESA_CONFIG.subtitulo) || DEFAULT_EMPRESA_CONFIG.subtitulo,
+    telefono: toText(raw?.telefono, DEFAULT_EMPRESA_CONFIG.telefono),
+    correoTickets: toText(raw?.correoTickets, DEFAULT_EMPRESA_CONFIG.correoTickets).toLowerCase(),
+    correoNotas: toText(raw?.correoNotas, DEFAULT_EMPRESA_CONFIG.correoNotas).toLowerCase(),
     tipoNegocioId,
     tiposNegocio,
+    restaurante: normalizeRestauranteConfig(raw?.restaurante),
   };
 }
 

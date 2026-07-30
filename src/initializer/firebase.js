@@ -1,5 +1,4 @@
 import { deleteApp, initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
 import { getAuth } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
 
@@ -14,7 +13,6 @@ export const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-getAnalytics(app);
 
 const isLocalDevHost =
   typeof window !== "undefined" &&

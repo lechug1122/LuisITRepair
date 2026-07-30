@@ -14,9 +14,9 @@ import StatusScan from "./pages/status_scan";
 import Clientes from "./pages/Clientes";
 import ClienteDetalle from "./pages/ClienteDetalle";
 import NotFound from "./pages/NotFound";
-import Home from "./pages/home";
-import POS from "./pages/POS";
-import Productos from "./pages/productos";
+import Home from "./pages/HomeGateway";
+import POS from "./pages/POSGateway";
+import Productos from "./pages/ProductosGateway";
 import Reportes from "./pages/reportes";
 import Configuracion from "./pages/Configuracion";
 import ConfiguracionEmpresa from "./pages/ConfiguracionEmpresa";
@@ -27,19 +27,60 @@ import ConfiguracionMetodosPago from "./pages/ConfiguracionMetodosPago";
 import ConfiguracionNotificaciones from "./pages/ConfiguracionNotificaciones";
 import ConfiguracionImpresoras from "./pages/ConfiguracionImpresoras";
 import ConfiguracionProveedores from "./pages/ConfiguracionProveedores";
-import ConfiguracionSuscripciones from "./pages/ConfiguracionSuscripciones";
+import ConfiguracionDonacion from "./pages/ConfiguracionDonacion";
+import ConfiguracionAdministracion from "./pages/ConfiguracionAdministracion";
 import ConfiguracionMiSuscripcion from "./pages/ConfiguracionMiSuscripcion";
+import ConfiguracionRestaurante from "./pages/ConfiguracionRestaurante";
+import TerminosCajaLibre from "./pages/TerminosCajaLibre";
+import ConfiguracionInicial from "./pages/ConfiguracionInicial";
+import NegocioBloqueado from "./pages/NegocioBloqueado";
 import Empleados from "./pages/empleados";
 import PanelGeneral from "./pages/panelgeneralCon";
+import Landing from "./pages/Landing";
+import CentroAyuda from "./pages/CentroAyuda";
+import CookieConsent from "./components/CookieConsent";
+import { PoliticaCookies, PoliticaPrivacidad } from "./pages/PoliticaLegal";
 
 export default function App() {
   return (
+    <>
     <Routes>
       {/* PUBLICO */}
       <Route path="/status" element={<Status />} />
       <Route path="/status/:folio" element={<StatusDetalle />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/ayuda" element={<CentroAyuda />} />
+      <Route path="/" element={<Landing />} />
+      <Route path="/privacidad" element={<PoliticaPrivacidad />} />
+      <Route path="/cookies" element={<PoliticaCookies />} />
       <Route path="/status/scan" element={<StatusScan />} />
+
+      <Route
+        path="/terminos"
+        element={
+          <ProtectedRoute allowMotives={["terminos_pendientes"]}>
+            <TerminosCajaLibre />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/configuracion-inicial"
+        element={
+          <ProtectedRoute
+            allowMotives={["configuracion_inicial_pendiente"]}
+          >
+            <ConfiguracionInicial />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/negocio-bloqueado"
+        element={
+          <ProtectedRoute allowMotives={["negocio_bloqueado"]}>
+            <NegocioBloqueado />
+          </ProtectedRoute>
+        }
+      />
 
       {/* PRIVADO (con navbar) */}
       <Route
@@ -49,7 +90,6 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<Home />} />
         <Route path="/home" element={<Home />} />
         <Route
           path="/hoja_servicio"
@@ -108,7 +148,7 @@ export default function App() {
         <Route
           path="/POS"
           element={
-            <PermissionRoute permission="ventas.pos">
+            <PermissionRoute permission="ventas.pos" permissionsAny={["restaurante.caja"]}>
               <POS />
             </PermissionRoute>
           }
@@ -132,7 +172,7 @@ export default function App() {
         <Route
           path="/configuracion"
           element={
-            <PermissionRoute permission="configuracion.ver">
+            <PermissionRoute permission="configuracion.ver" allowAnalyticsAccess>
               <Configuracion />
             </PermissionRoute>
           }
@@ -148,11 +188,20 @@ export default function App() {
             }
           />
           <Route path="pos" element={<ConfiguracionPOS />} />
+          <Route path="restaurante" element={<ConfiguracionRestaurante />} />
           <Route
             path="suscripciones"
             element={
-              <PermissionRoute requireSuperAdmin fallbackPath="/configuracion">
-                <ConfiguracionSuscripciones />
+              <PermissionRoute requireAnalyticsAccess fallbackPath="/configuracion">
+                <ConfiguracionAdministracion />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="analitica"
+            element={
+              <PermissionRoute requireAnalyticsAccess fallbackPath="/configuracion">
+                <ConfiguracionAdministracion />
               </PermissionRoute>
             }
           />
@@ -178,10 +227,13 @@ export default function App() {
           <Route path="apariencia" element={<ConfiguracionApariencia />} />
           <Route path="notificaciones" element={<ConfiguracionNotificaciones />} />
           <Route path="impresoras" element={<ConfiguracionImpresoras />} />
+          <Route path="donacion" element={<ConfiguracionDonacion />} />
         </Route>
       </Route>
 
       <Route path="*" element={<NotFound />} />
     </Routes>
+    <CookieConsent />
+    </>
   );
 }

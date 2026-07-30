@@ -1,31 +1,10 @@
+import { useEffect, useState } from "react";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import {
-  SUSCRIPCION_METODOS_PAGO,
-  formatDateShort,
-  getMetodoPagoSuscripcionLabel,
-} from "../js/services/suscripciones";
-
-function statusClassName(codigo = "") {
-  if (codigo === "al_corriente") return "status-al-corriente";
-  if (codigo === "en_gracia") return "status-en-gracia";
-  if (codigo === "bloqueada" || codigo === "bloqueada_manual") return "status-bloqueada";
-  return "status-pendiente";
-}
-
-function buildFallbackSuscripcion() {
-  return {
-    codigo: "pendiente_configuracion",
-    etiqueta: "Pendiente",
-    detalle: "Tu suscripcion todavia no tiene informacion de cobro registrada.",
-    planNombre: "Sin definir",
-    metodoPago: "",
-    monto: 0,
-    fechaUltimoPago: null,
-    proximoPago: null,
-    graciaHasta: null,
-    dispositivosTitularPermitidos: 1,
-  };
-}
+  PLAN_GRATUITO,
+  actualizarConteosNegocio,
+  escucharNegocio,
+} from "../js/services/negocios";
 
 export default function ConfiguracionMiSuscripcion() {
   const {
@@ -34,119 +13,135 @@ export default function ConfiguracionMiSuscripcion() {
     cuentaPrincipalUid,
     superAdmin,
     suscripcionControlada,
-    suscripcion,
   } = useAutorizacionActual();
+  const [negocio, setNegocio] = useState(null);
+  const [actualizando, setActualizando] = useState(false);
 
-  const esTitularSuscripcion =
+  const esAdministradorNegocio =
     superAdmin !== true &&
-    suscripcionControlada === true &&
     String(uid || "").trim() !== "" &&
     String(uid || "").trim() === String(cuentaPrincipalUid || "").trim();
+
+  useEffect(() => {
+    const negocioId = cuentaPrincipalUid || uid;
+    if (!negocioId) return undefined;
+
+    return escucharNegocio(
+      negocioId,
+      (data) => setNegocio(data),
+      () => setNegocio(null),
+    );
+  }, [cuentaPrincipalUid, uid]);
+
+  const refrescarConteos = async () => {
+    const negocioId = negocio?.negocioId || cuentaPrincipalUid || uid;
+    if (!negocioId) return;
+    setActualizando(true);
+    try {
+      await actualizarConteosNegocio(negocioId);
+    } finally {
+      setActualizando(false);
+    }
+  };
 
   if (loading) {
     return (
       <section className="cfg-sus-wrap">
         <div className="cfg-pos-card cfg-sus-guard-card">
-          <h2>Mi Suscripcion</h2>
-          <p>Cargando informacion de tu suscripcion...</p>
+          <h2>Mi Plan</h2>
+          <p>Cargando informacion de tu negocio...</p>
         </div>
       </section>
     );
   }
 
-  if (!esTitularSuscripcion) {
+  if (!esAdministradorNegocio && suscripcionControlada) {
     return (
       <section className="cfg-sus-wrap">
         <div className="cfg-pos-card cfg-sus-guard-card">
-          <h2>Mi Suscripcion</h2>
-          <p>Esta seccion solo esta disponible para el usuario titular que paga el sistema.</p>
+          <h2>Mi Plan</h2>
+          <p>Esta seccion solo esta disponible para el administrador del negocio.</p>
         </div>
       </section>
     );
   }
 
-  const info = suscripcion || buildFallbackSuscripcion();
+  const conteos = negocio?.conteos || {};
 
   return (
     <section className="cfg-sus-wrap">
       <div className="cfg-header">
-        <h1>Mi Suscripcion</h1>
+        <h1>Mi Plan</h1>
         <p>
-          Consulta el estado de tu cuenta, tu metodo de pago registrado y los medios
-          disponibles para renovar el sistema.
+          CajaLibre funciona actualmente como servicio gratuito. La cantidad de usuarios y
+          equipos es informativa para entender el uso del sistema.
         </p>
       </div>
 
       <div className="cfg-pos-card cfg-my-sus-card">
         <div className="cfg-my-sus-head">
           <div>
-            <span className="cfg-sus-model-kicker">Cuenta principal</span>
-            <h2>Resumen de tu suscripcion</h2>
+            <span className="cfg-sus-model-kicker">Plan actual</span>
+            <h2>{negocio?.planActual || PLAN_GRATUITO}</h2>
             <p>
-              Esta informacion es solo de consulta para el titular del negocio. Tus empleados
-              no ven esta seccion.
+              Los usuarios añadidos actualmente son gratuitos. No existen cargos automaticos,
+              datos bancarios ni costos internos visibles para el negocio.
             </p>
           </div>
-          <span className={`cfg-sus-status ${statusClassName(info.codigo)}`}>
-            {info.etiqueta}
+          <span className="cfg-sus-status status-al-corriente">
+            {negocio?.estado || "gratuito"}
           </span>
         </div>
 
         <div className="cfg-my-sus-grid">
           <div className="cfg-my-sus-item">
-            <span className="cfg-proveedores-label">Suscripcion</span>
-            <strong>{info.planNombre || "Sin definir"}</strong>
+            <span className="cfg-proveedores-label">Usuarios registrados</span>
+            <strong>{conteos.usuariosTotal || 0}</strong>
           </div>
           <div className="cfg-my-sus-item">
-            <span className="cfg-proveedores-label">Metodo de pago registrado</span>
-            <strong>{getMetodoPagoSuscripcionLabel(info.metodoPago)}</strong>
+            <span className="cfg-proveedores-label">Usuarios activos</span>
+            <strong>{conteos.usuariosActivos || 0}</strong>
           </div>
           <div className="cfg-my-sus-item">
-            <span className="cfg-proveedores-label">Monto</span>
-            <strong>${Number(info.monto || 0).toFixed(2)}</strong>
+            <span className="cfg-proveedores-label">Usuarios pendientes</span>
+            <strong>{conteos.usuariosPendientes || 0}</strong>
           </div>
           <div className="cfg-my-sus-item">
-            <span className="cfg-proveedores-label">Equipos permitidos</span>
-            <strong>{info.dispositivosTitularPermitidos || 1}</strong>
+            <span className="cfg-proveedores-label">Usuarios deshabilitados</span>
+            <strong>{conteos.usuariosDeshabilitados || 0}</strong>
           </div>
           <div className="cfg-my-sus-item">
-            <span className="cfg-proveedores-label">Ultimo pago</span>
-            <strong>{formatDateShort(info.fechaUltimoPago)}</strong>
+            <span className="cfg-proveedores-label">Equipos registrados</span>
+            <strong>{conteos.equiposTotal || 0}</strong>
           </div>
           <div className="cfg-my-sus-item">
-            <span className="cfg-proveedores-label">Proximo pago</span>
-            <strong>{formatDateShort(info.proximoPago)}</strong>
+            <span className="cfg-proveedores-label">Cobros automaticos</span>
+            <strong>No activos</strong>
           </div>
-          <div className="cfg-my-sus-item">
-            <span className="cfg-proveedores-label">Gracia hasta</span>
-            <strong>{formatDateShort(info.graciaHasta)}</strong>
-          </div>
-          <div className="cfg-my-sus-item">
-            <span className="cfg-proveedores-label">Estado actual</span>
-            <strong>{info.detalle}</strong>
-          </div>
+        </div>
+
+        <div className="cfg-sus-card-actions">
+          <button
+            type="button"
+            className="emp-btn emp-btn-soft"
+            onClick={refrescarConteos}
+            disabled={actualizando}
+          >
+            {actualizando ? "Actualizando..." : "Actualizar conteos"}
+          </button>
         </div>
       </div>
 
       <div className="cfg-pos-card cfg-metodos-card">
         <div className="cfg-metodos-head">
           <div>
-            <h3>Metodos de pago disponibles</h3>
+            <h3>Condicion gratuita</h3>
             <p>
-              Por ahora puedes manejar estos medios para el cobro de la suscripcion del
-              sistema.
+              Cualquier cambio futuro de un plan gratuito a uno de pago requerira aviso previo
+              y aceptacion expresa del usuario.
             </p>
           </div>
-          <span className="cfg-metodos-pill">Solo titular pagador</span>
-        </div>
-
-        <div className="cfg-metodos-grid">
-          {SUSCRIPCION_METODOS_PAGO.map((item) => (
-            <article key={item.value} className="cfg-metodos-option">
-              <strong>{item.label}</strong>
-              <small>Disponible para registrar o consultar pagos de tu suscripcion.</small>
-            </article>
-          ))}
+          <span className="cfg-metodos-pill">Sin datos bancarios</span>
         </div>
       </div>
     </section>

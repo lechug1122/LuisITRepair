@@ -102,9 +102,14 @@ export async function imprimirTicketVenta({
   aplicaIVA = true,
   ivaPorcentaje = 0.16,
   iva,
+  recargoTarjeta = 0,
+  proveedorRecargoTarjeta = "",
+  propina = 0,
   total,
+  totalCobro,
   ticketConfig,
   previewOnly = false,
+  precuenta = false,
 }) {
   const printerCfg = readImpresorasConfigCache();
   const cfg = buildTicketConfig(ticketConfig || readTicketConfigStorage());
@@ -118,7 +123,9 @@ export async function imprimirTicketVenta({
   const extraLineFontSize = esVistaMovil ? "13px" : "11px";
   const totalFontSize = esVistaMovil ? "15px" : "13px";
   const logoHeight = esVistaMovil ? "60px" : "45px";
-  const paperPadding = esVistaMovil ? "4mm" : "3mm";
+  // Thermal printers commonly lose a few millimeters on the right edge and
+  // need extra feed after the last line so the cutter does not trim content.
+  const paperPadding = esVistaMovil ? "4mm 10mm 22mm 4mm" : "3mm 10mm 22mm 3mm";
   const popupWidth = esVistaMovil ? 520 : 420;
   const popupHeight = esVistaMovil ? 860 : 760;
 
@@ -127,19 +134,13 @@ export async function imprimirTicketVenta({
       const cantidad = Number(p.cantidad || 0);
       const precio = Number(p.precioVenta || 0);
       const totalLinea = cantidad * precio;
-      const etiqueta = p.esCanje
-        ? "Canje por puntos"
-        : p.esServicio
-        ? `Servicio ${escapeHtml(p.servicioFolio || "")}`
-        : "Producto";
-
       const nombre = cfg.fullDescription
         ? escapeHtml(p.nombre || "-")
         : escapeHtml(shortenText(p.nombre || "-"));
 
-      const metaHtml = cfg.showProductMeta
-        ? `<div class="ticket-item-meta">${etiqueta}</div>`
-        : "";
+      // El nombre y el renglón cantidad/precio ya identifican el concepto.
+      // Omitimos la etiqueta repetitiva para ahorrar papel térmico.
+      const metaHtml = "";
 
       const cantidadPrecio = cfg.showUnitPrice
         ? `${cantidad} x ${formatMoney(precio)}`
@@ -174,6 +175,17 @@ export async function imprimirTicketVenta({
   const ivaRow = aplicaIVA
     ? `<div class="ticket-total-row"><span>IVA (${ivaPctLabel})</span><span>${formatMoney(iva)}</span></div>`
     : "";
+  const recargoTarjetaMonto = Number(recargoTarjeta || 0);
+  const totalFinal = Number(totalCobro ?? total) || 0;
+  const recargoTarjetaRow =
+    recargoTarjetaMonto > 0
+      ? `<div class="ticket-total-row"><span>Recargo tarjeta${proveedorRecargoTarjeta ? ` (${escapeHtml(proveedorRecargoTarjeta)})` : ""}</span><span>${formatMoney(recargoTarjetaMonto)}</span></div>`
+      : "";
+  const propinaMonto = Number(propina || 0);
+  const propinaRow =
+    propinaMonto > 0
+      ? `<div class="ticket-total-row"><span>Propina</span><span>${formatMoney(propinaMonto)}</span></div>`
+      : "";
 
   const topLines = splitTicketLines(cfg.extraTopLines);
   const bottomLines = splitTicketLines(cfg.extraBottomLines);
@@ -183,7 +195,11 @@ export async function imprimirTicketVenta({
     const businessName = String(empresaCfg?.nombre || cfg.businessName || "").trim();
     if (businessName) businessLines.push(businessName);
     if (cfg.businessAddress.trim()) businessLines.push(cfg.businessAddress.trim());
-    if (cfg.businessPhone.trim()) businessLines.push(cfg.businessPhone.trim());
+    const businessPhone = String(empresaCfg?.telefono || cfg.businessPhone || "").trim();
+    if (businessPhone) businessLines.push(`Tel: ${businessPhone}`);
+    if (String(empresaCfg?.correoTickets || "").trim()) {
+      businessLines.push(`Correo: ${String(empresaCfg.correoTickets).trim()}`);
+    }
   }
 
   const businessHtml = renderLines(businessLines, "ticket-sub");
@@ -207,7 +223,7 @@ export async function imprimirTicketVenta({
       `
       : "";
 
-  const paymentSectionHtml = cfg.showPaymentSection
+  const paymentSectionHtml = cfg.showPaymentSection && !precuenta
     ? `
       <div class="ticket-section">
         <div class="ticket-section-title">Pago</div>
@@ -217,7 +233,7 @@ export async function imprimirTicketVenta({
     `
     : "";
 
-  const statusSectionHtml = cfg.showStatusSection
+  const statusSectionHtml = cfg.showStatusSection && !precuenta
     ? `
       <div class="ticket-section">
         <div class="ticket-section-title">Estado actual</div>
@@ -318,6 +334,12 @@ export async function imprimirTicketVenta({
       justify-content: space-between;
       gap: 8px;
     }
+    .ticket-item-row > :last-child,
+    .ticket-total-row > :last-child {
+      flex: 0 0 auto;
+      white-space: nowrap;
+      text-align: right;
+    }
     .ticket-divider {
       margin: 12px 0;
       border-top: 1px dashed rgba(0, 0, 0, 0.25);
@@ -345,7 +367,12 @@ export async function imprimirTicketVenta({
     .ticket-total-row {
       display: flex;
       justify-content: space-between;
+      gap: 8px;
       margin-bottom: 3px;
+    }
+    .ticket-total-row > :first-child {
+      min-width: 0;
+      overflow-wrap: anywhere;
     }
     .ticket-total-final {
       font-weight: 800;
@@ -457,6 +484,12 @@ export async function imprimirTicketVenta({
       justify-content: space-between;
       gap: 8px;
     }
+    .${captureClass} .ticket-item-row > :last-child,
+    .${captureClass} .ticket-total-row > :last-child {
+      flex: 0 0 auto;
+      white-space: nowrap;
+      text-align: right;
+    }
     .${captureClass} .ticket-divider {
       margin: 12px 0;
       border-top: 1px dashed rgba(0, 0, 0, 0.25);
@@ -488,6 +521,10 @@ export async function imprimirTicketVenta({
       gap: 8px;
       margin-bottom: 3px;
     }
+    .${captureClass} .ticket-total-row > :first-child {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
     .${captureClass} .ticket-total-final {
       font-weight: 800;
       font-size: ${totalFontSize};
@@ -509,7 +546,7 @@ export async function imprimirTicketVenta({
     <div class="ticket-paper ${cfg.boldAllText ? "ticket-paper-all-bold" : ""}">
       <div class="ticket-header">
         ${cfg.showLogo ? `<div class="ticket-logo"><img src="${LOGO_URL}" alt="Logo negocio" /></div>` : ""}
-        <div class="ticket-title">Ticket de venta</div>
+        <div class="ticket-title">${precuenta ? "Precuenta" : "Ticket de venta"}</div>
         ${businessHtml}
         <div class="ticket-sub">Folio: <b>${escapeHtml(ventaId || "-")}</b></div>
         <div class="ticket-sub">Fecha: ${escapeHtml(formatDate(fecha))}</div>
@@ -532,7 +569,9 @@ export async function imprimirTicketVenta({
       <div class="ticket-section">
         <div class="ticket-total-row"><span>Subtotal</span><span>${formatMoney(subtotal)}</span></div>
         ${ivaRow}
-        <div class="ticket-total-row ticket-total-final"><span>Total</span><span>${formatMoney(total)}</span></div>
+        ${recargoTarjetaRow}
+        ${propinaRow}
+        <div class="ticket-total-row ticket-total-final"><span>Total</span><span>${formatMoney(totalFinal)}</span></div>
       </div>
 
       ${bottomLinesHtml}
@@ -553,7 +592,9 @@ export async function imprimirTicketVenta({
         printerName: printerCfg.nombreImpresoraTicket || printerCfg.nombreImpresora || "",
         imageDataUrl,
         paperSize: ticketWidth,
-        jobName: `Venta ${ventaId || ""}`.trim() || "Ticket de venta",
+        jobName: precuenta
+          ? `Precuenta ${ventaId || ""}`.trim()
+          : `Venta ${ventaId || ""}`.trim() || "Ticket de venta",
       });
       return;
     } catch (error) {
@@ -602,7 +643,7 @@ export async function imprimirTicketVenta({
     <html lang="es">
       <head>
         <meta charset="UTF-8" />
-        <title>${previewOnly ? "Vista previa del ticket" : "Ticket de Venta"}</title>
+        <title>${precuenta ? "Precuenta" : previewOnly ? "Vista previa del ticket" : "Ticket de Venta"}</title>
         <style>${popupStyles}</style>
       </head>
       <body>

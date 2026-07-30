@@ -26,7 +26,7 @@ function normalizarStatus(raw) {
 
 function permitePrecioCero(status) {
   const s = normalizarStatus(status);
-  return s === "cancelado" || s === "no_reparable";
+  return s === "cancelado" || s === "no_reparable" || s === "abandonado";
 }
 
 function formatFecha(ts) {
@@ -123,6 +123,12 @@ const STATUS_STEP_META = {
     closeLabel: "Cierre",
     theme: "dark",
   },
+  abandonado: {
+    currentStep: 5,
+    resultLabel: "Abandonado",
+    closeLabel: "Cierre",
+    theme: "warning",
+  },
 };
 
 function getStepperMeta(status) {
@@ -140,6 +146,9 @@ function getRevisionDetalle(statusKey) {
   if (statusKey === "revision") return "Diagnostico inicial en curso.";
   if (statusKey === "cancelado") {
     return "La revision se detuvo antes de llegar a una conclusion final.";
+  }
+  if (statusKey === "abandonado") {
+    return "El servicio fue cerrado por abandono despues del plazo definido.";
   }
   if (statusKey === "no_reparable") {
     return "La revision detecto una falla que impide la reparacion.";
@@ -170,6 +179,7 @@ function getReparacionDetalle(statusKey) {
   if (statusKey === "no_reparable") {
     return "No fue posible llegar a una etapa de reparacion efectiva.";
   }
+  if (statusKey === "abandonado") return "La reparacion ya no continuara por abandono.";
   return "Reparacion finalizada correctamente.";
 }
 
@@ -183,6 +193,9 @@ function getResultadoDetalle(statusKey) {
   if (statusKey === "no_reparable") {
     return "No fue posible reparar el equipo y el servicio quedo cerrado.";
   }
+  if (statusKey === "abandonado") {
+    return "El equipo supero el plazo de abandono y el servicio quedo cerrado.";
+  }
   if (statusKey === "entregado") {
     return "El resultado tecnico fue confirmado antes de la entrega.";
   }
@@ -195,6 +208,9 @@ function getCloseDetail(statusKey, ultimaActualizacionTexto) {
   }
   if (statusKey === "cancelado" || statusKey === "no_reparable") {
     return "Servicio cerrado sin entrega al cliente.";
+  }
+  if (statusKey === "abandonado") {
+    return "Servicio cerrado por abandono del equipo.";
   }
   if (statusKey === "listo" || statusKey === "finalizado") {
     return "Pendiente de entrega o cierre con cliente.";

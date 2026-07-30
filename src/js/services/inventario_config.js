@@ -1,4 +1,4 @@
-const INVENTARIO_CONFIG_STORAGE_KEY = "inventario_catalogo_config_v1";
+const INVENTARIO_CONFIG_STORAGE_KEY = "inventario_catalogo_config_v2";
 
 function toBool(value, fallback = false) {
   if (typeof value === "boolean") return value;
@@ -11,7 +11,7 @@ export function createDefaultInventarioConfig() {
   return {
     autocompletarDescripcionCodigo: true,
     mostrarAvisoCatalogo: true,
-    camposProductoCompletos: true,
+    camposProductoCompletos: false,
   };
 }
 

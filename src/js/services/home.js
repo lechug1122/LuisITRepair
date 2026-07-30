@@ -5,6 +5,7 @@ import {
 } from "./configure_notificaciones";
 import { buildSystemUpdateNotification } from "./system_updates";
 import { filterItemsByTenant, getTenantCollectionQuery } from "./tenant";
+import { cerrarServiciosAbandonados } from "./servicios_firestore";
 
 /* =========================
    Helpers
@@ -23,7 +24,7 @@ function normalizarStatus(raw) {
 
 function isFinalStatus(status) {
   const s = normalizarStatus(status);
-  return s === "entregado";
+  return s === "entregado" || s === "abandonado";
 }
 
 function toDate(value) {
@@ -86,7 +87,7 @@ export async function obtenerKPIsDashboard() {
     id: d.id,
     ...d.data(),
   })));
-  const serviciosFiltrados = filterItemsByTenant(servicios);
+  const serviciosFiltrados = await cerrarServiciosAbandonados(filterItemsByTenant(servicios));
 
   const activos = serviciosFiltrados.filter((s) => !isFinalStatus(s.status)).length;
 
@@ -134,10 +135,10 @@ export async function obtenerKPIsDashboard() {
 ========================= */
 export async function obtenerServiciosPendientes() {
   const serviciosSnap = await getDocs(getTenantCollectionQuery("servicios"));
-  const servicios = filterItemsByTenant(serviciosSnap.docs.map((doc) => ({
+  const servicios = await cerrarServiciosAbandonados(filterItemsByTenant(serviciosSnap.docs.map((doc) => ({
     id: doc.id,
     ...doc.data(),
-  })));
+  }))));
 
   return servicios.filter((s) => !isFinalStatus(s.status));
 }
@@ -148,10 +149,10 @@ export async function obtenerServiciosPendientes() {
 ========================= */
 export async function obtenerTodosServicios() {
   const serviciosSnap = await getDocs(getTenantCollectionQuery("servicios"));
-  return filterItemsByTenant(serviciosSnap.docs.map((doc) => ({
+  return cerrarServiciosAbandonados(filterItemsByTenant(serviciosSnap.docs.map((doc) => ({
     id: doc.id,
     ...doc.data(),
-  })));
+  }))));
 }
 
 /* =========================
@@ -165,7 +166,9 @@ export async function obtenerNotificacionesHome() {
     getDocs(getTenantCollectionQuery("ventas")),
   ]);
 
-  const servicios = filterItemsByTenant(serviciosSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const servicios = await cerrarServiciosAbandonados(
+    filterItemsByTenant(serviciosSnap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+  );
   const productos = filterItemsByTenant(productosSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
   const ventas = filterItemsByTenant(ventasSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
 
@@ -316,7 +319,8 @@ export async function obtenerNotificacionesHome() {
   }
 
   if (isNotificationEnabled(config, "actualizaciones_sistema")) {
-    notificaciones.push(buildSystemUpdateNotification());
+    const systemUpdate = buildSystemUpdateNotification();
+    if (systemUpdate) notificaciones.push(systemUpdate);
   }
 
   return notificaciones;

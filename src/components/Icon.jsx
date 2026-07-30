@@ -54,12 +54,31 @@ export default function Icon({ name = "box", className = "" }) {
         </svg>
       );
 
+    case "restaurante":
+      return (
+        <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M7 3v7M4.5 3v4.5A2.5 2.5 0 007 10M9.5 3v4.5A2.5 2.5 0 017 10v11" stroke="#EA580C" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M16 3c-2 2-2.5 5-2.5 8h4V3H16zM17.5 11v10" stroke="#C2410C" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" fill="#FFEDD5" />
+        </svg>
+      );
+
     case "inventario":
       return (
         <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M12 2l8 4-8 4-8-4 8-4z" stroke="#16A34A" strokeWidth="1.4" fill="#ECFDF5" />
           <path d="M4 10v6l8 4 8-4v-6" stroke="#15803D" strokeWidth="1.4" fill="none" />
           <path d="M12 10v10" stroke="#15803D" strokeWidth="1.2" />
+        </svg>
+      );
+
+    case "platillos":
+      return (
+        <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 18h16" stroke="#15803D" strokeWidth="1.4" strokeLinecap="round" />
+          <path d="M6 16a6 6 0 0112 0H6z" stroke="#16A34A" strokeWidth="1.4" fill="#ECFDF5" strokeLinejoin="round" />
+          <path d="M12 8V6.5" stroke="#15803D" strokeWidth="1.4" strokeLinecap="round" />
+          <circle cx="12" cy="5.5" r="1" fill="#22C55E" />
+          <path d="M3 20h18" stroke="#15803D" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
       );
 
@@ -106,6 +125,15 @@ export default function Icon({ name = "box", className = "" }) {
           <path d="M6 10a6 6 0 1112 0v4l1.5 2.5H4.5L6 14v-4z" stroke="#475569" strokeWidth="1.3" fill="#F8FAFC" strokeLinejoin="round" />
           <path d="M10 19a2 2 0 004 0" stroke="#475569" strokeWidth="1.3" strokeLinecap="round" />
           <circle cx="18.5" cy="5.5" r="2" fill="#EF4444" />
+        </svg>
+      );
+
+    case "donacion":
+      return (
+        <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 21s-7.5-4.6-9.2-9.3C1.6 8.4 3.7 5 7.2 5c2 0 3.5 1.1 4.3 2.3C12.3 6.1 13.8 5 15.8 5c3.5 0 5.6 3.4 4.4 6.7C18.5 16.4 12 21 12 21z" stroke="#BE123C" strokeWidth="1.35" fill="#FFE4E6" strokeLinejoin="round" />
+          <path d="M9.2 12.2h5.6" stroke="#BE123C" strokeWidth="1.25" strokeLinecap="round" />
+          <path d="M12 9.4V15" stroke="#BE123C" strokeWidth="1.25" strokeLinecap="round" />
         </svg>
       );
 

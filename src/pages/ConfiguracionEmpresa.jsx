@@ -10,11 +10,30 @@ import {
 } from "../js/services/tipos_negocio";
 
 function cloneEmpresaConfig(config) {
+  const tiposGuardados = normalizeTiposNegocio(config?.tiposNegocio);
+  const restaurantePreset = findTipoNegocioPreset("restaurante");
+  const tiposNegocio =
+    restaurantePreset && !tiposGuardados.some((tipo) => tipo.id === "restaurante")
+      ? [...tiposGuardados, restaurantePreset]
+      : tiposGuardados;
+
   return {
     nombre: String(config?.nombre || ""),
     subtitulo: String(config?.subtitulo || ""),
+    telefono: String(config?.telefono || ""),
+    correoTickets: String(config?.correoTickets || ""),
+    correoNotas: String(config?.correoNotas || ""),
     tipoNegocioId: String(config?.tipoNegocioId || ""),
-    tiposNegocio: normalizeTiposNegocio(config?.tiposNegocio),
+    tiposNegocio,
+    restaurante: {
+      pisos: Array.isArray(config?.restaurante?.pisos) && config.restaurante.pisos.length
+        ? config.restaurante.pisos.map((piso, index) => ({
+            id: String(piso?.id || `piso-${index + 1}`),
+            nombre: String(piso?.nombre || `Piso ${index + 1}`),
+            cantidadMesas: Math.max(1, Number(piso?.cantidadMesas) || 1),
+          }))
+        : [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 12 }],
+    },
   };
 }
 
@@ -116,6 +135,35 @@ export default function ConfiguracionEmpresa() {
         tiposNegocio: nextTypes,
       };
     });
+  }
+
+  function handleCantidadPisosChange(rawValue) {
+    const cantidad = Math.min(20, Math.max(1, Number(rawValue) || 1));
+    setDraft((prev) => {
+      const actuales = prev.restaurante?.pisos || [];
+      const pisos = Array.from({ length: cantidad }, (_, index) => (
+        actuales[index] || {
+          id: `piso-${index + 1}`,
+          nombre: `Piso ${index + 1}`,
+          cantidadMesas: 12,
+        }
+      ));
+      return { ...prev, restaurante: { ...prev.restaurante, pisos } };
+    });
+  }
+
+  function handlePisoChange(index, key, value) {
+    setDraft((prev) => ({
+      ...prev,
+      restaurante: {
+        ...prev.restaurante,
+        pisos: prev.restaurante.pisos.map((piso, pisoIndex) => (
+          pisoIndex === index
+            ? { ...piso, [key]: key === "cantidadMesas" ? Math.min(200, Math.max(1, Number(value) || 1)) : value }
+            : piso
+        )),
+      },
+    }));
   }
 
   function handleImportPreset(presetId) {
@@ -305,6 +353,9 @@ export default function ConfiguracionEmpresa() {
         ...draft,
         nombre: String(draft.nombre || "").trim(),
         subtitulo: String(draft.subtitulo || "").trim(),
+        telefono: String(draft.telefono || "").trim(),
+        correoTickets: String(draft.correoTickets || "").trim().toLowerCase(),
+        correoNotas: String(draft.correoNotas || "").trim().toLowerCase(),
       });
       setMensaje("Configuracion de empresa guardada.");
       window.setTimeout(() => setMensaje(""), 2500);
@@ -329,6 +380,54 @@ export default function ConfiguracionEmpresa() {
         </p>
       </div>
 
+      {tipoActivo?.id === "restaurante" && (
+        <div className="cfg-pos-card cfg-empresa-card cfg-empresa-editor-card cfg-restaurant-card">
+          <div className="cfg-ticket-block cfg-ticket-block-wide">
+            <div className="cfg-empresa-section-head">
+              <div>
+                <h4>Distribución del restaurante</h4>
+                <p>Configura los pisos y la cantidad de mesas que verá el personal de Mesero.</p>
+              </div>
+            </div>
+            <label htmlFor="restaurante-cantidad-pisos">Cantidad de pisos</label>
+            <input
+              id="restaurante-cantidad-pisos"
+              type="number"
+              min="1"
+              max="20"
+              value={draft.restaurante.pisos.length}
+              onChange={(event) => handleCantidadPisosChange(event.target.value)}
+            />
+            <div className="cfg-restaurant-floors">
+              {draft.restaurante.pisos.map((piso, index) => (
+                <div className="cfg-restaurant-floor" key={piso.id}>
+                  <strong>Piso {index + 1}</strong>
+                  <label>
+                    Nombre
+                    <input
+                      type="text"
+                      value={piso.nombre}
+                      maxLength={40}
+                      onChange={(event) => handlePisoChange(index, "nombre", event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Cantidad de mesas
+                    <input
+                      type="number"
+                      min="1"
+                      max="200"
+                      value={piso.cantidadMesas}
+                      onChange={(event) => handlePisoChange(index, "cantidadMesas", event.target.value)}
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="cfg-pos-card cfg-empresa-card cfg-empresa-editor-card">
         <div className="cfg-ticket-block cfg-ticket-block-wide">
           <h4>Identidad del negocio</h4>
@@ -351,6 +450,54 @@ export default function ConfiguracionEmpresa() {
             placeholder="Ej. Servicio tecnico y punto de venta"
             maxLength={120}
           />
+
+          <label htmlFor="empresa-telefono">Número telefónico</label>
+          <input
+            id="empresa-telefono"
+            type="tel"
+            value={draft.telefono}
+            onChange={(e) =>
+              setDraft((prev) => ({ ...prev, telefono: e.target.value }))
+            }
+            placeholder="Ej. 273 143 0147"
+            maxLength={25}
+            autoComplete="tel"
+          />
+          <small className="cfg-pos-help">
+            Este número aparecerá en los tickets y en las boletas del negocio.
+          </small>
+
+          <label htmlFor="empresa-correo-tickets">Correo para tickets</label>
+          <input
+            id="empresa-correo-tickets"
+            type="email"
+            value={draft.correoTickets}
+            onChange={(e) =>
+              setDraft((prev) => ({ ...prev, correoTickets: e.target.value }))
+            }
+            placeholder="Ej. ventas@minegocio.com"
+            maxLength={160}
+            autoComplete="email"
+          />
+          <small className="cfg-pos-help">
+            Este correo aparecerá en los tickets de venta.
+          </small>
+
+          <label htmlFor="empresa-correo-notas">Correo para notas y boletas</label>
+          <input
+            id="empresa-correo-notas"
+            type="email"
+            value={draft.correoNotas}
+            onChange={(e) =>
+              setDraft((prev) => ({ ...prev, correoNotas: e.target.value }))
+            }
+            placeholder="Ej. notas@minegocio.com"
+            maxLength={160}
+            autoComplete="email"
+          />
+          <small className="cfg-pos-help">
+            Este correo aparecerá en las notas y boletas PDF generadas por el sistema.
+          </small>
 
           <label htmlFor="empresa-tipo-activo">Tipo de negocio activo</label>
           <select

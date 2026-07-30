@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import "../css/modal_pago.css";
 import useMonedaConfig from "../hooks/useMonedaConfig";
 
@@ -6,6 +6,9 @@ export default function ModalPago({
   mostrar,
   onClose,
   total,
+  totalCobro,
+  recargoTarjeta,
+  recargoTarjetaMonto = 0,
   imprimirAlCobrar = true,
   tipoPago,
   setTipoPago,
@@ -16,9 +19,18 @@ export default function ModalPago({
   referenciaPago,
   setReferenciaPago,
   cambio,
-  confirmarVenta
+  confirmarVenta,
+  errorMensaje = "",
+  habilitarPropina = false,
+  propinaMonto = 0,
+  setPropinaMonto = () => {},
 }) {
   const { formatCurrency } = useMonedaConfig();
+  const [mostrarPropina, setMostrarPropina] = useState(false);
+
+  useEffect(() => {
+    if (!mostrar) setMostrarPropina(false);
+  }, [mostrar]);
 
   const confirmarConValidacion = useCallback(() => {
     if (tipoPago === "tarjeta" && !referenciaPago.trim()) {
@@ -49,6 +61,10 @@ export default function ModalPago({
 
   if (!mostrar) return null;
 
+  const totalFinal = Number(totalCobro ?? total) || 0;
+  const recargoActivo =
+    tipoPago === "tarjeta" && recargoTarjeta?.habilitado && Number(recargoTarjetaMonto) > 0;
+
   const agregarNumero = (num) => {
     if (tipoPago === "tarjeta") {
       setMontoTarjeta((prev) => Number(`${prev}${num}`));
@@ -77,7 +93,82 @@ export default function ModalPago({
 
         <div className={`contenido-cobro ${tipoPago === "tarjeta" ? "sin-teclado" : ""}`}>
           <div className="lado-izquierdo">
-            <div className="total-grande-pro">{formatCurrency(total)}</div>
+            <div className="total-grande-pro">{formatCurrency(totalFinal)}</div>
+
+            {habilitarPropina && (
+              <section className={`modal-tip-section ${mostrarPropina ? "open" : "collapsed"}`}>
+                <button
+                  type="button"
+                  className="modal-tip-toggle"
+                  aria-expanded={mostrarPropina}
+                  onClick={() => setMostrarPropina((visible) => !visible)}
+                >
+                  <span>
+                    <b>{mostrarPropina ? "−" : "+"}</b>
+                    Agregar propina
+                  </span>
+                  <strong>{formatCurrency(propinaMonto)}</strong>
+                </button>
+                {mostrarPropina && (
+                  <div className="modal-tip-content">
+                    <div className="modal-tip-presets">
+                      {[0, 10, 15, 20].map((percent) => (
+                        <button
+                          type="button"
+                          key={percent}
+                          className={
+                            Number(propinaMonto || 0) === Number(total || 0) * (percent / 100)
+                              ? "active"
+                              : ""
+                          }
+                          onClick={() => setPropinaMonto(Number(total || 0) * (percent / 100))}
+                        >
+                          {percent === 0 ? "Sin propina" : `${percent}%`}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="modal-tip-custom">
+                      <span>Cantidad personalizada</span>
+                      <div>
+                        <b>$</b>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={propinaMonto || ""}
+                          placeholder="0.00"
+                          onChange={(event) => setPropinaMonto(Math.max(0, Number(event.target.value) || 0))}
+                        />
+                      </div>
+                    </label>
+                    <div className="modal-tip-total">
+                      <span>Cuenta {formatCurrency(total)}</span>
+                      <strong>Total {formatCurrency(totalFinal)}</strong>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {recargoActivo && (
+              <div className="tarjeta-recargo-resumen">
+                <div>
+                  <span>Total base</span>
+                  <strong>{formatCurrency(total)}</strong>
+                </div>
+                <div>
+                  <span>
+                    Recargo tarjeta
+                    {recargoTarjeta?.proveedor ? ` (${recargoTarjeta.proveedor})` : ""}
+                  </span>
+                  <strong>{formatCurrency(recargoTarjetaMonto)}</strong>
+                </div>
+                <div>
+                  <span>Total a cobrar</span>
+                  <strong>{formatCurrency(totalFinal)}</strong>
+                </div>
+              </div>
+            )}
 
             <div className="metodos">
               <button
@@ -128,6 +219,9 @@ export default function ModalPago({
             <div className={`cambio-pro ${cambio >= 0 ? "ok" : "error"}`}>
               {cambio >= 0 ? `Su cambio: ${formatCurrency(cambio)}` : "Monto insuficiente"}
             </div>
+            {errorMensaje ? (
+              <div className="modal-pago-error" role="alert">{errorMensaje}</div>
+            ) : null}
           </div>
 
           {tipoPago !== "tarjeta" && (

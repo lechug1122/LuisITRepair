@@ -10,5 +10,5 @@ if not "%EXIT_CODE%"=="0" (
   exit /b %EXIT_CODE%
 )
 
-echo El puente de impresora se activo para iniciar automaticamente en esta PC.
+echo El puente de impresora se activo sin necesidad de instalar Node.js.
 pause

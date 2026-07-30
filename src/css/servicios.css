@@ -208,6 +208,12 @@
   border-color: rgba(107, 114, 128, 0.22);
 }
 
+.estado-abandonado {
+  color: #92400e;
+  background: rgba(146, 64, 14, 0.14);
+  border-color: rgba(146, 64, 14, 0.24);
+}
+
 .only-desktop {
   display: none;
 }

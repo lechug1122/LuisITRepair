@@ -1,10 +1,90 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="src/assets/logo.png" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link
+      rel="stylesheet"
+      href="https://cdn-uicons.flaticon.com/3.0.0/uicons-bold-rounded/css/uicons-bold-rounded.css"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LuisITRepair</title>
+    <meta name="description" content="CajaLibre es un punto de venta gratuito en México para controlar ventas, inventario, clientes, servicios y reportes desde cualquier dispositivo." />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://cajalibre.com.mx/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="es_MX" />
+    <meta property="og:site_name" content="CajaLibre" />
+    <meta property="og:title" content="CajaLibre | Punto de venta gratuito para tu negocio" />
+    <meta property="og:description" content="Controla ventas, inventario, clientes, servicios y reportes con un sistema web gratuito creado para pequeños negocios en México." />
+    <meta property="og:url" content="https://cajalibre.com.mx/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="CajaLibre | Punto de venta gratuito" />
+    <meta name="twitter:description" content="Sistema web gratuito de ventas, inventario y administración para pequeños negocios." />
+    <meta name="theme-color" content="#092648" />
+    <meta name="google-adsense-account" content="ca-pub-6040311717869766" />
+    <title>CajaLibre | Punto de venta gratuito para tu negocio</title>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      (function () {
+        var choice = null;
+        try { choice = localStorage.getItem("cajalibre_cookie_consent"); } catch (_) {}
+        var granted = choice === "accepted";
+        gtag("consent", "default", {
+          ad_storage: granted ? "granted" : "denied",
+          ad_user_data: granted ? "granted" : "denied",
+          ad_personalization: granted ? "granted" : "denied",
+          analytics_storage: granted ? "granted" : "denied",
+          functionality_storage: "granted",
+          security_storage: "granted",
+          wait_for_update: 500
+        });
+        gtag("set", "ads_data_redaction", !granted);
+      })();
+    </script>
+    
+    <script
+      async
+      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6040311717869766"
+      crossorigin="anonymous"
+    ></script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "CajaLibre",
+        "url": "https://cajalibre.com.mx/",
+        "description": "Sistema web gratuito de punto de venta, inventario y administración para pequeños negocios en México.",
+        "applicationCategory": "BusinessApplication",
+        "applicationSubCategory": "Point of Sale Software",
+        "operatingSystem": "Cualquier dispositivo con navegador web",
+        "inLanguage": "es-MX",
+        "countryOfOrigin": {
+          "@type": "Country",
+          "name": "México"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "MXN",
+          "availability": "https://schema.org/InStock"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "CajaLibre",
+          "url": "https://cajalibre.com.mx/"
+        }
+      }
+    </script>
+    <script>
+      if (window.location.pathname !== "/") {
+        document.querySelector('meta[name="robots"]').content = "noindex, nofollow";
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

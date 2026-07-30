@@ -112,7 +112,7 @@ export default function useSesionDispositivo(authInfo = {}) {
           signOutCurrentSessionWithMessage(
             "Tu sesion en este equipo fue cerrada desde otro dispositivo.",
           ).then(() => {
-            window.location.assign("/login");
+            window.location.assign("/");
           });
         },
         () => {},
@@ -176,7 +176,7 @@ export default function useSesionDispositivo(authInfo = {}) {
           await closeCurrentDeviceSession(uid, "manual_exit").catch(() => {});
         }
         await signOutCurrentSessionWithMessage("");
-        window.location.assign("/login");
+        window.location.assign("/");
       },
     };
   }, [aplicaLimite, checking, conflict, cuentaPrincipalUid, superAdmin, suscripcion, suscripcionControlada, uid]);

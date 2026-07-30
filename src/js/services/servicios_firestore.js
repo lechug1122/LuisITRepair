@@ -6,6 +6,7 @@ import {
   updateDoc,
   serverTimestamp,
   runTransaction,
+  writeBatch,
 } from "firebase/firestore";
 
 import { db } from "../../initializer/firebase";
@@ -40,7 +41,108 @@ function normalizarStatus(raw) {
 
 function isFinalStatus(status) {
   const s = normalizarStatus(status);
-  return s === "entregado";
+  return s === "entregado" || s === "abandonado";
+}
+
+function isCancelableParaAbandono(status) {
+  const s = normalizarStatus(status);
+  return s === "cancelado" || s === "no_reparable";
+}
+
+function parseDateOnly(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+
+  let year = 0;
+  let month = 0;
+  let day = 0;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    [year, month, day] = raw.split("-").map(Number);
+  } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw)) {
+    [day, month, year] = raw.split("/").map(Number);
+  } else {
+    return null;
+  }
+
+  if (!year || !month || !day) return null;
+
+  const date = new Date(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function diffDays(from, to) {
+  if (!(from instanceof Date) || !(to instanceof Date)) return 0;
+  return Math.floor((to.getTime() - from.getTime()) / 86400000);
+}
+
+function shouldAutoCloseByAbandono(servicio, today = new Date()) {
+  if (!servicio || isFinalStatus(servicio?.status)) return false;
+  if (!isCancelableParaAbandono(servicio?.status)) return false;
+
+  const retardo = servicio?.hojaServicio?.retardo || servicio?.retardo || {};
+  if (!retardo?.habilitado) return false;
+
+  const fechaEntrega = parseDateOnly(servicio?.fechaAprox);
+  if (!fechaEntrega) return false;
+
+  const hoy = new Date(today);
+  hoy.setHours(0, 0, 0, 0);
+
+  const diasTolerancia = Math.max(0, toInt(retardo?.diasTolerancia, 0));
+  const abandonoDias = Math.max(1, toInt(retardo?.abandonoDias, 30));
+  const diasRetardoAplicados = Math.max(0, diffDays(fechaEntrega, hoy) - diasTolerancia);
+
+  return diasRetardoAplicados >= abandonoDias;
+}
+
+export async function cerrarServiciosAbandonados(servicios = []) {
+  const pendientesDeCierre = servicios.filter((servicio) => shouldAutoCloseByAbandono(servicio));
+  if (!pendientesDeCierre.length) return servicios;
+
+  const batch = writeBatch(db);
+
+  pendientesDeCierre.forEach((servicio) => {
+    batch.update(doc(db, "servicios", servicio.id), {
+      status: "abandonado",
+      entregado: false,
+      fechaCierre: serverTimestamp(),
+      cierreMotivo: "abandono",
+      locked: true,
+      lockedReason: "abandonado",
+      updatedAt: serverTimestamp(),
+      retardo: {
+        ...(servicio?.retardo || {}),
+        abandonoActivo: true,
+        abandonoMotivo: "dias",
+      },
+    });
+  });
+
+  try {
+    await batch.commit();
+  } catch (error) {
+    console.warn("[servicios] No se pudo cerrar abandono automaticamente:", error?.code || error);
+  }
+
+  const cerrados = new Set(pendientesDeCierre.map((servicio) => servicio.id));
+  return servicios.map((servicio) => (
+    cerrados.has(servicio.id)
+      ? {
+          ...servicio,
+          status: "abandonado",
+          cierreMotivo: "abandono",
+          locked: true,
+          lockedReason: "abandonado",
+          retardo: {
+            ...(servicio?.retardo || {}),
+            abandonoActivo: true,
+            abandonoMotivo: "dias",
+          },
+        }
+      : servicio
+  ));
 }
 
 function normText(raw) {
@@ -375,7 +477,9 @@ export async function buscarServicioPorFolio(folio) {
 ========================= */
 export async function listarServiciosPendientes() {
   const snap = await getDocs(getTenantCollectionQuery("servicios"));
-  const all = filterItemsByTenant(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const all = await cerrarServiciosAbandonados(
+    filterItemsByTenant(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+  );
   all.sort((a, b) => {
     const left = a?.createdAt?.seconds || 0;
     const right = b?.createdAt?.seconds || 0;
@@ -389,7 +493,9 @@ export async function listarServiciosPendientes() {
 ========================= */
 export async function listarServiciosHistorial() {
   const snapAll = await getDocs(getTenantCollectionQuery("servicios"));
-  const all = filterItemsByTenant(snapAll.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const all = await cerrarServiciosAbandonados(
+    filterItemsByTenant(snapAll.docs.map((d) => ({ id: d.id, ...d.data() }))),
+  );
   all.sort((a, b) => {
     const left = a?.createdAt?.seconds || 0;
     const right = b?.createdAt?.seconds || 0;
@@ -423,11 +529,19 @@ export async function actualizarServicioPorId(id, data) {
     patch.fechaEntregado = serverTimestamp();
   }
 
+  if (nextStatusNorm === "abandonado") {
+    patch.fechaCierre = serverTimestamp();
+    patch.cierreMotivo = "abandono";
+  }
+
   if (
     data?.status &&
-    nextStatusNorm !== "entregado"
+    nextStatusNorm !== "entregado" &&
+    nextStatusNorm !== "abandonado"
   ) {
     patch.fechaEntregado = null;
+    patch.fechaCierre = null;
+    patch.cierreMotivo = null;
   }
 
   if (isFinal) {

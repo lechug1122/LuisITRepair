@@ -70,7 +70,9 @@
 }
 
 .cfg-main.cfg-main-no-right {
-  padding-right: 28px;
+  padding-right: 22px;
+  max-width: none;
+  width: 100%;
 }
 
 .cfg-back-row {
@@ -104,8 +106,6 @@
   gap: 14px;
 }
 
-.stats,
-.empleados-activos,
 .cfg-version-card,
 .cfg-help-card {
   background: #f9fafc;
@@ -114,13 +114,30 @@
   margin-bottom: 0;
 }
 
-.stat {
-  padding: 8px 0;
-  border-bottom: 1px solid #eee;
+.cfg-ad-card {
+  width: 100%;
+  aspect-ratio: 1;
+  min-height: 250px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f9fafc;
 }
 
-.stat:last-child {
-  border-bottom: none;
+.cfg-ad-label {
+  display: block;
+  padding: 5px 8px 0;
+  color: #94a3b8;
+  font-size: 10px;
+  line-height: 1;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.cfg-ad-card .adsbygoogle {
+  width: 100%;
+  height: calc(100% - 15px);
 }
 
 .cfg-version-card h4 {
@@ -257,30 +274,144 @@
   border-color: #93c5fd;
 }
 
-.empleados-activos ul {
-  list-style: none;
-  padding: 0;
+.cfg-help-btn-donation {
+  background: #0f5d7a;
+  color: #ffffff;
+  border: 1px solid #0f5d7a;
+}
+
+.cfg-help-btn-donation:hover {
+  background: #0b4a61;
+  border-color: #0b4a61;
+  transform: translateY(-1px);
+}
+
+.cfg-donation-wrap {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  max-width: none;
+}
+
+.cfg-donation-hero {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.82fr) minmax(0, 1.18fr);
+  align-items: center;
+  gap: 28px;
+  padding: 32px;
+  width: 100%;
+  max-width: none;
+  border-color: #fecdd3;
+  background:
+    radial-gradient(circle at top right, rgba(244, 63, 94, 0.1), transparent 30%),
+    linear-gradient(180deg, #ffffff 0%, #fff7f9 100%);
+}
+
+.cfg-donation-image-panel {
+  display: grid;
+  place-items: center;
+  min-height: 420px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.95), rgba(255, 241, 242, 0.6)),
+    linear-gradient(135deg, #fff1f2 0%, #eff6ff 100%);
+  border: 1px solid rgba(254, 205, 211, 0.85);
+  overflow: hidden;
+}
+
+.cfg-donation-image {
+  width: min(100%, 470px);
+  height: auto;
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 22px 30px rgba(15, 23, 42, 0.16));
+}
+
+.cfg-donation-copy {
+  display: grid;
+  align-content: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 18px;
+}
+
+.cfg-donation-hero h2 {
   margin: 0;
+  color: #0f172a;
+  font-size: clamp(2.05rem, 3.2vw, 3.55rem);
+  line-height: 1.1;
+  max-width: 860px;
+  overflow-wrap: normal;
+  text-wrap: balance;
 }
 
-.empleados-activos li {
+.cfg-donation-hero p,
+.cfg-donation-note p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.55;
+  max-width: 720px;
+}
+
+.cfg-donation-actions {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 0;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6px;
 }
 
-.online {
-  color: #10a37f;
+.cfg-donation-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  min-width: 190px;
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: #0f5d7a;
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 900;
+  box-shadow: 0 12px 26px rgba(15, 93, 122, 0.2);
 }
 
-.offline {
-  color: #9ca3af;
+.cfg-donation-btn:hover {
+  background: #0b4a61;
+  transform: translateY(-1px);
+}
+
+.cfg-donation-btn.paypal {
+  background: #003087;
+  box-shadow: 0 12px 26px rgba(0, 48, 135, 0.22);
+}
+
+.cfg-donation-btn.paypal:hover {
+  background: #00246a;
+}
+
+.cfg-donation-btn.mercadopago {
+  background: #009ee3;
+  box-shadow: 0 12px 26px rgba(0, 158, 227, 0.22);
+}
+
+.cfg-donation-btn.mercadopago:hover {
+  background: #0085c0;
+}
+
+.cfg-donation-note {
+  display: grid;
+  gap: 6px;
+  border-color: #bfdbfe;
+  background: #f8fbff;
+}
+
+.cfg-donation-note strong {
+  color: #0f172a;
 }
 
 .btn-logout-right {
   width: 100%;
-  margin-top: 14px;
+  margin-top: 0;
   padding: 12px;
   background: #e53935;
   color: #fff;
@@ -413,6 +544,11 @@
 .cfg-card-icon.icon-impresoras {
   background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%);
   border-color: #bfdbfe;
+}
+
+.cfg-card-icon.icon-restaurante {
+  background: linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%);
+  border-color: #fed7aa;
 }
 
 .cfg-card-icon.icon-inventario,
@@ -564,6 +700,12 @@
   gap: 12px;
   max-width: 680px;
   box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
+}
+
+.cfg-pos-card.cfg-donation-hero,
+.cfg-pos-card.cfg-donation-note {
+  max-width: none;
+  width: 100%;
 }
 
 .cfg-pos-card h2 {
@@ -803,6 +945,51 @@
 
 .cfg-metodos-card {
   max-width: 920px;
+}
+
+.cfg-metodos-recargo-card {
+  max-width: 950px;
+}
+
+.cfg-card-surcharge-preview,
+.cfg-card-surcharge-result {
+  border: 1px dashed #bfd3ef;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 12px 14px;
+}
+
+.cfg-card-surcharge-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.cfg-card-surcharge-preview strong,
+.cfg-card-surcharge-result strong {
+  color: #0f172a;
+}
+
+.cfg-card-surcharge-preview span {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.cfg-card-surcharge-result {
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.cfg-card-surcharge-result span {
+  color: #64748b;
 }
 
 .cfg-metodos-head {
@@ -2765,6 +2952,98 @@ body.ui-theme-dark .cfg-ticket-preview-status-pill {
   gap: 10px;
 }
 
+.cfg-business-list-grid {
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+}
+
+.cfg-business-card {
+  border-color: #cfe0f5;
+}
+
+.cfg-business-state-box {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dbe7f7;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.cfg-business-state-box textarea {
+  resize: vertical;
+}
+
+.cfg-business-synth-label {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.cfg-business-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.58);
+}
+
+.cfg-business-delete-modal {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+  border-radius: 18px;
+  border: 1px solid #fecaca;
+  background: #ffffff;
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.28);
+}
+
+.cfg-business-delete-modal h2 {
+  margin: 0;
+  color: #991b1b;
+}
+
+.cfg-business-delete-modal p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.cfg-business-delete-summary {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid #fecaca;
+  border-radius: 14px;
+  background: #fef2f2;
+}
+
+.cfg-business-delete-summary strong {
+  color: #7f1d1d;
+}
+
+.cfg-business-delete-summary span {
+  color: #991b1b;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.cfg-business-delete-actions {
+  justify-content: flex-end;
+}
+
 .cfg-my-sus-card {
   max-width: none;
   width: 100%;
@@ -2936,6 +3215,33 @@ body.ui-theme-dark .cfg-ticket-preview-status-pill {
     grid-template-columns: 1fr;
   }
 
+  .cfg-business-list-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cfg-donation-hero {
+    grid-template-columns: 1fr;
+    padding: 22px;
+    gap: 18px;
+  }
+
+  .cfg-donation-copy {
+    padding: 6px 0 0;
+  }
+
+  .cfg-donation-image-panel {
+    min-height: 240px;
+  }
+
+  .cfg-donation-image {
+    width: min(100%, 280px);
+  }
+
+  .cfg-donation-actions,
+  .cfg-donation-btn {
+    width: 100%;
+  }
+
   .cfg-sus-cta-btn,
   .cfg-sus-empty-btn {
     width: 100%;
@@ -2999,6 +3305,10 @@ body.ui-theme-dark .cfg-ticket-preview-status-pill {
 
   .cfg-billing-preview-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cfg-card-surcharge-preview {
+    align-items: stretch;
   }
 
   .cfg-ticket-preview-wrap {
@@ -3133,3 +3443,7 @@ body.ui-theme-dark .cfg-ticket-preview-status-pill {
     bottom: -12px;
   }
 }
+.cfg-restaurant-card{width:100%;max-width:1200px}.cfg-restaurant-card>.cfg-ticket-block{width:100%;padding:20px}.cfg-restaurant-card>div>label[for="restaurante-cantidad-pisos"]{display:block;margin-top:18px;font-weight:800;color:#334155}.cfg-restaurant-card #restaurante-cantidad-pisos{width:min(220px,100%);min-height:44px;margin-top:7px}.cfg-restaurant-floors{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:20px}.cfg-restaurant-floor{min-width:0;border:1px solid #d6e4ff;border-radius:14px;background:linear-gradient(180deg,#fff 0%,#f8fbff 100%);padding:18px;box-shadow:0 5px 14px rgba(15,23,42,.05)}.cfg-restaurant-floor>strong{display:block;margin-bottom:14px;color:#ea580c;font-size:1rem}.cfg-restaurant-floor label{display:block;margin-top:12px;font-weight:700;color:#334155}.cfg-restaurant-floor input{box-sizing:border-box;width:100%;min-height:44px;margin-top:7px;padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#0f172a}.cfg-restaurant-floor input:focus,.cfg-restaurant-card #restaurante-cantidad-pisos:focus{outline:0;border-color:#f97316;box-shadow:0 0 0 3px rgba(249,115,22,.14)}@media(max-width:700px){.cfg-restaurant-card>.cfg-ticket-block{padding:14px}.cfg-restaurant-floors{grid-template-columns:1fr;gap:12px}.cfg-restaurant-card #restaurante-cantidad-pisos{width:100%}}
+
+/* Configuración operativa de Restaurante */
+.cfg-restaurant-operation{width:min(900px,100%);margin:0 auto}.cfg-restaurant-operation .cfg-section-header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:18px;padding:22px;border:1px solid #fed7aa;border-radius:16px;background:linear-gradient(135deg,#fff7ed,#fff)}.cfg-restaurant-operation .cfg-section-header span{color:#ea580c;font-size:.78rem;font-weight:900;text-transform:uppercase;letter-spacing:.1em}.cfg-restaurant-operation .cfg-section-header h2{margin:4px 0;color:#172033}.cfg-restaurant-operation .cfg-section-header p{margin:0;color:#64748b}.cfg-restaurant-operation .cfg-section-header>svg{font-size:2.3rem;color:#f97316}.cfg-restaurant-operation-card{padding:24px;border:1px solid #dce3ea;border-radius:16px;background:#fff;box-shadow:0 9px 24px rgba(15,23,42,.06)}.cfg-restaurant-operation-title{display:flex;align-items:flex-start;gap:13px}.cfg-restaurant-operation-title>svg{flex:0 0 auto;padding:10px;border-radius:10px;background:#fff7ed;color:#ea580c;font-size:1.35rem}.cfg-restaurant-operation-title h3{margin:2px 0 5px;color:#172033}.cfg-restaurant-operation-title p{margin:0;color:#64748b}.cfg-restaurant-limit-toggle{display:flex;align-items:flex-start;gap:13px;margin-top:22px;padding:16px;border:1px solid #dce3ea;border-radius:12px;background:#f8fafc;cursor:pointer}.cfg-restaurant-limit-toggle input{width:20px;height:20px;accent-color:#f97316}.cfg-restaurant-limit-toggle span,.cfg-restaurant-limit-toggle strong,.cfg-restaurant-limit-toggle small{display:block}.cfg-restaurant-limit-toggle strong{color:#172033}.cfg-restaurant-limit-toggle small{margin-top:4px;color:#64748b}.cfg-restaurant-limit-field{display:grid;gap:7px;margin-top:18px;color:#334155;font-weight:800}.cfg-restaurant-limit-field input{width:min(210px,100%);padding:11px 12px;border:1px solid #cbd5e1;border-radius:9px;font:inherit}.cfg-restaurant-operation-note{margin-top:20px;padding:13px;border-left:4px solid #f97316;border-radius:7px;background:#fff7ed;color:#7c2d12}.cfg-restaurant-operation-message{margin:15px 0 0;color:#166534;font-weight:800}.cfg-restaurant-save{display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:12px 18px;border:0;border-radius:9px;background:#f97316;color:#fff;font-weight:900;cursor:pointer}.cfg-restaurant-save:disabled{opacity:.6;cursor:not-allowed}

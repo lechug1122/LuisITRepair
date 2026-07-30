@@ -4,17 +4,22 @@ import "../css/pos.css";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 
-export default function Layout({ children }) {
+export default function Layout({ children, restaurantMode = false }) {
   const MOBILE_WORKSPACE_BREAKPOINT = 900;
   const COMPACT_DESKTOP_BREAKPOINT = 1280;
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { puede } = useAutorizacionActual();
-  const { nombreEmpresa } = useEmpresaConfig();
+  const { nombreEmpresa, tipoNegocioActivo } = useEmpresaConfig();
+  const modoRestaurante = restaurantMode || tipoNegocioActivo?.id === "restaurante";
   const esRutaPOS = String(location.pathname || "").toLowerCase() === "/pos";
+  const esRutaReportes = String(location.pathname || "").toLowerCase() === "/reportes";
   const vistaPOS = esRutaPOS
     ? (new URLSearchParams(location.search).get("vista") === "clientes" ? "clientes" : "ventas")
+    : "";
+  const vistaRestaurante = esRutaPOS && modoRestaurante
+    ? (new URLSearchParams(location.search).get("cuenta") || "nueva")
     : "";
 
   useEffect(() => {
@@ -38,7 +43,7 @@ export default function Layout({ children }) {
     return () => document.body.classList.remove("body-pos-workspace");
   }, [esRutaPOS]);
 
-  const menuItems = [
+  const menuItemsBase = [
     {
       label: "Ventas",
       path: "/POS",
@@ -47,18 +52,18 @@ export default function Layout({ children }) {
       active: esRutaPOS ? vistaPOS === "ventas" : location.pathname === "/POS",
     },
     {
-      label: "Inventario",
+      label: modoRestaurante ? "Platillos" : "Inventario",
       path: "/productos",
-      emoji: "📦",
+      emoji: modoRestaurante ? "🍽️" : "📦",
       permission: "productos.ver",
       active: location.pathname === "/productos",
     },
     {
       label: "Clientes",
-      path: esRutaPOS ? "/POS?vista=clientes" : "/clientes",
+      path: esRutaPOS && !modoRestaurante ? "/POS?vista=clientes" : "/clientes",
       emoji: "👥",
       permission: "clientes.ver",
-      active: esRutaPOS
+      active: esRutaPOS && !modoRestaurante
         ? vistaPOS === "clientes"
         : String(location.pathname || "").startsWith("/clientes"),
     },
@@ -69,7 +74,18 @@ export default function Layout({ children }) {
       permission: "reportes.ver",
       active: location.pathname === "/reportes",
     },
-  ].filter((item) => puede(item.permission));
+  ];
+  const menuItemsRestaurante = [
+    
+    { label: "Nueva cuenta", path: "/POS?cuenta=nueva", emoji: "🧾", active: vistaRestaurante === "nueva" },
+    { label: "Cuentas abiertas", path: "/POS?cuenta=abiertas", emoji: "🍽️", active: vistaRestaurante === "abiertas" },
+    { label: "Historial", path: "/POS?cuenta=historial", emoji: "🕘", active: vistaRestaurante === "historial" },
+    { label: "Reservaciones", path: "/POS?cuenta=reservaciones", emoji: "📅", active: vistaRestaurante === "reservaciones" },
+    {
+      label: "Reportes",  path: "/reportes",emoji: "📊", permission: "reportes.ver", active: location.pathname === "/reportes",},
+  ];
+  const menuItems = (modoRestaurante && (esRutaPOS || esRutaReportes) ? menuItemsRestaurante : menuItemsBase)
+    .filter((item) => !item.permission || puede(item.permission));
 
   const marcaVisible = nombreEmpresa || "LuisITRepair";
   const inicialMarca = marcaVisible.trim().charAt(0).toUpperCase() || "L";

@@ -37,17 +37,9 @@ function buildPrinterBridgeInstaller(baseUrl) {
     'set "INSTALL_DIR=%LOCALAPPDATA%\\LuisITRepairPrinterBridge"',
     'if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"',
     "",
-    'call :download "%BASE_URL%/printer_bridge.mjs" "%INSTALL_DIR%\\printer_bridge.mjs" || goto :error',
-    'call :download "%BASE_URL%/local_printers.mjs" "%INSTALL_DIR%\\local_printers.mjs" || goto :error',
-    'call :download "%BASE_URL%/windows_raw_print.mjs" "%INSTALL_DIR%\\windows_raw_print.mjs" || goto :error',
+    'call :download "%BASE_URL%/printer_bridge.ps1" "%INSTALL_DIR%\\printer_bridge.ps1" || goto :error',
     "",
-    'for /f "delims=" %%I in (\'where node 2^>nul\') do set "NODE_PATH=%%I" & goto node_found',
-    'echo No se encontro Node.js en esta PC. Pide ayuda para instalar el activador local.',
-    "goto :error",
-    "",
-    ":node_found",
-    `powershell.exe -NoProfile -Command "$ProgressPreference = 'SilentlyContinue'; $startup = [Environment]::GetFolderPath('Startup'); $launcher = Join-Path $startup 'LuisITRepair Printer Bridge.lnk'; $legacy = Join-Path $startup 'LuisITRepair Printer Bridge.vbs'; $shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut($launcher); $shortcut.TargetPath = $env:NODE_PATH; $shortcut.Arguments = '"' + (Join-Path $env:INSTALL_DIR 'printer_bridge.mjs') + '"'; $shortcut.WorkingDirectory = $env:INSTALL_DIR; $shortcut.WindowStyle = 7; $shortcut.IconLocation = $env:NODE_PATH + ',0'; $shortcut.Save(); if (Test-Path $legacy) { Remove-Item -Path $legacy -Force }" || goto :error`,
-    'start "" /min "%NODE_PATH%" "%INSTALL_DIR%\\printer_bridge.mjs"',
+    `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference = 'SilentlyContinue'; $startup = [Environment]::GetFolderPath('Startup'); $launcher = Join-Path $startup 'LuisITRepair Printer Bridge.lnk'; $legacy = Join-Path $startup 'LuisITRepair Printer Bridge.vbs'; $script = Join-Path $env:INSTALL_DIR 'printer_bridge.ps1'; $powershell = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'; $shell = New-Object -ComObject WScript.Shell; $shortcut = $shell.CreateShortcut($launcher); $shortcut.TargetPath = $powershell; $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""' + $script + '""'; $shortcut.WorkingDirectory = $env:INSTALL_DIR; $shortcut.WindowStyle = 7; $shortcut.IconLocation = $powershell + ',0'; $shortcut.Save(); if (Test-Path $legacy) { Remove-Item -Path $legacy -Force }; Start-Process -FilePath $powershell -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',$script) -WindowStyle Hidden" || goto :error`,
     'echo El activador de impresoras ya quedo instalado en esta PC.',
     "goto :eof",
     "",
@@ -470,8 +462,8 @@ export default function ConfiguracionImpresoras() {
               <span className="cfg-printer-driver-badge">Disponible solo en Windows</span>
               <strong>Activador local de impresoras</strong>
               <p>
-                Descarga este archivo y ejecutalo una sola vez en esta PC para activar las
-                impresoras locales.
+                Descarga este archivo y ejecútalo una sola vez en esta PC para activar las
+                impresoras locales. No requiere instalar Node.js.
               </p>
               <small className="cfg-pos-help">
                 Activalo en esta computadora para leer impresoras locales y usar impresion
@@ -484,7 +476,7 @@ export default function ConfiguracionImpresoras() {
               className="cfg-ticket-test-btn cfg-printer-driver-btn"
               onClick={descargarDriverLocal}
             >
-              Descargar driver local
+              Instalar conector de impresoras
             </button>
           </div>
         </div>

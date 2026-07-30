@@ -93,18 +93,18 @@ function UpdateModal({ onClose }) {
       ),
     },
     {
-      title: "Todo esto por solo $400 al mes",
+      title: "CajaLibre sigue creciendo",
       content: (
         <>
           <p className="slide-lead">
-            Un solo sistema para ordenar tu negocio, vender mas rapido y tener mejor control sin
-            complicarte.
+            Por ahora CajaLibre funciona como servicio gratuito mientras seguimos preparando
+            mejoras para negocios reales.
           </p>
           <ul>
-            <li>Incluye POS, inventario, clientes, servicios, reportes y configuracion.</li>
-            <li>Ideal para talleres, telefonia, refacciones, mostrador y tiendas comerciales.</li>
-            <li>Pagas solo $400 al mes por usar todas las funciones del sistema.</li>
-            <li>Mas control, mas orden y mejor atencion al cliente desde un mismo lugar.</li>
+            <li>Los usuarios añadidos actualmente son gratuitos.</li>
+            <li>No se generan cobros automaticos ni se solicitan datos bancarios.</li>
+            <li>Las mejoras del sistema se comunicaran desde este panel de novedades.</li>
+            <li>Cualquier cambio futuro de plan requerira aviso previo y aceptacion expresa.</li>
           </ul>
         </>
       ),
@@ -149,8 +149,8 @@ function UpdateModal({ onClose }) {
 
         <div className="update-head">
           <div className="update-head-copy">
-            <span className="update-chip">Promocion del sistema</span>
-            <span className="update-caption">Abril 2026 - Todas las funciones por $400 al mes</span>
+            <span className="update-chip">Actualizaciones</span>
+            <span className="update-caption">CajaLibre - Servicio gratuito actual</span>
           </div>
           <span className="update-step">
             {index + 1}/{totalSlides}

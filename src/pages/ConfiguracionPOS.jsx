@@ -289,7 +289,7 @@ export default function ConfiguracionPOS() {
                       actualizarInventario("camposProductoCompletos", e.target.checked)
                     }
                   />
-                  Usar formulario completo al capturar productos
+                  Habilitar formulario completo al capturar productos
                 </label>
 
                 <div className="cfg-company-managed">
@@ -298,7 +298,8 @@ export default function ConfiguracionPOS() {
                 </div>
 
                 <p className="cfg-catalog-hint">
-                  Completo muestra todos los campos del producto. Sencillo deja solo captura
+                  El modo predeterminado es Sencillo. Completo muestra todos los campos del producto.
+                  Sencillo deja solo captura
                   rapida: codigo, nombre, categoria, marca, tipo, precio de venta, stock,
                   stock minimo, descripcion y estado.
                 </p>

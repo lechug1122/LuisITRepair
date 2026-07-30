@@ -186,6 +186,82 @@ function QuickActionCard({ title, description, tone = "blue", onClick }) {
   );
 }
 
+function HomeSideAds() {
+  const initializedRef = useRef(false);
+  const adRefs = useRef({});
+  const [eligible, setEligible] = useState(() => window.matchMedia("(min-width: 1200px)").matches);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1200px)");
+    const enableWhenWide = (event) => {
+      if (event.matches) setEligible(true);
+    };
+    media.addEventListener("change", enableWhenWide);
+    return () => media.removeEventListener("change", enableWhenWide);
+  }, []);
+
+  useEffect(() => {
+    if (!eligible) return;
+    const ads = Object.entries(adRefs.current);
+    const homePage = ads[0]?.[1]?.closest(".home-page");
+    const syncAdVisibility = () => {
+      let anyFilled = false;
+      ads.forEach(([side, ad]) => {
+        const rail = ad?.closest(".home-ad-rail");
+        const filled = ad?.dataset.adStatus === "filled";
+        rail?.classList.toggle("is-filled", filled);
+        homePage?.classList.toggle(`home-side-ad-${side}`, filled);
+        anyFilled ||= filled;
+      });
+      homePage?.classList.toggle("has-filled-side-ads", anyFilled);
+    };
+    const observers = ads.map(([, ad]) => {
+      const observer = new MutationObserver(syncAdVisibility);
+      observer.observe(ad, { attributes: true, attributeFilter: ["data-ad-status"] });
+      return observer;
+    });
+    syncAdVisibility();
+    return () => {
+      observers.forEach((observer) => observer.disconnect());
+      homePage?.classList.remove("has-filled-side-ads", "home-side-ad-left", "home-side-ad-right");
+    };
+  }, [eligible]);
+
+  useEffect(() => {
+    if (!eligible || initializedRef.current) return;
+    initializedRef.current = true;
+    try {
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+    } catch (error) {
+      console.warn("No fue posible inicializar el anuncio de Home:", error);
+    }
+  }, [eligible]);
+
+  if (!eligible) return null;
+
+  return (
+    <>
+      {["left", "right"].map((side) => (
+        <aside key={side} className={`home-ad-rail home-ad-rail-${side}`} aria-label={`Publicidad lateral ${side === "left" ? "izquierda" : "derecha"}`}>
+          <span className="home-ad-label">Publicidad</span>
+          <ins
+            ref={(node) => {
+              if (node) adRefs.current[side] = node;
+            }}
+            className="adsbygoogle"
+            style={{ display: "block" }}
+            data-ad-client="ca-pub-6040311717869766"
+            data-ad-slot="1128244794"
+            data-ad-format="auto"
+            data-full-width-responsive="true"
+          />
+        </aside>
+      ))}
+    </>
+  );
+}
+
 function ServiceListCard({ title, subtitle = "", services = [], emptyText, onOpen, sideRenderer, className = "" }) {
   return (
     <div className={`panel-card home-role-card ${className}`.trim()}>
@@ -217,7 +293,7 @@ function ServiceListCard({ title, subtitle = "", services = [], emptyText, onOpe
 export default function Home() {
   const navigate = useNavigate();
   const { rol, nombre, permisos, puede } = useAutorizacionActual();
-  const { serviciosHabilitados } = useEmpresaConfig();
+  const { serviciosHabilitados, tipoNegocioActivo } = useEmpresaConfig();
   const { formatCurrency } = useMonedaConfig();
   const roleKey = useMemo(
     () => normalizeRole(rol, permisos, serviciosHabilitados),
@@ -572,6 +648,7 @@ export default function Home() {
 
   return (
     <div className={`home-page role-${roleKey} ${roleKey === "admin" && (mostrarCalendarioPanel || fijarCalendarioPanel) ? "calendar-layout-pinned" : ""}`}>
+      {tipoNegocioActivo?.id !== "restaurante" && <HomeSideAds />}
       <div className="home-header home-role-header">
         <div className="home-hero-panel">
           <div className="home-role-copy">

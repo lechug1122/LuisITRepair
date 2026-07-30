@@ -101,17 +101,17 @@ export async function obtenerVentasDia(fechaKey = getDateKeyLocal()) {
 }
 
 export async function obtenerCorteCajaDia(fechaKey = getDateKeyLocal()) {
-  const ref = doc(db, "cortes_caja", buildCorteCajaDocId(fechaKey));
-  const snap = await getDoc(ref);
-  if (!snap.exists()) {
-    if (allowLegacyTenantFallback()) {
-      const legacySnap = await getDoc(doc(db, "cortes_caja", fechaKey));
-      if (!legacySnap.exists()) return null;
-      return { id: legacySnap.id, ...legacySnap.data() };
-    }
-    return null;
+  const tenantSnap = await getDocs(getTenantCollectionQuery("cortes_caja"));
+  const tenantMatch = tenantSnap.docs.find(
+    (item) => String(item.data()?.fechaKey || "") === String(fechaKey),
+  );
+  if (tenantMatch) return { id: tenantMatch.id, ...tenantMatch.data() };
+
+  if (allowLegacyTenantFallback()) {
+    const legacySnap = await getDoc(doc(db, "cortes_caja", fechaKey));
+    if (legacySnap.exists()) return { id: legacySnap.id, ...legacySnap.data() };
   }
-  return { id: snap.id, ...snap.data() };
+  return null;
 }
 
 export async function registrarAperturaCaja(fondoInicialCaja = 0, cajero = {}) {

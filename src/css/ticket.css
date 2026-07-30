@@ -12,13 +12,14 @@
   background: #fff;
   border-radius: 12px;
   border: 1px solid rgba(0, 0, 0, 0.08);
-  padding: 14px;
+  padding: 3mm 10mm 3mm 3mm;
+  box-sizing: border-box;
   font-family: var(--app-ticket-font);
 }
 
 .ticket-paper.ticket-paper-mobile {
   width: min(90vw, 70mm);
-  padding: 16px;
+  padding: 4mm 10mm 4mm 4mm;
   margin: 0 auto;
 }
 
@@ -202,7 +203,8 @@
     margin: 0 !important;
     border: none !important;
     border-radius: 0 !important;
-    padding: 2mm !important; /* pequeño margen interno */
+    padding: 3mm 10mm 3mm 3mm !important;
+    box-sizing: border-box !important;
     box-shadow: none !important;
   }
 

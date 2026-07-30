@@ -1,44 +1,58 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { collection, doc, getDoc, onSnapshot, query, updateDoc, where } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../initializer/firebase";
 import UpdateModal from "../components/UpdateModal";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
-import useMonedaConfig from "../hooks/useMonedaConfig";
 import "../css/configuracion.css";
+import { hasAnalyticsAccess } from "../js/services/analytics_access";
 
 const SYSTEM_VERSION = "1.9";
-const PRESENCE_TTL_MS = 2 * 60 * 1000;
 const SUPPORT_PHONE = "2731430147";
-const SUPPORT_EMAIL = "luisitrepairhuatusco@gmail.com";
+const SUPPORT_EMAIL = "cajalibre.puntodeventa@gmail.com";
 const SUPPORT_WHATSAPP_URL = `https://wa.me/52${SUPPORT_PHONE}?text=${encodeURIComponent(
   "Hola, necesito ayuda con el sistema.",
+)}`;
+const DONATION_WHATSAPP_URL = `https://wa.me/52${SUPPORT_PHONE}?text=${encodeURIComponent(
+  "Hola, quiero apoyar CajaLibre con una donacion.",
 )}`;
 const SUPPORT_MAILTO_URL = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
   "Soporte del sistema",
 )}&body=${encodeURIComponent("Hola, necesito ayuda con el sistema.")}`;
 
-function toMillis(value) {
-  if (!value) return 0;
-  if (typeof value?.toDate === "function") return value.toDate().getTime();
-  if (typeof value?.seconds === "number") return value.seconds * 1000;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
-}
+function AnuncioConfiguracion() {
+  const anuncioRef = useRef(null);
 
-function estaEnLineaReciente(online, lastActive, ahoraMs = Date.now()) {
-  if (!online) return false;
-  const lastMs = toMillis(lastActive);
-  if (!lastMs) return false;
-  return ahoraMs - lastMs <= PRESENCE_TTL_MS;
-}
+  useEffect(() => {
+    const anuncio = anuncioRef.current;
+    if (!anuncio || anuncio.getAttribute("data-ad-status")) return;
 
-function logSnapshotError(scope, error) {
-  console.warn(
-    `[configuracion] No se pudo leer ${scope}:`,
-    error?.code || error,
+    try {
+      (window.adsbygoogle = window.adsbygoogle || []).push({});
+    } catch (error) {
+      if (String(error?.message || "").includes("already have ads")) return;
+      console.warn(
+        "[configuracion] No se pudo cargar el anuncio:",
+        error?.message || error,
+      );
+    }
+  }, []);
+
+  return (
+    <div className="cfg-ad-card">
+      <span className="cfg-ad-label">Anuncio</span>
+      <ins
+        ref={anuncioRef}
+        className="adsbygoogle"
+        style={{ display: "block" }}
+        data-ad-client="ca-pub-6040311717869766"
+        data-ad-slot="9256116445"
+        data-ad-format="auto"
+        data-full-width-responsive="true"
+      />
+    </div>
   );
 }
 
@@ -48,67 +62,54 @@ export default function Configuracion() {
   const enSubSeccion = location.pathname !== "/configuracion";
   const ocultarPanelLateral =
     location.pathname === "/configuracion/suscripciones" ||
-    location.pathname === "/configuracion/mi-suscripcion";
-  const { serviciosHabilitados } = useEmpresaConfig();
-  const { formatCurrency } = useMonedaConfig();
-  const { superAdmin, cuentaPrincipalUid, suscripcionControlada, uid } = useAutorizacionActual();
-  const ownerBase = cuentaPrincipalUid || uid;
-  const esTitularSuscripcion =
+    location.pathname === "/configuracion/analitica" ||
+    location.pathname === "/configuracion/mi-suscripcion" ||
+    location.pathname === "/configuracion/donacion";
+  const { serviciosHabilitados, tipoNegocioActivo } = useEmpresaConfig();
+  const { superAdmin, accesoAnalitica, cuentaPrincipalUid, uid } = useAutorizacionActual();
+  const analyticsAccess = hasAnalyticsAccess({
+    superAdmin,
+    accesoAnalitica,
+    email: auth.currentUser?.email,
+  });
+  const esAdministradorNegocio =
     superAdmin !== true &&
-    suscripcionControlada === true &&
     String(uid || "").trim() !== "" &&
     String(uid || "").trim() === String(cuentaPrincipalUid || "").trim();
 
   const [showUpdate, setShowUpdate] = useState(false);
-  const [presenciaAhora, setPresenciaAhora] = useState(() => Date.now());
-  const [empleadosActivos, setEmpleadosActivos] = useState([]);
-  const [stats, setStats] = useState({
-    ventas: 0,
-    clientes: 0,
-    servicios: 0,
-  });
 
   const menuItems = [
     { name: "Panel General", path: "/configuracion" },
     { name: "Empresa", path: "/configuracion/empresa" },
-    { name: "Proveedores", path: "/configuracion/proveedores" },
+    ...(tipoNegocioActivo?.id !== "restaurante"
+      ? [{ name: "Proveedores", path: "/configuracion/proveedores" }]
+      : []),
     { name: "Empleados", path: "/configuracion/empleados" },
-    ...(superAdmin ? [{ name: "Suscripciones", path: "/configuracion/suscripciones" }] : []),
-    ...(esTitularSuscripcion
-      ? [{ name: "Mi Suscripcion", path: "/configuracion/mi-suscripcion" }]
+    ...(analyticsAccess
+      ? [{ name: "Administracion", path: "/configuracion/suscripciones" }]
+      : []),
+    ...(esAdministradorNegocio
+      ? [{ name: "Mi Plan", path: "/configuracion/mi-suscripcion" }]
       : []),
     { name: "POS", path: "/configuracion/pos" },
-    { name: "Inventario", path: "/configuracion/inventario" },
-    {
+    ...(tipoNegocioActivo?.id === "restaurante"
+      ? [{ name: "Restaurante", path: "/configuracion/restaurante" }]
+      : []),
+    { name: tipoNegocioActivo?.id === "restaurante" ? "Platillos" : "Inventario", path: "/configuracion/inventario" },
+    ...(tipoNegocioActivo?.id !== "restaurante" ? [{
       name: serviciosHabilitados ? "Servicios" : "Canjes y fidelidad",
       path: "/configuracion/servicios",
-    },
+    }] : []),
     { name: "Metodos de Pago", path: "/configuracion/metodos" },
     { name: "Apariencia", path: "/configuracion/apariencia" },
     { name: "Notificaciones", path: "/configuracion/notificaciones" },
     { name: "Impresoras", path: "/configuracion/impresoras" },
+    { name: "Donacion", path: "/configuracion/donacion" },
     // { name: "Respaldos", path: "/configuracion/respaldos" },
     // { name: "Seguridad", path: "/configuracion/seguridad" },
     // { name: "Integraciones", path: "/configuracion/integraciones" },
   ];
-
-  const empleadosActivosVisibles = useMemo(() => {
-    if (!ownerBase) return [];
-
-    return empleadosActivos.filter((emp) => {
-      const owner = String(emp?.cuentaPrincipalUid || emp?.uid || "").trim();
-      return owner === ownerBase;
-    });
-  }, [empleadosActivos, ownerBase]);
-
-  const statsVisibles = useMemo(() => {
-    if (!ownerBase) return { ventas: 0, clientes: 0, servicios: 0 };
-    return {
-      ventas: stats.ventas,
-      clientes: stats.clientes,
-      servicios: serviciosHabilitados ? stats.servicios : 0,
-    };
-  }, [ownerBase, serviciosHabilitados, stats.clientes, stats.servicios, stats.ventas]);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -152,115 +153,14 @@ export default function Configuracion() {
     }
   };
 
-  useEffect(() => {
-    if (!ownerBase) return undefined;
-
-    const unsub = onSnapshot(
-      query(collection(db, "empleados"), where("cuentaPrincipalUid", "==", ownerBase)),
-      (snapshot) => {
-        const activos = snapshot.docs
-          .map((item) => ({ id: item.id, ...item.data() }))
-          .filter((emp) => emp.estado === "Activo");
-
-        setEmpleadosActivos(activos);
-      },
-      (error) => {
-        logSnapshotError("empleados", error);
-        setEmpleadosActivos([]);
-      },
-    );
-
-    return () => unsub();
-  }, [ownerBase]);
-
-  useEffect(() => {
-    const t = setInterval(() => setPresenciaAhora(Date.now()), 30000);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    if (!ownerBase) return undefined;
-
-    const unsub = onSnapshot(
-      query(collection(db, "autorizados"), where("cuentaPrincipalUid", "==", ownerBase)),
-      (snapshot) => {
-        const onlineMap = {};
-        snapshot.docs.forEach((item) => {
-          const data = item.data() || {};
-          onlineMap[item.id] = {
-            online: data.online === true,
-            lastActive: data.lastActive || null,
-          };
-        });
-
-        setEmpleadosActivos((prev) =>
-          prev.map((emp) => ({
-            ...emp,
-            online: onlineMap[emp.uid]?.online || false,
-            lastActive: onlineMap[emp.uid]?.lastActive || null,
-          })),
-        );
-      },
-      (error) => {
-        logSnapshotError("autorizados", error);
-      },
-    );
-
-    return () => unsub();
-  }, [ownerBase]);
-
-  useEffect(() => {
-    if (!ownerBase) return undefined;
-
-    const unsubVentas = onSnapshot(
-      query(collection(db, "ventas"), where("cuentaPrincipalUid", "==", ownerBase)),
-      (snap) => {
-        let total = 0;
-        snap.docs.forEach((item) => {
-          total += item.data().total || 0;
-        });
-        setStats((prev) => ({ ...prev, ventas: total }));
-      },
-      (error) => {
-        logSnapshotError("ventas", error);
-      },
-    );
-
-    const unsubClientes = onSnapshot(
-      query(collection(db, "clientes"), where("cuentaPrincipalUid", "==", ownerBase)),
-      (snap) => {
-        setStats((prev) => ({ ...prev, clientes: snap.size }));
-      },
-      (error) => {
-        logSnapshotError("clientes", error);
-      },
-    );
-
-    let unsubServicios = () => {};
-    if (serviciosHabilitados) {
-      unsubServicios = onSnapshot(
-        query(collection(db, "servicios"), where("cuentaPrincipalUid", "==", ownerBase)),
-        (snap) => {
-          setStats((prev) => ({ ...prev, servicios: snap.size }));
-        },
-        (error) => {
-          logSnapshotError("servicios", error);
-        },
-      );
-    }
-
-    return () => {
-      unsubVentas();
-      unsubClientes();
-      unsubServicios();
-    };
-  }, [ownerBase, serviciosHabilitados]);
-
   const handleLogout = async () => {
     const user = auth.currentUser;
-    if (!user) return;
 
     try {
+      if (!user) {
+        window.location.replace("/");
+        return;
+      }
       await updateDoc(doc(db, "autorizados", user.uid), {
         online: false,
       });
@@ -273,9 +173,10 @@ export default function Configuracion() {
 
     try {
       await signOut(auth);
-      navigate("/login");
     } catch (error) {
       console.error("Error al cerrar sesion:", error);
+    } finally {
+      window.location.replace("/");
     }
   };
 
@@ -317,53 +218,7 @@ export default function Configuracion() {
 
         {!ocultarPanelLateral && (
           <aside className="cfg-right">
-            <div className="stats">
-              <h4>Estadisticas</h4>
-              <div className="stat">
-                Ventas <strong>{formatCurrency(statsVisibles.ventas)}</strong>
-              </div>
-              {serviciosHabilitados && (
-                <div className="stat">
-                  Servicios <strong>{statsVisibles.servicios}</strong>
-                </div>
-              )}
-              <div className="stat">
-                Clientes <strong>{statsVisibles.clientes}</strong>
-              </div>
-            </div>
-
-            <div className="empleados-activos">
-              <h4>Empleados Activos</h4>
-              <ul>
-                {empleadosActivosVisibles.map((emp) => {
-                  const onlineReal = estaEnLineaReciente(
-                    emp.online,
-                    emp.lastActive,
-                    presenciaAhora,
-                  );
-
-                  return (
-                    <li key={emp.id}>
-                      {emp.nombre}
-                      <span className={onlineReal ? "online" : "offline"}>
-                        {onlineReal ? "En linea" : "Offline"}
-                      </span>
-                    </li>
-                  );
-                })}
-
-                {empleadosActivosVisibles.length === 0 && (
-                  <li>
-                    <span>Sin empleados activos</span>
-                    <span className="offline">-</span>
-                  </li>
-                )}
-              </ul>
-
-              <button className="btn-logout-right" onClick={handleLogout}>
-                Cerrar Sesion
-              </button>
-            </div>
+            <AnuncioConfiguracion />
 
             <div className="cfg-version-card">
               <h4>Version del sistema</h4>
@@ -417,8 +272,21 @@ export default function Configuracion() {
                 >
                   Enviar correo
                 </a>
+
+                <a
+                  className="cfg-help-btn cfg-help-btn-donation"
+                  href={DONATION_WHATSAPP_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Donacion
+                </a>
               </div>
             </div>
+
+            <button className="btn-logout-right" onClick={handleLogout}>
+              Cerrar Sesion
+            </button>
           </aside>
         )}
       </div>

@@ -289,7 +289,15 @@ export function buildSaleTicketText(payload = {}) {
     const pct = `${Math.round(Number(payload.ivaPorcentaje || 0) * 100)}%`;
     pushKeyValue(lines, `IVA (${pct})`, formatMoney(payload.iva || 0));
   }
-  pushKeyValue(lines, "TOTAL", formatMoney(payload.total || 0));
+  if (Number(payload.recargoTarjeta || 0) > 0) {
+    const proveedor = String(payload.proveedorRecargoTarjeta || "").trim();
+    pushKeyValue(
+      lines,
+      proveedor ? `Recargo tarjeta (${proveedor})` : "Recargo tarjeta",
+      formatMoney(payload.recargoTarjeta || 0),
+    );
+  }
+  pushKeyValue(lines, "TOTAL", formatMoney(payload.totalCobro ?? payload.total ?? 0));
 
   splitTicketLines(cfg.extraBottomLines).forEach((line) => lines.push(centerText(line)));
   if (cfg.showLegend && cfg.legendText?.trim()) pushWrapped(lines, cfg.legendText.trim());

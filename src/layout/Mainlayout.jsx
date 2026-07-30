@@ -1,6 +1,13 @@
 import Navbar from "../components/Navbar";
+import AppFooter from "../components/AppFooter";
+import UpdateModal from "../components/UpdateModal";
+import RestaurantePromoModal from "../components/RestaurantePromoModal";
+import ModalRecomendacion from "../components/ModalRecomendacion";
+import ModalDonacion from "../components/ModalDonacion";
 import { Outlet, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { db } from "../initializer/firebase";
 import { suscribirNotificacionesGlobales } from "../js/services/realtime_notifications";
 import { autoCerrarCortesPendientes } from "../js/services/corte_caja_firestore";
 import {
@@ -11,19 +18,26 @@ import { buildSystemUpdateNotification } from "../js/services/system_updates";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import usePresenciaEmpleado from "../hooks/usePresenciaEmpleado";
 import useSesionDispositivo from "../hooks/useSesionDispositivo";
+import useEmpresaConfig from "../hooks/useEmpresaConfig";
+import useAnalyticsTracking from "../hooks/useAnalyticsTracking";
 import "../css/notificaciones_globales.css";
 import "../css/sesion_dispositivo.css";
 
 export default function MainLayout() {
   const location = useLocation();
   const authInfo = useAutorizacionActual();
+  useAnalyticsTracking(authInfo, location.pathname);
   const { rol } = authInfo;
+  const { tipoNegocioActivo } = useEmpresaConfig();
   const { checking: checkingDeviceSession, conflicto, resolverConflicto, salir } =
     useSesionDispositivo(authInfo);
   usePresenciaEmpleado();
   const [notificaciones, setNotificaciones] = useState([]);
   const [toasts, setToasts] = useState([]);
   const [panelAbierto, setPanelAbierto] = useState(false);
+  const [showUpdatesModal, setShowUpdatesModal] = useState(false);
+  const [showRecommendationModal, setShowRecommendationModal] = useState(false);
+  const [showDonationModal, setShowDonationModal] = useState(false);
   const audioCtxRef = useRef(null);
   const esAdmin =
     String(rol || "")
@@ -108,6 +122,8 @@ export default function MainLayout() {
     if (!isNotificationEnabled(config, "actualizaciones_sistema")) return;
 
     const updateNoti = buildSystemUpdateNotification();
+    if (!updateNoti) return;
+
     const frameId = window.requestAnimationFrame(() => {
       setNotificaciones((prev) => {
         if (prev.some((item) => item.id === updateNoti.id)) return prev;
@@ -139,13 +155,14 @@ export default function MainLayout() {
   const panelNotificacionesVisible = esAdmin ? panelAbierto : false;
   const notificacionesVisibles = esAdmin ? notificaciones : [];
   const noLeidasVisibles = esAdmin ? noLeidas : 0;
-  const [ocultarChromePOSMovil, setOcultarChromePOSMovil] = useState(false);
   const path = String(location.pathname || "").toLowerCase();
-  const usarShellWorkspace = ["/productos", "/reportes"].includes(path);
+  // Platillos puede tener tantas filas como elementos existan. No debe usar el
+  // shell de altura fija porque recorta las tarjetas antes de llegar al footer.
+  const usarShellWorkspace = path === "/reportes";
   const shellClassName = [
     "container-fluid",
     "px-0",
-    ocultarChromePOSMovil ? "app-shell-mobile" : "app-shell",
+    "app-shell",
     usarShellWorkspace ? "app-shell-workspace" : "",
     ["/", "/home", "/hoja_servicio", "/servicios"].includes(path) ? "app-shell-service-gradient" : "",
   ]
@@ -153,39 +170,136 @@ export default function MainLayout() {
     .join(" ");
 
   useEffect(() => {
-    const syncPOSMobileChrome = () => {
-      const esPOS = path === "/pos";
-      const isSmall = window.matchMedia("(max-width: 1024px)").matches;
-      const isTouchLike = window.matchMedia("(pointer: coarse)").matches;
-      setOcultarChromePOSMovil(esPOS && (isSmall || isTouchLike));
-    };
-
-    syncPOSMobileChrome();
-    window.addEventListener("resize", syncPOSMobileChrome);
-    return () => window.removeEventListener("resize", syncPOSMobileChrome);
-  }, [path]);
-
-  useEffect(() => {
     const usarFondoServicios = ["/", "/home", "/hoja_servicio", "/servicios"].includes(path);
     document.body.classList.toggle("body-service-gradient", usarFondoServicios);
     return () => document.body.classList.remove("body-service-gradient");
   }, [path]);
 
+  useEffect(() => {
+    const isRestaurant = tipoNegocioActivo?.id === "restaurante";
+    document.body.classList.toggle("restaurant-theme", isRestaurant);
+    return () => document.body.classList.remove("restaurant-theme");
+  }, [tipoNegocioActivo?.id]);
+
+  useEffect(() => {
+    const openUpdates = () => setShowUpdatesModal(true);
+    window.addEventListener("cajalibre:open-updates", openUpdates);
+    return () => window.removeEventListener("cajalibre:open-updates", openUpdates);
+  }, []);
+
+  useEffect(() => {
+    if (!esAdmin || !authInfo.uid) return undefined;
+    const key = `cajalibre:recomendacion:${authInfo.uid}`;
+    const data = JSON.parse(localStorage.getItem(key) || "{}");
+    if (data.respondida || Number(data.posponerHasta || 0) > Date.now()) return undefined;
+
+    const sessionKey = `${key}:sesion`;
+    const visitas = sessionStorage.getItem(sessionKey)
+      ? Number(data.visitas || 0)
+      : Number(data.visitas || 0) + 1;
+    sessionStorage.setItem(sessionKey, "1");
+    const primeraVisita = Number(data.primeraVisita || Date.now());
+    localStorage.setItem(key, JSON.stringify({ ...data, visitas, primeraVisita }));
+
+    const diasUso = (Date.now() - primeraVisita) / 86400000;
+    if (visitas < 3 && diasUso < 3) return undefined;
+    const timer = window.setTimeout(() => setShowRecommendationModal(true), 45000);
+    return () => window.clearTimeout(timer);
+  }, [authInfo.uid, esAdmin]);
+
+  const cerrarRecomendacion = useCallback(() => {
+    const key = `cajalibre:recomendacion:${authInfo.uid}`;
+    const data = JSON.parse(localStorage.getItem(key) || "{}");
+    if (!data.respondida) {
+      localStorage.setItem(key, JSON.stringify({
+        ...data,
+        posponerHasta: Date.now() + (14 * 86400000),
+      }));
+    }
+    setShowRecommendationModal(false);
+  }, [authInfo.uid]);
+
+  const enviarRecomendacion = useCallback(async (respuesta) => {
+    await addDoc(collection(db, "recomendaciones"), {
+      ...respuesta,
+      uid: authInfo.uid,
+      negocioId: authInfo.cuentaPrincipalUid || authInfo.uid,
+      cuentaPrincipalUid: authInfo.cuentaPrincipalUid || authInfo.uid,
+      rol: authInfo.rol || "",
+      createdAt: serverTimestamp(),
+    });
+    const key = `cajalibre:recomendacion:${authInfo.uid}`;
+    const data = JSON.parse(localStorage.getItem(key) || "{}");
+    localStorage.setItem(key, JSON.stringify({ ...data, respondida: true, respondidaAt: Date.now() }));
+  }, [authInfo]);
+
+  useEffect(() => {
+    if (!esAdmin || !authInfo.uid) return undefined;
+    if (import.meta.env.DEV) {
+      const previewTimer = window.setTimeout(() => setShowDonationModal(true), 1200);
+      return () => window.clearTimeout(previewTimer);
+    }
+    const key = `cajalibre:donacion:${authInfo.uid}`;
+    const data = JSON.parse(localStorage.getItem(key) || "{}");
+    if (Number(data.mostrarDespuesDe || 0) > Date.now()) return undefined;
+
+    const sessionKey = `${key}:sesion`;
+    const visitas = sessionStorage.getItem(sessionKey)
+      ? Number(data.visitas || 0)
+      : Number(data.visitas || 0) + 1;
+    sessionStorage.setItem(sessionKey, "1");
+    const primeraVisita = Number(data.primeraVisita || Date.now());
+    localStorage.setItem(key, JSON.stringify({ ...data, visitas, primeraVisita }));
+
+    const diasUso = (Date.now() - primeraVisita) / 86400000;
+    if (visitas < 5 && diasUso < 7) return undefined;
+    const timer = window.setTimeout(() => {
+      if (!document.querySelector(".recomendacion-overlay")) setShowDonationModal(true);
+    }, 120000);
+    return () => window.clearTimeout(timer);
+  }, [authInfo.uid, esAdmin]);
+
+  const cerrarDonacion = useCallback(() => {
+    const key = `cajalibre:donacion:${authInfo.uid}`;
+    const data = JSON.parse(localStorage.getItem(key) || "{}");
+    localStorage.setItem(key, JSON.stringify({
+      ...data,
+      mostrarDespuesDe: Date.now() + (30 * 86400000),
+    }));
+    setShowDonationModal(false);
+  }, [authInfo.uid]);
+
+  const registrarApoyo = useCallback(() => {
+    const key = `cajalibre:donacion:${authInfo.uid}`;
+    const data = JSON.parse(localStorage.getItem(key) || "{}");
+    localStorage.setItem(key, JSON.stringify({
+      ...data,
+      apoyoSeleccionadoAt: Date.now(),
+      mostrarDespuesDe: Date.now() + (90 * 86400000),
+    }));
+    setShowDonationModal(false);
+  }, [authInfo.uid]);
+
   return (
     <>
-      {!ocultarChromePOSMovil && (
-        <Navbar
-          panelAbierto={panelNotificacionesVisible}
-          togglePanelNotificaciones={togglePanelNotificaciones}
-          notificaciones={notificacionesVisibles}
-          noLeidas={noLeidasVisibles}
-          mostrarNotificaciones={esAdmin}
-          onDismissNotification={cerrarNotificacion}
-        />
-      )}
+      <Navbar
+        panelAbierto={panelNotificacionesVisible}
+        togglePanelNotificaciones={togglePanelNotificaciones}
+        notificaciones={notificacionesVisibles}
+        noLeidas={noLeidasVisibles}
+        mostrarNotificaciones={esAdmin}
+        onDismissNotification={cerrarNotificacion}
+      />
       <main className={shellClassName}>
         <Outlet />
       </main>
+
+      <AppFooter />
+      <RestaurantePromoModal enabled={esAdmin && tipoNegocioActivo?.id !== "restaurante"} />
+
+      {showUpdatesModal ? <UpdateModal onClose={() => setShowUpdatesModal(false)} /> : null}
+      <ModalRecomendacion abierto={showRecommendationModal} onCerrar={cerrarRecomendacion} onEnviar={enviarRecomendacion} />
+      <ModalDonacion abierto={showDonationModal} onCerrar={cerrarDonacion} onApoyar={registrarApoyo} />
 
       {conflicto ? (
         <div className="device-session-overlay">
@@ -233,7 +347,7 @@ export default function MainLayout() {
         </div>
       ) : null}
 
-      {esAdmin && !ocultarChromePOSMovil && (
+      {esAdmin && (
         <div className="global-toast-stack no-print">
           {toasts.map((n) => (
             <div key={n.id} className={`global-toast ${n.nivel || "baja"}`}>

@@ -1,6 +1,24 @@
 // Catalogo central de permisos para UI y rutas.
 export const PERMISOS_CATALOGO = [
   {
+    key: "restaurante.mesero",
+    label: "Acceso a Mesas (Mesero)",
+    description: "Permite tomar pedidos, administrar mesas y consultar cuentas del mesero.",
+    restaurantOnly: true,
+  },
+  {
+    key: "restaurante.cocina",
+    label: "Acceso a Cocina",
+    description: "Permite ver comandas y marcar platillos en preparación o listos.",
+    restaurantOnly: true,
+  },
+  {
+    key: "restaurante.caja",
+    label: "Acceso a Caja",
+    description: "Permite crear cuentas, cobrar y consultar el historial del restaurante.",
+    restaurantOnly: true,
+  },
+  {
     key: "servicios.crear",
     label: "Dar de alta servicios",
     description: "Permite abrir y usar la pantalla de hoja de servicio.",
@@ -87,6 +105,15 @@ const ROL_BASE = {
     "configuracion.ver": false,
     "empleados.gestionar": false,
   },
+  Mesero: {
+    "restaurante.mesero": true, "clientes.ver": true, "productos.ver": true,
+  },
+  Cocina: {
+    "restaurante.cocina": true, "productos.ver": true,
+  },
+  Caja: {
+    "restaurante.caja": true, "clientes.ver": true, "ventas.pos": true, "productos.ver": true, "reportes.ver": true,
+  },
 };
 
 function bool(v) {
@@ -116,6 +143,9 @@ function normalizarRol(raw = "") {
   if (key.includes("tecn")) return "Tecnico";
   if (key.includes("cajer")) return "Cajero";
   if (key.includes("vend")) return "Vendedor";
+  if (key.includes("meser")) return "Mesero";
+  if (key.includes("cocin") || key.includes("chef")) return "Cocina";
+  if (key === "caja") return "Caja";
   return "";
 }
 

@@ -80,7 +80,8 @@ function syncDynamicTicketPrintStyle(isMobile) {
     .ticket-paper.ticket-paper-mobile {
       width: ${ticketWidth} !important;
       max-width: ${ticketWidth} !important;
-      padding: 3mm !important;
+      padding: 4mm 10mm 4mm 4mm !important;
+      box-sizing: border-box !important;
     }
     .ticket-paper.ticket-paper-mobile .ticket-title {
       font-size: 18px !important;
