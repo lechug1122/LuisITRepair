@@ -1,4 +1,6 @@
+import { Navigate } from "react-router-dom";
 import mascotaCafe from "../assets/mascota-cafe-sin-texto.png";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
 
 const DONATION_OPTIONS = [
   {
@@ -25,6 +27,12 @@ const DONATION_OPTIONS = [
 ];
 
 export default function ConfiguracionDonacion() {
+  // Las donaciones son solo del plan gratuito. El menu y la tarjeta ya se
+  // ocultan en Premium, pero la ruta tambien se protege para que entrar por
+  // URL directa (o un favorito viejo) no muestre la pagina.
+  const { isPremium } = useAutorizacionActual();
+  if (isPremium) return <Navigate to="/configuracion" replace />;
+
   return (
     <section className="cfg-donation-wrap">
       <div className="cfg-header">

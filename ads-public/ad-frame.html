@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="robots" content="noindex,nofollow" />
+<style id="ad-frame-size">html,body{margin:0;padding:0;overflow:hidden;background:transparent}</style>
+</head>
+<body>
+<script>
+(function () {
+  var params = new URLSearchParams(window.location.search);
+  var configs = {
+    dashboard: {
+      key: "debe3fde4bf3f5cae80f4066c15ca053",
+      width: 160,
+      height: 600
+    },
+    settings: {
+      key: "3ffacfa7a93126cf20bd39bdef8af3ca",
+      width: 300,
+      height: 250
+    }
+  };
+  var placement = params.get("placement") === "dashboard" ? "dashboard" : "settings";
+  var config = configs[placement];
+  var key = config.key;
+  var width = config.width;
+  var height = config.height;
+  document.getElementById("ad-frame-size").textContent =
+    "html,body{margin:0;padding:0;overflow:hidden;background:transparent;width:" + width + "px;height:" + height + "px}";
+
+  console.log("[ADS] URL:", location.href);
+  console.log("[ADS] placement:", placement);
+  console.log("[ADS] config:", config);
+
+  if (!key) {
+    console.error("[ADS] No existe configuracion para:", placement);
+    return;
+  }
+
+  var observer = new MutationObserver(function () {
+    document.querySelectorAll("iframe").forEach(function (creative) {
+      if (creative.dataset.observed) return;
+      creative.dataset.observed = "true";
+      creative.addEventListener("load", function () {
+        parent.postMessage("cajalibre-ad-ready", "*");
+      });
+    });
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+
+  window.atOptions = { key: key, format: "iframe", height: height, width: width, params: {} };
+  console.log("[ADS] atOptions ANTES de invoke.js:", window.atOptions);
+
+  var script = document.createElement("script");
+  script.type = "text/javascript";
+  script.async = true;
+  script.setAttribute("data-cfasync", "false");
+  script.src = "https://www.highrevenueformat.com/" + key + "/invoke.js";
+  script.onload = function () {
+    console.log("[ADS] invoke.js cargado correctamente");
+  };
+  script.onerror = function (error) {
+    console.error("[ADS] invoke.js NO pudo cargar", error);
+    parent.postMessage("cajalibre-ad-error", "*");
+  };
+  document.body.appendChild(script);
+
+  window.setTimeout(function () {
+    console.log("[ADS] window.atOptions 3s despues:", window.atOptions);
+    console.log("[ADS] body despues de invoke:", document.body.innerHTML);
+  }, 3000);
+})();
+</script>
+</body>
+</html>

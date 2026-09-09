@@ -1,5 +1,5 @@
+import { getCollectionRef, getDocRef } from "./tenant";
 import {
-  collection,
   deleteDoc,
   doc,
   getDoc,
@@ -7,10 +7,9 @@ import {
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
 import { dataBelongsToTenant, filterItemsByTenant, withTenantData } from "./tenant";
 
-const proveedoresCol = collection(db, "proveedores");
+const proveedoresCol = () => getCollectionRef("proveedores");
 
 export const PROVEEDOR_ESTADO_OPTIONS = [
   "Activo",
@@ -357,7 +356,7 @@ function detectarCoincidencias(existing, candidate) {
 }
 
 export async function obtenerProveedores() {
-  const snapshot = await getDocs(proveedoresCol);
+  const snapshot = await getDocs(proveedoresCol());
   return sortProveedores(
     filterItemsByTenant(snapshot.docs.map((item) => normalizeProveedor(item.data(), item.id))),
   );
@@ -365,7 +364,7 @@ export async function obtenerProveedores() {
 
 export async function guardarProveedor(payload, proveedorId = "") {
   const normalized = normalizeProveedor(payload, proveedorId);
-  const targetId = text(proveedorId) || doc(proveedoresCol).id;
+  const targetId = text(proveedorId) || doc(proveedoresCol()).id;
   const existentes = await obtenerProveedores();
   const proveedorActual = existentes.find((item) => item.id === targetId) || null;
   const historialCompras = Array.isArray(payload?.historialCompras)
@@ -390,7 +389,7 @@ export async function guardarProveedor(payload, proveedorId = "") {
   }
 
   await setDoc(
-    doc(db, "proveedores", targetId),
+    getDocRef("proveedores", targetId),
     withTenantData({
       id: targetId,
       nombre: normalized.nombre,
@@ -445,7 +444,7 @@ export async function registrarCompraProveedor(proveedorId, payload = {}) {
   const id = text(proveedorId);
   if (!id) throw new Error("Proveedor invalido");
 
-  const proveedorRef = doc(db, "proveedores", id);
+  const proveedorRef = getDocRef("proveedores", id);
   const snapshot = await getDoc(proveedorRef);
 
   if (!snapshot.exists()) {
@@ -504,9 +503,9 @@ export async function registrarCompraProveedor(proveedorId, payload = {}) {
 export async function eliminarProveedor(proveedorId) {
   const id = text(proveedorId);
   if (!id) throw new Error("Proveedor invalido");
-  const snapshot = await getDoc(doc(db, "proveedores", id));
+  const snapshot = await getDoc(getDocRef("proveedores", id));
   if (snapshot.exists() && !dataBelongsToTenant(snapshot.data())) {
     throw new Error("Proveedor fuera del alcance de la cuenta actual.");
   }
-  await deleteDoc(doc(db, "proveedores", id));
+  await deleteDoc(getDocRef("proveedores", id));
 }

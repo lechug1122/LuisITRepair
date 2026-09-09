@@ -1,6 +1,6 @@
+import { getCollectionRef, getDocRef } from "./tenant";
 import {
   addDoc,
-  collection,
   doc,
   getDocs,
   onSnapshot,
@@ -51,7 +51,7 @@ export async function crearOrdenRestaurante(data = {}, tenantId = "") {
     updatedAt: serverTimestamp(),
   }, negocioId);
 
-  const ref = await addDoc(collection(db, COLLECTION), payload);
+  const ref = await addDoc(getCollectionRef(COLLECTION), payload);
   return { id: ref.id, ...payload };
 }
 
@@ -72,7 +72,7 @@ export async function asignarMesaOrdenRestaurante(
   const key = String(mesaKey || "").trim();
   if (!id || !key) throw new Error("Selecciona una orden y una mesa válidas.");
 
-  const ref = doc(db, COLLECTION, id);
+  const ref = getDocRef(COLLECTION, id);
   return runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists()) throw new Error("La orden ya no existe.");
@@ -113,12 +113,12 @@ export async function cobrarOrdenesRestaurante(
   if (!ids.length) throw new Error("No hay órdenes para cobrar.");
 
   const batch = writeBatch(db);
-  const ventaRef = doc(collection(db, "ventas"));
+  const ventaRef = doc(getCollectionRef("ventas"));
   if (ventaData) {
     batch.set(ventaRef, withTenantData(ventaData));
   }
   ids.forEach((id) => {
-    batch.update(doc(db, COLLECTION, id), {
+    batch.update(getDocRef(COLLECTION, id), {
       status: "cobrada",
       ventaId: ventaRef.id,
       metodoPago: String(metodoPago || "").trim(),
@@ -140,7 +140,7 @@ export function escucharGruposMesasRestaurante(tenantId = "", onItems, onError) 
   if (!negocioId) return () => {};
 
   return onSnapshot(
-    doc(db, "configuracion", `${TABLE_GROUPS_CONFIG}__${negocioId}`),
+    getDocRef("configuracion", `${TABLE_GROUPS_CONFIG}__${negocioId}`),
     (snapshot) => {
       const grupos = snapshot.exists() && Array.isArray(snapshot.data()?.grupos)
         ? snapshot.data().grupos
@@ -165,7 +165,7 @@ export async function guardarGruposMesasRestaurante(grupos = [], tenantId = "") 
   })).filter((grupo) => grupo.id && grupo.principalMesaKey && grupo.mesaKeys.length > 1);
 
   await setDoc(
-    doc(db, "configuracion", `${TABLE_GROUPS_CONFIG}__${negocioId}`),
+    getDocRef("configuracion", `${TABLE_GROUPS_CONFIG}__${negocioId}`),
     withTenantData({
       grupos: gruposLimpios,
       updatedAt: serverTimestamp(),
@@ -202,7 +202,7 @@ export function escucharOperacionRestaurante(tenantId = "", onData, onError) {
   if (!negocioId) return () => {};
 
   return onSnapshot(
-    doc(db, "configuracion", `${OPERATION_CONFIG}__${negocioId}`),
+    getDocRef("configuracion", `${OPERATION_CONFIG}__${negocioId}`),
     (snapshot) => onData?.(normalizeOperacionRestaurante(snapshot.exists() ? snapshot.data() : {})),
     onError,
   );
@@ -214,7 +214,7 @@ export async function guardarOperacionRestaurante(data = {}, tenantId = "") {
   const current = normalizeOperacionRestaurante(data);
 
   await setDoc(
-    doc(db, "configuracion", `${OPERATION_CONFIG}__${negocioId}`),
+    getDocRef("configuracion", `${OPERATION_CONFIG}__${negocioId}`),
     withTenantData({
       limiteCocineroActivo: current.limiteCocineroActivo,
       maxPlatillosPorCocinero: current.maxPlatillosPorCocinero,
@@ -233,7 +233,7 @@ export async function guardarPlatillosAgotadosRestaurante(ids = [], tenantId = "
   if (!negocioId) throw new Error("No se pudo identificar el negocio.");
 
   await setDoc(
-    doc(db, "configuracion", `${OPERATION_CONFIG}__${negocioId}`),
+    getDocRef("configuracion", `${OPERATION_CONFIG}__${negocioId}`),
     withTenantData({
       fechaDisponibilidad: localDateKey(),
       platillosAgotados: [...new Set((Array.isArray(ids) ? ids : []).map(String))],
@@ -248,7 +248,7 @@ export function escucharOrdenesRestaurante(tenantId = "", onItems, onError) {
   if (!negocioId) return () => {};
 
   const ordersQuery = query(
-    collection(db, COLLECTION),
+    getCollectionRef(COLLECTION),
     where("cuentaPrincipalUid", "==", negocioId),
   );
 
@@ -272,7 +272,7 @@ export async function actualizarEstadoOrdenRestaurante(
   const id = String(orderId || "").trim();
   if (!id) throw new Error("Orden no válida.");
 
-  const ref = doc(db, COLLECTION, id);
+  const ref = getDocRef(COLLECTION, id);
   const safeActorUid = String(actorUid || "").trim();
   const safeActorNombre = String(actorNombre || "").trim();
 
@@ -297,7 +297,7 @@ export async function cancelarOrdenesRestaurante(
   if (!ids.length) throw new Error("No hay órdenes para cancelar.");
   if (motivoLimpio.length < 3) throw new Error("Escribe el motivo de la cancelación.");
   const batch = writeBatch(db);
-  ids.forEach((id) => batch.update(doc(db, COLLECTION, id), {
+  ids.forEach((id) => batch.update(getDocRef(COLLECTION, id), {
     status: "cancelada",
     cancelacionMotivo: motivoLimpio,
     canceladaPorUid: String(actorUid || "").trim(),
@@ -315,7 +315,7 @@ export function escucharReservacionesRestaurante(tenantId = "", onItems, onError
   const negocioId = resolveTenantId(tenantId);
   if (!negocioId) return () => {};
   return onSnapshot(
-    query(collection(db, RESERVATIONS_COLLECTION), where("cuentaPrincipalUid", "==", negocioId)),
+    query(getCollectionRef(RESERVATIONS_COLLECTION, negocioId), where("cuentaPrincipalUid", "==", negocioId)),
     (snapshot) => onItems?.(snapshot.docs
       .map((item) => ({ id: item.id, ...item.data() }))
       .sort((a, b) => String(a.fechaHora || "").localeCompare(String(b.fechaHora || "")))),
@@ -342,15 +342,15 @@ export async function guardarReservacionRestaurante(data = {}, tenantId = "") {
   }, negocioId);
   if (!payload.clienteNombre || !payload.fechaHora) throw new Error("Nombre y fecha son obligatorios.");
   if (data.id) {
-    await updateDoc(doc(db, RESERVATIONS_COLLECTION, String(data.id)), payload);
+    await updateDoc(getDocRef(RESERVATIONS_COLLECTION, String(data.id), negocioId), payload);
     return String(data.id);
   }
-  const ref = await addDoc(collection(db, RESERVATIONS_COLLECTION), { ...payload, createdAt: serverTimestamp() });
+  const ref = await addDoc(getCollectionRef(RESERVATIONS_COLLECTION, negocioId), { ...payload, createdAt: serverTimestamp() });
   return ref.id;
 }
 
 export async function actualizarEstadoReservacionRestaurante(id, estado) {
-  await updateDoc(doc(db, RESERVATIONS_COLLECTION, String(id)), {
+  await updateDoc(getDocRef(RESERVATIONS_COLLECTION, String(id)), {
     estado: String(estado || "reservada"),
     updatedAt: serverTimestamp(),
   });
@@ -360,7 +360,7 @@ export async function obtenerTurnoActivoRestaurante(tenantId = "", actorUid = ""
   const negocioId = resolveTenantId(tenantId);
   if (!negocioId || !actorUid) return null;
   const snapshot = await getDocs(
-    query(collection(db, SHIFTS_COLLECTION), where("cuentaPrincipalUid", "==", negocioId)),
+    query(getCollectionRef(SHIFTS_COLLECTION, negocioId), where("cuentaPrincipalUid", "==", negocioId)),
   );
   return snapshot.docs
     .map((item) => ({ id: item.id, ...item.data() }))
@@ -371,7 +371,7 @@ export async function obtenerTurnoActivoRestaurante(tenantId = "", actorUid = ""
 export async function iniciarTurnoRestaurante({ rol = "", actorUid = "", actorNombre = "" } = {}, tenantId = "") {
   const negocioId = resolveTenantId(tenantId);
   if (!negocioId || !actorUid) throw new Error("No se pudo identificar al empleado.");
-  const ref = await addDoc(collection(db, SHIFTS_COLLECTION), withTenantData({
+  const ref = await addDoc(getCollectionRef(SHIFTS_COLLECTION, negocioId), withTenantData({
     rol: String(rol || "").trim(),
     actorUid: String(actorUid),
     actorNombre: String(actorNombre || "").trim(),
@@ -384,7 +384,7 @@ export async function iniciarTurnoRestaurante({ rol = "", actorUid = "", actorNo
 
 export async function cerrarTurnoRestaurante(id, resumen = {}) {
   if (!id) throw new Error("No hay un turno abierto.");
-  await updateDoc(doc(db, SHIFTS_COLLECTION, String(id)), {
+  await updateDoc(getDocRef(SHIFTS_COLLECTION, String(id)), {
     estado: "cerrado",
     cierreAt: serverTimestamp(),
     resumen,

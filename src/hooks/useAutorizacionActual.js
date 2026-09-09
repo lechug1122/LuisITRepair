@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { createContext, createElement, useContext, useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "../initializer/firebase";
@@ -8,8 +8,54 @@ import { normalizeAutorizadoData } from "../js/services/autorizacion";
 import { normalizarPermisos, tienePermiso } from "../js/services/permisos";
 import { resolverAccesoSuscripcion } from "../js/services/suscripciones";
 import { clearTenantContext, saveTenantContext } from "../js/services/tenant";
+import { ANALYTICS_ALLOWED_EMAIL } from "../js/services/analytics_access";
+
+const AutorizacionContext = createContext(null);
+
+// Estado tri-state de Premium: mientras no se sepa con certeza, "loading".
+// Ningun consumidor (publicidad, layout, badges) debe tratar "loading" como
+// equivalente a "free" - por eso nunca se expone como booleano puro.
+export const PREMIUM_LOADING = "loading";
+export const PREMIUM_ACTIVE = "premium";
+export const PREMIUM_FREE = "free";
+
+// Acepta Firestore Timestamp, Date o string/ms y devuelve milisegundos (0 si
+// no hay valor o es invalido). Centraliza la conversion para que Premium
+// nunca dependa de una fecha calculada distinto en cada lugar del codigo.
+function toMillis(value) {
+  if (!value) return 0;
+  if (typeof value?.toMillis === "function") return value.toMillis();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+/**
+ * Fuente central UNICA para decidir el acceso Premium. Ante cualquier duda
+ * (todavia sin confirmar el documento del negocio) devuelve "loading", nunca
+ * "free" - asi ningun consumidor puede activar publicidad por error mientras
+ * el plan real todavia no se conoce.
+ *
+ * El derecho de acceso depende de `premiumUntil` (vigente > ahora), NO del
+ * estado crudo de la suscripcion: "cancelled" solo significa que no habra
+ * proximo cobro, no que el periodo ya pagado deba perderse antes de tiempo.
+ */
+function resolvePremiumAccess(negocio, statusConfirmado) {
+  if (!statusConfirmado || negocio === null) return PREMIUM_LOADING;
+  return toMillis(negocio?.premiumUntil) > Date.now() ? PREMIUM_ACTIVE : PREMIUM_FREE;
+}
+
+export function AutorizacionProvider({ children }) {
+  const value = useAutorizacionListener();
+  return createElement(AutorizacionContext.Provider, { value }, children);
+}
 
 export default function useAutorizacionActual() {
+  const value = useContext(AutorizacionContext);
+  if (!value) throw new Error("Falta AutorizacionProvider");
+  return value;
+}
+
+function useAutorizacionListener() {
   const [loading, setLoading] = useState(true);
   const [uid, setUid] = useState("");
   const [nombre, setNombre] = useState("");
@@ -24,6 +70,8 @@ export default function useAutorizacionActual() {
   const [motivoAcceso, setMotivoAcceso] = useState("");
   const [mensajeAcceso, setMensajeAcceso] = useState("");
   const [suscripcion, setSuscripcion] = useState(null);
+  const [negocio, setNegocio] = useState(null);
+  const [publicidadConfirmada, setPublicidadConfirmada] = useState(false);
 
   useEffect(() => {
     let unsubDoc = null;
@@ -55,6 +103,8 @@ export default function useAutorizacionActual() {
       setMotivoAcceso("");
       setMensajeAcceso("");
       setSuscripcion(null);
+      setNegocio(null);
+      setPublicidadConfirmada(false);
       setLoading(false);
     };
 
@@ -86,8 +136,17 @@ export default function useAutorizacionActual() {
       }
 
       setLoading(true);
+      setNegocio(null);
+      setPublicidadConfirmada(false);
       setUid(user.uid);
       setNombre(user.displayName || String(user.email || "").split("@")[0] || "Usuario");
+
+      let listenerKey = null;
+      let currentNegocio = null;
+      let currentSuscripcion = null;
+      let negocioReady = false;
+      let subscriptionReady = false;
+      let applyLatest = () => {};
 
       unsubDoc = onSnapshot(
         doc(db, "autorizados", user.uid),
@@ -96,12 +155,17 @@ export default function useAutorizacionActual() {
           const nextRol = String(data?.rol || "");
           const nextNombre = String(data?.nombre || "").trim();
           const nextActivo = data.activo;
-          const nextSuperAdmin = data.superAdmin;
-          const nextAccesoAnalitica = data.accesoAnalitica;
+          const isSystemAdmin = String(user.email || "").trim().toLowerCase() === ANALYTICS_ALLOWED_EMAIL;
+          const nextSuperAdmin = isSystemAdmin;
+          const nextAccesoAnalitica = isSystemAdmin;
           const nextCuentaPrincipalUid = data.cuentaPrincipalUid;
           const nextNegocioId = data.negocioId || nextCuentaPrincipalUid;
           const nextSuscripcionControlada = data.suscripcionControlada;
-          const nextAutorizado = data;
+          const nextAutorizado = {
+            ...data,
+            superAdmin: isSystemAdmin,
+            accesoAnalitica: isSystemAdmin,
+          };
 
           saveTenantContext({
             uid: user.uid,
@@ -124,9 +188,6 @@ export default function useAutorizacionActual() {
           setCuentaPrincipalUid(nextCuentaPrincipalUid);
           setSuscripcionControlada(nextSuscripcionControlada);
 
-          stopSuscripcion();
-          stopNegocio();
-
           const resolverYAplicarAcceso = (suscripcionData = null, negocioData = null) => {
             if (cancelled) return;
             const acceso = resolverAccesoSuscripcion({
@@ -136,51 +197,61 @@ export default function useAutorizacionActual() {
               negocio: negocioData,
             });
             setSuscripcion(acceso.suscripcion || null);
+            setNegocio(negocioData || null);
             setAccesoPermitido(acceso.permitido);
             setMotivoAcceso(acceso.motivo || "");
             setMensajeAcceso(acceso.mensaje || "");
             setLoading(false);
           };
 
-          if (!nextSuperAdmin && nextNegocioId) {
-            unsubNegocio = escucharNegocio(
-              nextNegocioId,
-              (negocioData) => {
-                if (nextSuscripcionControlada && !nextSuperAdmin && nextCuentaPrincipalUid) {
-                  return;
-                }
-                resolverYAplicarAcceso(null, negocioData);
-              },
-              () => resolverYAplicarAcceso(null, null),
-            );
+          const needsSubscription = nextSuscripcionControlada && !nextSuperAdmin && nextCuentaPrincipalUid;
+          const nextListenerKey = JSON.stringify([nextNegocioId, nextCuentaPrincipalUid, nextSuperAdmin, Boolean(needsSubscription)]);
+          applyLatest = () => {
+            if (negocioReady && subscriptionReady) resolverYAplicarAcceso(currentSuscripcion, currentNegocio);
+          };
+          // Actualizaciones del mismo usuario (por ejemplo presencia) no deben
+          // desmontar las paginas ni reiniciar la consulta del plan.
+          if (listenerKey === nextListenerKey) {
+            applyLatest();
+            return;
           }
-
-          if (nextSuscripcionControlada && !nextSuperAdmin && nextCuentaPrincipalUid) {
-            unsubSuscripcion = onSnapshot(
-              doc(db, "suscripciones", nextCuentaPrincipalUid),
-              async (susSnap) => {
-                let negocioData = null;
-                if (nextNegocioId) {
-                  negocioData = await new Promise((resolve) => {
-                    const off = escucharNegocio(
-                      nextNegocioId,
-                      (data) => {
-                        off();
-                        resolve(data);
-                      },
-                      () => {
-                        off();
-                        resolve(null);
-                      },
-                    );
-                  });
-                }
-                resolverYAplicarAcceso(susSnap.exists() ? susSnap.data() : null, negocioData);
-              },
-              () => {
-                resolverYAplicarAcceso(null, null);
-              },
-            );
+          listenerKey = nextListenerKey;
+          stopSuscripcion();
+          stopNegocio();
+          currentNegocio = null;
+          currentSuscripcion = null;
+          negocioReady = !nextNegocioId || nextSuperAdmin;
+          subscriptionReady = !needsSubscription;
+          setLoading(true);
+          setNegocio(null);
+          setPublicidadConfirmada(false);
+          if (!nextSuperAdmin && nextNegocioId) {
+            unsubNegocio = escucharNegocio(nextNegocioId, (data, metadata) => {
+              if (cancelled || listenerKey !== nextListenerKey) return;
+              currentNegocio = data;
+              negocioReady = true;
+              setPublicidadConfirmada(Boolean(data) && !metadata?.fromCache && !metadata?.hasPendingWrites);
+              applyLatest();
+            }, () => {
+              if (cancelled || listenerKey !== nextListenerKey) return;
+              currentNegocio = null;
+              negocioReady = true;
+              setPublicidadConfirmada(false);
+              applyLatest();
+            });
+          }
+          if (needsSubscription) {
+            unsubSuscripcion = onSnapshot(doc(db, "suscripciones", nextCuentaPrincipalUid), (snap) => {
+              if (cancelled || listenerKey !== nextListenerKey) return;
+              currentSuscripcion = snap.exists() ? snap.data() : null;
+              subscriptionReady = true;
+              applyLatest();
+            }, () => {
+              if (cancelled || listenerKey !== nextListenerKey) return;
+              currentSuscripcion = null;
+              subscriptionReady = true;
+              applyLatest();
+            });
             return;
           }
 
@@ -189,6 +260,7 @@ export default function useAutorizacionActual() {
           }
         },
         () => {
+          listenerKey = null;
           setNombre(user.displayName || String(user.email || "").split("@")[0] || "");
           setRol("");
           setActivo(false);
@@ -201,6 +273,10 @@ export default function useAutorizacionActual() {
           setMotivoAcceso("");
           setMensajeAcceso("");
           setSuscripcion(null);
+          setNegocio(null);
+          setPublicidadConfirmada(false);
+          stopNegocio();
+          stopSuscripcion();
           setLoading(false);
         },
       );
@@ -214,6 +290,16 @@ export default function useAutorizacionActual() {
       safeUnsubscribe(unsubAuth);
     };
   }, []);
+
+  // premiumState es la UNICA fuente de verdad: "loading" | "premium" | "free".
+  // Nunca se colapsa a booleano antes de saberse con certeza, para que ningun
+  // consumidor (publicidad, layout, badges) pueda interpretar "todavia no se
+  // sabe" como "es gratuito".
+  const statusConfirmado = !loading && publicidadConfirmada;
+  const premiumState = resolvePremiumAccess(negocio, statusConfirmado);
+  const isPremium = premiumState === PREMIUM_ACTIVE;
+  const premiumStatusLoaded = premiumState !== PREMIUM_LOADING;
+  const renovacionAutomatica = negocio?.renovacionAutomatica !== false;
 
   const api = useMemo(() => {
     return {
@@ -231,9 +317,22 @@ export default function useAutorizacionActual() {
       motivoAcceso,
       mensajeAcceso,
       suscripcion,
+      negocio,
+      premiumState,
+      isPremium,
+      premiumUntil: negocio?.premiumUntil || null,
+      renovacionAutomatica,
+      premiumStatusLoaded,
+      // Regla absoluta: publicidad solo puede activarse cuando premiumState
+      // es "free" con certeza. Nunca "!isPremium" (undefined/loading tambien
+      // pasaria esa prueba).
+      // La marca Premium tambien suprime anuncios si la vigencia aun no se
+      // ha sincronizado; no concede permisos ni modifica el acceso al plan.
+      puedeMostrarPublicidad: premiumState === PREMIUM_FREE && negocio?.premium !== true,
       puede: (key) => tienePermiso(rol, permisos, key),
     };
   }, [
+    publicidadConfirmada,
     loading,
     uid,
     nombre,
@@ -248,6 +347,11 @@ export default function useAutorizacionActual() {
     motivoAcceso,
     mensajeAcceso,
     suscripcion,
+    negocio,
+    premiumState,
+    isPremium,
+    renovacionAutomatica,
+    premiumStatusLoaded,
   ]);
 
   return api;

@@ -267,7 +267,9 @@ export function buildSaleTicketText(payload = {}) {
     pushDivider(lines);
     lines.push("PAGO");
     const metodo =
-      payload.tipoPago === "tarjeta"
+      payload.tipoPago === "fiado"
+        ? "Fiado"
+        : payload.tipoPago === "tarjeta"
         ? "Tarjeta"
         : payload.tipoPago === "transferencia"
           ? "Transferencia"
@@ -284,7 +286,11 @@ export function buildSaleTicketText(payload = {}) {
   }
 
   pushDivider(lines);
-  pushKeyValue(lines, "Subtotal", formatMoney(payload.subtotal || 0));
+  pushKeyValue(
+    lines,
+    payload.aplicaIVA ? "Subtotal sin IVA" : "Subtotal",
+    formatMoney(payload.subtotal || 0),
+  );
   if (payload.aplicaIVA) {
     const pct = `${Math.round(Number(payload.ivaPorcentaje || 0) * 100)}%`;
     pushKeyValue(lines, `IVA (${pct})`, formatMoney(payload.iva || 0));

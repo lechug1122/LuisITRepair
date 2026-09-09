@@ -99,14 +99,21 @@ export async function imprimirTicketVenta({
   productos,
   estado,
   subtotal,
+  descuentoManual = 0,
+  descuentoRegla = 0,
+  promocionNombre = "",
   aplicaIVA = true,
   ivaPorcentaje = 0.16,
   iva,
+  ieps = 0,
   recargoTarjeta = 0,
   proveedorRecargoTarjeta = "",
   propina = 0,
   total,
   totalCobro,
+  montoRecibido = null,
+  cambio = null,
+  preciosIncluyenImpuestos = false,
   ticketConfig,
   previewOnly = false,
   precuenta = false,
@@ -117,7 +124,11 @@ export async function imprimirTicketVenta({
   const atendioTexto = String(atendio || "").trim() || "-";
   const ticketFontFamily = getTicketFontFamily();
   const esVistaMovil = detectMobileDevice();
-  const ticketWidth = getTicketPrintWidth(esVistaMovil);
+  const ticketWidth = printerCfg.tamanoTicket === "80mm"
+    ? "80mm"
+    : printerCfg.tamanoTicket === "58mm"
+      ? "58mm"
+      : getTicketPrintWidth(esVistaMovil);
   const baseFontSize = esVistaMovil ? "14px" : "12px";
   const titleFontSize = esVistaMovil ? "20px" : "16px";
   const extraLineFontSize = esVistaMovil ? "13px" : "11px";
@@ -160,7 +171,9 @@ export async function imprimirTicketVenta({
     .join("");
 
   const pagoLabel =
-    tipoPago === "tarjeta"
+    tipoPago === "fiado"
+      ? "Fiado"
+      : tipoPago === "tarjeta"
       ? "Tarjeta"
       : tipoPago === "transferencia"
         ? "Transferencia"
@@ -171,9 +184,19 @@ export async function imprimirTicketVenta({
       ? `<div><b>Referencia:</b> ${escapeHtml(referenciaTarjeta)}</div>`
       : "";
 
-  const ivaPctLabel = `${Math.round(Number(ivaPorcentaje || 0) * 100)}%`;
-  const ivaRow = aplicaIVA
-    ? `<div class="ticket-total-row"><span>IVA (${ivaPctLabel})</span><span>${formatMoney(iva)}</span></div>`
+  const ivaPct = Number(ivaPorcentaje || 0);
+  const ivaPctLabel = ivaPct > 0 ? ` (${Math.round(ivaPct * 100)}%)` : "";
+  const subtotalLabel = aplicaIVA ? "Subtotal sin IVA" : "Subtotal";
+  const mostrarDesgloseFiscal = aplicaIVA && !preciosIncluyenImpuestos;
+  const ivaRow = mostrarDesgloseFiscal
+    ? `<div class="ticket-total-row"><span>IVA${ivaPctLabel}</span><span>${formatMoney(iva)}</span></div>`
+    : "";
+  const iepsRow = mostrarDesgloseFiscal && Number(ieps || 0) > 0
+    ? `<div class="ticket-total-row"><span>IEPS</span><span>${formatMoney(ieps)}</span></div>`
+    : "";
+  const descuentoTotal = Number(descuentoManual || 0) + Number(descuentoRegla || 0);
+  const descuentoRow = descuentoTotal > 0
+    ? `<div class="ticket-total-row"><span>Descuento${promocionNombre ? ` (${escapeHtml(promocionNombre)})` : ""}</span><span>-${formatMoney(descuentoTotal)}</span></div>`
     : "";
   const recargoTarjetaMonto = Number(recargoTarjeta || 0);
   const totalFinal = Number(totalCobro ?? total) || 0;
@@ -186,6 +209,12 @@ export async function imprimirTicketVenta({
     propinaMonto > 0
       ? `<div class="ticket-total-row"><span>Propina</span><span>${formatMoney(propinaMonto)}</span></div>`
       : "";
+  const recibidoRow = Number.isFinite(Number(montoRecibido))
+    ? `<div class="ticket-total-row"><span>Recibido</span><span>${formatMoney(montoRecibido)}</span></div>`
+    : "";
+  const cambioRow = Number.isFinite(Number(cambio)) && Number(cambio) >= 0
+    ? `<div class="ticket-total-row"><span>Cambio</span><span>${formatMoney(cambio)}</span></div>`
+    : "";
 
   const topLines = splitTicketLines(cfg.extraTopLines);
   const bottomLines = splitTicketLines(cfg.extraBottomLines);
@@ -545,8 +574,8 @@ export async function imprimirTicketVenta({
   const ticketBodyHtml = `
     <div class="ticket-paper ${cfg.boldAllText ? "ticket-paper-all-bold" : ""}">
       <div class="ticket-header">
-        ${cfg.showLogo ? `<div class="ticket-logo"><img src="${LOGO_URL}" alt="Logo negocio" /></div>` : ""}
-        <div class="ticket-title">${precuenta ? "Precuenta" : "Ticket de venta"}</div>
+        ${cfg.showLogo ? `<div class="ticket-logo"><img src="${String(empresaCfg?.logo || "").trim() || LOGO_URL}" alt="Logo negocio" /></div>` : ""}
+        <div class="ticket-title">${precuenta ? "Precuenta" : "Nota de Venta"}</div>
         ${businessHtml}
         <div class="ticket-sub">Folio: <b>${escapeHtml(ventaId || "-")}</b></div>
         <div class="ticket-sub">Fecha: ${escapeHtml(formatDate(fecha))}</div>
@@ -567,11 +596,15 @@ export async function imprimirTicketVenta({
       <div class="ticket-divider"></div>
 
       <div class="ticket-section">
-        <div class="ticket-total-row"><span>Subtotal</span><span>${formatMoney(subtotal)}</span></div>
+        ${mostrarDesgloseFiscal || !aplicaIVA ? `<div class="ticket-total-row"><span>${subtotalLabel}</span><span>${formatMoney(subtotal)}</span></div>` : ""}
+        ${descuentoRow}
         ${ivaRow}
+        ${iepsRow}
         ${recargoTarjetaRow}
         ${propinaRow}
         <div class="ticket-total-row ticket-total-final"><span>Total</span><span>${formatMoney(totalFinal)}</span></div>
+        ${recibidoRow}
+        ${cambioRow}
       </div>
 
       ${bottomLinesHtml}

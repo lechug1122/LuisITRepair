@@ -15,12 +15,32 @@ export const DEFAULT_EMPRESA_CONFIG = {
   telefono: import.meta.env.VITE_NEGOCIO_TELEFONO || "",
   correoTickets: import.meta.env.VITE_NEGOCIO_CORREO_TICKETS || "",
   correoNotas: import.meta.env.VITE_NEGOCIO_CORREO_NOTAS || "",
+  logo: "",
   tipoNegocioId: "soporte-computo",
   tiposNegocio: getTiposNegocioPreset(),
   restaurante: {
     pisos: [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 12 }],
   },
 };
+
+// El logo viaja como data URL dentro del documento de empresa, asi que todos
+// los empleados del negocio lo reciben con la misma suscripcion. Firestore
+// limita cada documento a 1 MiB: este tope deja margen para el resto de la
+// configuracion aunque el logo llegue al maximo.
+export const LOGO_MAX_CHARS = 400000;
+const LOGO_MIME_PERMITIDOS = ["image/png", "image/x-icon", "image/vnd.microsoft.icon"];
+
+// Solo acepta data URLs de PNG/ICO dentro del limite; cualquier otra cosa se
+// descarta para no persistir contenido arbitrario en el documento.
+function normalizeLogo(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.length > LOGO_MAX_CHARS) return "";
+  const match = /^data:([a-z0-9.+/-]+);base64,/i.exec(trimmed);
+  if (!match) return "";
+  return LOGO_MIME_PERMITIDOS.includes(match[1].toLowerCase()) ? trimmed : "";
+}
 
 // Limpia campos de texto antes de persistirlos o mostrarlos.
 function toText(value, fallback = "") {
@@ -56,6 +76,7 @@ export function normalizeEmpresaConfig(raw = {}) {
     telefono: toText(raw?.telefono, DEFAULT_EMPRESA_CONFIG.telefono),
     correoTickets: toText(raw?.correoTickets, DEFAULT_EMPRESA_CONFIG.correoTickets).toLowerCase(),
     correoNotas: toText(raw?.correoNotas, DEFAULT_EMPRESA_CONFIG.correoNotas).toLowerCase(),
+    logo: normalizeLogo(raw?.logo),
     tipoNegocioId,
     tiposNegocio,
     restaurante: normalizeRestauranteConfig(raw?.restaurante),

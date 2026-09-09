@@ -1,5 +1,5 @@
-import { collection, doc, query, where } from "firebase/firestore";
-import { auth, db } from "../../initializer/firebase";
+import { collection, doc } from "firebase/firestore";
+import { auth, db } from "../../initializer/firebase.js";
 
 const TENANT_CONTEXT_STORAGE_KEY = "tenant_context_v1";
 
@@ -136,23 +136,27 @@ export function buildTenantStorageKey(baseKey, tenantId = "") {
 export function getTenantConfigDocRef(name, tenantId = "") {
   const resolvedTenantId = resolveTenantId(tenantId);
   if (!resolvedTenantId) return doc(db, "configuracion", name);
-  return doc(db, "configuracion", `${name}__${resolvedTenantId}`);
+  return doc(db, "negocios", resolvedTenantId, "configuracion", name);
 }
 
 export function getLegacyConfigDocRef(name) {
   return doc(db, "configuracion", name);
 }
 
-export function getCollectionRef(name) {
-  return collection(db, name);
+export function getCollectionRef(name, tenantId = "") {
+  const resolvedTenantId = resolveTenantId(tenantId);
+  if (!resolvedTenantId) throw new Error(`No se pudo resolver el negocio para ${name}.`);
+  return collection(db, "negocios", resolvedTenantId, name);
 }
 
-export function getDocRef(collectionName, id) {
-  return doc(db, collectionName, id);
+export function getDocRef(collectionName, id, tenantId = "") {
+  const resolvedTenantId = resolveTenantId(tenantId);
+  if (!resolvedTenantId) throw new Error(`No se pudo resolver el negocio para ${collectionName}.`);
+  return doc(db, "negocios", resolvedTenantId, collectionName, id);
 }
 
 export function getTenantCollectionQuery(name, tenantId = "") {
   const resolvedTenantId = resolveTenantId(tenantId);
-  if (!resolvedTenantId) return collection(db, name);
-  return query(collection(db, name), where("cuentaPrincipalUid", "==", resolvedTenantId));
+  if (!resolvedTenantId) throw new Error(`No se pudo resolver el negocio para ${name}.`);
+  return collection(db, "negocios", resolvedTenantId, name);
 }

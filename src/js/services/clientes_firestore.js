@@ -1,17 +1,16 @@
 import {
   addDoc,
-  collection,
-  doc,
   getDocs,
   getDoc,
   serverTimestamp,
   updateDoc,
 } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
 import {
   dataBelongsToTenant,
   filterItemsByTenant,
   getTenantCollectionQuery,
+  getCollectionRef,
+  getDocRef,
   withTenantData,
 } from "./tenant";
 
@@ -70,7 +69,7 @@ export async function crearCliente({
   const nombreNorm = normalizarTexto(nombre);
   const nombreCompact = compact(nombre);
 
-  const ref = await addDoc(collection(db, "clientes"), {
+  const ref = await addDoc(getCollectionRef("clientes"), {
     ...withTenantData({}),
     nombre: (nombre || "").trim(),
     nombreNorm,
@@ -90,7 +89,7 @@ export async function crearCliente({
 
 /* ========= Actualizar cliente ========= */
 export async function actualizarCliente(id, patch) {
-  const ref = doc(db, "clientes", id);
+  const ref = getDocRef("clientes", id);
   const snap = await getDoc(ref);
   const actual = snap.exists() ? snap.data() : {};
   if (snap.exists() && !dataBelongsToTenant(actual)) {
@@ -182,7 +181,7 @@ export async function listarClientes({ max = 100 } = {}) {
 
 // Leer un cliente por ID
 export async function obtenerClientePorId(id) {
-  const snap = await getDoc(doc(db, "clientes", id));
+  const snap = await getDoc(getDocRef("clientes", id));
   if (!snap.exists()) return null;
   if (!dataBelongsToTenant(snap.data())) return null;
   return { id: snap.id, ...snap.data() };

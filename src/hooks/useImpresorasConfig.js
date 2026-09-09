@@ -26,6 +26,7 @@ export default function useImpresorasConfig() {
     config,
     modoImpresion: config?.modoImpresion || "dialogo",
     nombreImpresoraTicket: config?.nombreImpresoraTicket || "",
+    tamanoTicket: config?.tamanoTicket === "80mm" ? "80mm" : "58mm",
     nombreImpresoraHojaServicio: config?.nombreImpresoraHojaServicio || "",
     tamanoHojaServicio: config?.tamanoHojaServicio || "a4",
     salidaTicketMovil: config?.salidaTicketMovil || "dialogo",

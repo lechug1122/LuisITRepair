@@ -1,7 +1,5 @@
 import {
   addDoc,
-  collection,
-  doc,
   onSnapshot,
   query,
   runTransaction,
@@ -10,6 +8,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
+import { getCollectionRef, getDocRef } from "./tenant";
 
 const POS_MOBILE_SCANS_COL = "pos_mobile_scans";
 
@@ -37,7 +36,7 @@ export async function enviarScanPosMovil({
     updatedAt: serverTimestamp(),
   };
 
-  const ref = await addDoc(collection(db, POS_MOBILE_SCANS_COL), payload);
+  const ref = await addDoc(getCollectionRef(POS_MOBILE_SCANS_COL), payload);
   return { id: ref.id };
 }
 
@@ -46,7 +45,7 @@ export function suscribirScansPosUsuario(uid, onItems, onError) {
   if (!uidFinal) return () => {};
 
   const q = query(
-    collection(db, POS_MOBILE_SCANS_COL),
+    getCollectionRef(POS_MOBILE_SCANS_COL),
     where("uid", "==", uidFinal),
   );
 
@@ -66,7 +65,7 @@ export async function reclamarScanPosPendiente(id, processorId = "") {
   const docId = String(id || "").trim();
   if (!docId) return { ok: false, reason: "id_vacio" };
 
-  const ref = doc(db, POS_MOBILE_SCANS_COL, docId);
+  const ref = getDocRef(POS_MOBILE_SCANS_COL, docId);
   const procId = String(processorId || "").trim();
 
   return runTransaction(db, async (tx) => {
@@ -97,7 +96,7 @@ export async function finalizarScanPos(
   const docId = String(id || "").trim();
   if (!docId) return;
 
-  const ref = doc(db, POS_MOBILE_SCANS_COL, docId);
+  const ref = getDocRef(POS_MOBILE_SCANS_COL, docId);
   await updateDoc(ref, {
     status: status === "error" ? "error" : "processed",
     result: result || null,

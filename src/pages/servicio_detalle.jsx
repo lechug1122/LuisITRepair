@@ -1,5 +1,4 @@
 // ServicioDetalle.jsx
-// ✅ Fotos en Observaciones (varias)
 // ✅ Lock solo cuando ya fue entregado/cobrado en POS
 // ✅ Al generar boleta (PDF) guarda BD formaPago + items + total (y costo se actualiza)
 // ❌ Eliminado: Hoja de servicio (imagen) + todo lo relacionado
@@ -19,6 +18,7 @@ import { obtenerProductos } from "../js/services/POS_firebase";
 import useServiciosConfig from "../hooks/useServiciosConfig";
 import useNotificacionesConfig from "../hooks/useNotificacionesConfig";
 import { generarPdfBoletaVenta } from "../js/services/pdf_boleta_venta";
+import { obtenerCotizacionPorId } from "../js/services/cotizaciones_firestore";
 import { STATUS } from "../js/utils/status_map";
 import {
   buildCamposPersonalizados,
@@ -31,17 +31,9 @@ import {
 
 import "../css/servicio_detalle.css";
 
-// ✅ Storage (solo para fotos de observaciones)
-import {
-  getStorage,
-  ref as storageRef,
-  deleteObject,
-} from "firebase/storage";
-
 /* =========================
    CONFIG
 ========================= */
-const storage = getStorage();
 const STATUS_VALUE_SET = new Set(STATUS.map((s) => s.value));
 const BOLETA_SCANNER_ID = "boleta-reader";
 
@@ -290,18 +282,6 @@ function limpiarBoletaItems(items) {
       cantidad: num(it.cantidad),
     }))
     .filter((it) => it.descripcion !== "");
-}
-
-/* =========================
-   Upload helpers (solo obs fotos)
-========================= */
-async function tryDeleteFromStorage(path) {
-  if (!path) return;
-  try {
-    await deleteObject(storageRef(storage, path));
-  } catch {
-    // no truena
-  }
 }
 
 function buildEquipoEdit(servicio) {
@@ -594,7 +574,36 @@ export default function ServicioDetalle() {
     (async () => {
       try {
         setLoading(true);
-        const data = await buscarServicioPorFolio(folio);
+        let data = await buscarServicioPorFolio(folio);
+        const cotizacionesAsignadas = Array.isArray(data?.cotizaciones)
+          ? data.cotizaciones
+          : [];
+        const ultimaCotizacion = cotizacionesAsignadas.at(-1);
+
+        // Las cotizaciones creadas desde el POS se guardan por separado. Si el
+        // servicio aun no tiene boleta, se carga la ultima como boleta editable.
+        if (data && !data.boleta && ultimaCotizacion?.id) {
+          try {
+            const cotizacion = await obtenerCotizacionPorId(ultimaCotizacion.id);
+            if (cotizacion) {
+              data = {
+                ...data,
+                boleta: {
+                  cotizacionId: cotizacion.id,
+                  tipoDocumento: "cotizacion",
+                  folio: cotizacion.folio || "",
+                  fecha: cotizacion.fecha || "",
+                  formaPago: cotizacion.formaPago || "",
+                  notas: cotizacion.notas || "",
+                  items: Array.isArray(cotizacion.items) ? cotizacion.items : [],
+                  total: Number(cotizacion.total || 0),
+                },
+              };
+            }
+          } catch (error) {
+            console.error("No se pudo cargar la cotizacion asignada:", error);
+          }
+        }
         if (!alive) return;
 
         setServicio(data);
@@ -1394,15 +1403,6 @@ export default function ServicioDetalle() {
     setItems((prev) => prev.filter((x) => x.id !== id));
   };
 
-  const removeObsFoto = async (idx) => {
-    if (locked) return;
-    const foto = obsFotos[idx];
-    if (!foto) return;
-    if (!confirm("¿Quitar esta foto?")) return;
-    setObsFotos((prev) => prev.filter((_, i) => i !== idx));
-    await tryDeleteFromStorage(foto.path);
-  };
-
   // =========================
   // Guardar TODO (con lock)
   // =========================
@@ -2062,6 +2062,12 @@ const guardarTodo = async ({ silent = false } = {}) => {
               <b>Costo:</b> {servicio.costo || "-"}
             </p>
             <p>
+              <b>Total abonado:</b> {money(servicio.totalAbonado || 0)}
+            </p>
+            {num(servicio.costo) > 0 && (
+              <p><b>Saldo pendiente:</b> {money(Math.max(0, num(servicio.costo) - Number(servicio.totalAbonado || 0)))}</p>
+            )}
+            <p>
               <b>Precio después:</b> {servicio.precioDespues ? "Sí" : "No"}
             </p>
             <p>
@@ -2079,40 +2085,6 @@ const guardarTodo = async ({ silent = false } = {}) => {
             placeholder="Observaciones internas del servicio..."
             disabled={locked}
           />
-
-          <div style={{ marginTop: 12 }}>
-            <div style={{ marginTop: 8, display: "grid", gap: 8 }}></div>
-
-            {obsFotos?.length > 0 && (
-              <div className="obs-fotos-grid">
-                {obsFotos.map((f, idx) => (
-                  <div key={`${f.path || f.url}-${idx}`} className="obs-foto-item">
-                    <a href={f.url} target="_blank" rel="noreferrer">
-                      <img
-                        src={f.url}
-                        alt="foto"
-                        className="obs-foto-img"
-                      />
-                    </a>
-                    <div className="obs-foto-foot">
-                      <small className="obs-foto-name">
-                        {f.name || "foto"}
-                      </small>
-                      {!locked && (
-                        <button
-                          className="btn btn-danger"
-                          onClick={() => removeObsFoto(idx)}
-                          title="Quitar"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Boleta */}
@@ -2515,6 +2487,15 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
         {/* ✅ BOTÓN ÚNICO HASTA ABAJO */}
         <div className="box full" style={{ marginTop: 14 }}>
+          {!locked && (
+            <button
+              type="button"
+              className="btn servicio-abono-pos-btn"
+              onClick={() => navigate(`/POS?abonarServicio=${encodeURIComponent(servicio.folio || folio)}`)}
+            >
+              Abonar servicio en Punto de Venta
+            </button>
+          )}
           <button
             className={`btn btn-ok ${savingAll || locked ? "disabled" : ""}`}
             onClick={handleGuardarTodo}

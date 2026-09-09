@@ -172,6 +172,134 @@
   color: #166534;
 }
 
+.excel-report-menu {
+  position: relative;
+}
+
+.excel-report-menu > summary {
+  list-style: none;
+}
+
+.excel-report-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.reportes-header-actions .btn-excel-report {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  color: #fff;
+  border-color: #047857;
+  background: linear-gradient(135deg, #059669, #047857);
+  box-shadow: 0 8px 18px rgba(5, 150, 105, 0.22);
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.reportes-header-actions .btn-excel-report:hover:not(:disabled) {
+  border-color: #065f46;
+  background: linear-gradient(135deg, #10b981, #047857);
+  transform: translateY(-1px);
+}
+
+.btn-excel-report svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+}
+
+.btn-excel-report .excel-menu-chevron {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.excel-report-menu[open] .excel-menu-chevron {
+  transform: rotate(180deg);
+}
+
+.btn-excel-report.is-disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.excel-report-options {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 310px;
+  padding: 8px;
+  border: 1px solid #dbe4ef;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.2);
+}
+
+.reportes-header-actions .excel-report-options button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  color: #0f172a;
+  background: transparent;
+  text-align: left;
+}
+
+.reportes-header-actions .excel-report-options button:hover:not(:disabled) {
+  background: #ecfdf5;
+}
+
+.excel-report-options button > svg {
+  width: 21px;
+  height: 21px;
+  color: #059669;
+}
+
+.excel-report-options button span {
+  display: grid;
+  gap: 2px;
+}
+
+.excel-report-options button strong,
+.excel-report-options button small {
+  display: block;
+}
+
+.excel-report-options button small {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.conteo-caja-value.ok {
+  color: #166534;
+}
+
+.alerta-descuadre-caja {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  color: #7c2d12;
+  background: #fff7ed;
+}
+
+.alerta-descuadre-caja label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-weight: 700;
+}
+
 .conteo-caja-notas {
   margin-top: 10px;
 }
@@ -1401,3 +1529,4 @@
     flex-wrap: wrap;
   }
 }
+.reportes-deudas-card{margin:20px 0;padding:22px;border:1px solid #dbe5ef;border-radius:18px;background:#fff;box-shadow:0 10px 28px rgba(15,23,42,.06)}.reportes-deudas-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}.reportes-deudas-head span{color:#b45309;font-size:.7rem;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.reportes-deudas-head h2{margin:3px 0;color:#172033}.reportes-deudas-head p{margin:4px 0 0;color:#64748b}.reportes-deudas-head>strong{color:#b45309;font-size:1.8rem}.reportes-deudas-table-wrap{overflow-x:auto}.reportes-deudas-card table{width:100%;border-collapse:collapse}.reportes-deudas-card th,.reportes-deudas-card td{padding:12px;border-bottom:1px solid #e2e8f0;text-align:left;white-space:nowrap}.reportes-deudas-card th{background:#f8fafc;color:#64748b;font-size:.7rem;text-transform:uppercase}.deuda-vencida,.deuda-vigente{display:inline-flex;padding:5px 8px;border-radius:999px;font-size:.72rem;font-weight:850}.deuda-vencida{background:#fee2e2;color:#b91c1c}.deuda-vigente{background:#dcfce7;color:#166534}.deudas-empty{text-align:center!important;color:#64748b}@media(max-width:600px){.reportes-deudas-head{flex-direction:column}.reportes-deudas-card{padding:15px}}

@@ -12,11 +12,23 @@ import { obtenerResumenCajaHoy } from "../js/services/corte_caja_firestore";
 import { generarPdfCorteCajaDia } from "../js/services/pdf_corte_caja";
 import { obtenerIngresosPorDia, obtenerIngresosPorTipo } from "../js/services/home_charts_firestore";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from "recharts";
+import {
+  FiTrendingUp,
+  FiTool,
+  FiFileText,
+  FiCheckCircle,
+  FiDollarSign,
+  FiUsers,
+  FiClock,
+  FiCalendar,
+  FiCreditCard,
+} from "react-icons/fi";
 import { APARIENCIA_EVENT, readAparienciaConfigStorage } from "../js/services/apariencia_config";
 import { STATUS } from "../js/utils/status_map";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useMonedaConfig from "../hooks/useMonedaConfig";
+import Advertising from "../components/Advertising";
 import PageLoader from "../components/PageLoader";
 
 function normalizeRoleText(raw = "") {
@@ -168,7 +180,7 @@ function MetricCard({ tone = "blue", icon, label, value, sublabel = "" }) {
           </div>
         </div>
       ) : null}
-      <span>{icon}</span>
+      <span className="kpi-card-icon">{icon}</span>
       <div className="kpi-card-copy">
         <p>{label}</p>
         <h3>{value}</h3>
@@ -183,82 +195,6 @@ function QuickActionCard({ title, description, tone = "blue", onClick }) {
       <strong>{title}</strong>
       <span>{description}</span>
     </button>
-  );
-}
-
-function HomeSideAds() {
-  const initializedRef = useRef(false);
-  const adRefs = useRef({});
-  const [eligible, setEligible] = useState(() => window.matchMedia("(min-width: 1200px)").matches);
-
-  useEffect(() => {
-    const media = window.matchMedia("(min-width: 1200px)");
-    const enableWhenWide = (event) => {
-      if (event.matches) setEligible(true);
-    };
-    media.addEventListener("change", enableWhenWide);
-    return () => media.removeEventListener("change", enableWhenWide);
-  }, []);
-
-  useEffect(() => {
-    if (!eligible) return;
-    const ads = Object.entries(adRefs.current);
-    const homePage = ads[0]?.[1]?.closest(".home-page");
-    const syncAdVisibility = () => {
-      let anyFilled = false;
-      ads.forEach(([side, ad]) => {
-        const rail = ad?.closest(".home-ad-rail");
-        const filled = ad?.dataset.adStatus === "filled";
-        rail?.classList.toggle("is-filled", filled);
-        homePage?.classList.toggle(`home-side-ad-${side}`, filled);
-        anyFilled ||= filled;
-      });
-      homePage?.classList.toggle("has-filled-side-ads", anyFilled);
-    };
-    const observers = ads.map(([, ad]) => {
-      const observer = new MutationObserver(syncAdVisibility);
-      observer.observe(ad, { attributes: true, attributeFilter: ["data-ad-status"] });
-      return observer;
-    });
-    syncAdVisibility();
-    return () => {
-      observers.forEach((observer) => observer.disconnect());
-      homePage?.classList.remove("has-filled-side-ads", "home-side-ad-left", "home-side-ad-right");
-    };
-  }, [eligible]);
-
-  useEffect(() => {
-    if (!eligible || initializedRef.current) return;
-    initializedRef.current = true;
-    try {
-      (window.adsbygoogle = window.adsbygoogle || []).push({});
-      (window.adsbygoogle = window.adsbygoogle || []).push({});
-    } catch (error) {
-      console.warn("No fue posible inicializar el anuncio de Home:", error);
-    }
-  }, [eligible]);
-
-  if (!eligible) return null;
-
-  return (
-    <>
-      {["left", "right"].map((side) => (
-        <aside key={side} className={`home-ad-rail home-ad-rail-${side}`} aria-label={`Publicidad lateral ${side === "left" ? "izquierda" : "derecha"}`}>
-          <span className="home-ad-label">Publicidad</span>
-          <ins
-            ref={(node) => {
-              if (node) adRefs.current[side] = node;
-            }}
-            className="adsbygoogle"
-            style={{ display: "block" }}
-            data-ad-client="ca-pub-6040311717869766"
-            data-ad-slot="1128244794"
-            data-ad-format="auto"
-            data-full-width-responsive="true"
-          />
-        </aside>
-      ))}
-    </>
   );
 }
 
@@ -292,8 +228,8 @@ function ServiceListCard({ title, subtitle = "", services = [], emptyText, onOpe
 
 export default function Home() {
   const navigate = useNavigate();
-  const { rol, nombre, permisos, puede } = useAutorizacionActual();
-  const { serviciosHabilitados, tipoNegocioActivo } = useEmpresaConfig();
+  const { rol, nombre, permisos, puede, premiumState } = useAutorizacionActual();
+  const { serviciosHabilitados } = useEmpresaConfig();
   const { formatCurrency } = useMonedaConfig();
   const roleKey = useMemo(
     () => normalizeRole(rol, permisos, serviciosHabilitados),
@@ -647,8 +583,7 @@ export default function Home() {
   if (loading) return <PageLoader text="Cargando dashboard..." />;
 
   return (
-    <div className={`home-page role-${roleKey} ${roleKey === "admin" && (mostrarCalendarioPanel || fijarCalendarioPanel) ? "calendar-layout-pinned" : ""}`}>
-      {tipoNegocioActivo?.id !== "restaurante" && <HomeSideAds />}
+    <div className={`home-page ${premiumState === "free" ? "free-layout" : "premium-layout"} role-${roleKey} ${roleKey === "admin" && (mostrarCalendarioPanel || fijarCalendarioPanel) ? "calendar-layout-pinned" : ""}`}>
       <div className="home-header home-role-header">
         <div className="home-hero-panel">
           <div className="home-role-copy">
@@ -772,7 +707,7 @@ export default function Home() {
           <div className="kpi-grid">
             <MetricCard
               tone="green"
-              icon={"\u{1F4B0}"}
+              icon={<FiTrendingUp aria-hidden="true" />}
               label="Ingresos del mes"
               value={formatCurrency(kpis.ingresosMes)}
               sublabel={serviciosHabilitados
@@ -781,7 +716,7 @@ export default function Home() {
             />
             <MetricCard
               tone="blue"
-              icon={serviciosHabilitados ? "\u{1F527}" : "\u{1F4C4}"}
+              icon={serviciosHabilitados ? <FiTool aria-hidden="true" /> : <FiFileText aria-hidden="true" />}
               label={serviciosHabilitados ? "Servicios activos" : "Tickets hoy"}
               value={serviciosHabilitados ? kpis.activos : ticketsHoy}
               sublabel={serviciosHabilitados
@@ -790,7 +725,7 @@ export default function Home() {
             />
             <MetricCard
               tone="success"
-              icon={serviciosHabilitados ? "\u{2705}" : "\u{1F4B5}"}
+              icon={serviciosHabilitados ? <FiCheckCircle aria-hidden="true" /> : <FiDollarSign aria-hidden="true" />}
               label={serviciosHabilitados ? "Entregados hoy" : "Cobrado hoy"}
               value={serviciosHabilitados ? kpis.entregados : formatCurrency(totalHoy)}
               sublabel={serviciosHabilitados
@@ -799,7 +734,7 @@ export default function Home() {
             />
             <MetricCard
               tone="orange"
-              icon={"\u{1F464}"}
+              icon={<FiUsers aria-hidden="true" />}
               label="Clientes"
               value={kpis.totalClientes}
               sublabel={serviciosHabilitados
@@ -1005,10 +940,10 @@ export default function Home() {
       {roleKey === "tecnico" && (
         <>
           <div className="kpi-grid">
-            <MetricCard tone="blue" icon={"\u{1F6E0}"} label="Servicios activos" value={serviciosOrdenados.length} />
-            <MetricCard tone="orange" icon={"\u{23F0}"} label="Atrasados" value={serviciosAtrasados.length} sublabel="Requieren seguimiento" />
-            <MetricCard tone="green" icon={"\u{2705}"} label="Listos" value={serviciosListos.length} sublabel="Pendientes de entrega" />
-            <MetricCard tone="success" icon={"\u{1F4C5}"} label="Entregas hoy" value={serviciosHoy.length} sublabel="Segun fecha aproximada" />
+            <MetricCard tone="blue" icon={<FiTool aria-hidden="true" />} label="Servicios activos" value={serviciosOrdenados.length} />
+            <MetricCard tone="orange" icon={<FiClock aria-hidden="true" />} label="Atrasados" value={serviciosAtrasados.length} sublabel="Requieren seguimiento" />
+            <MetricCard tone="green" icon={<FiCheckCircle aria-hidden="true" />} label="Listos" value={serviciosListos.length} sublabel="Pendientes de entrega" />
+            <MetricCard tone="success" icon={<FiCalendar aria-hidden="true" />} label="Entregas hoy" value={serviciosHoy.length} sublabel="Segun fecha aproximada" />
           </div>
           <div className="home-role-grid home-role-grid-tech">
             <div className="panel-card home-role-card home-role-card-tech-flow">
@@ -1070,9 +1005,9 @@ export default function Home() {
       {roleKey === "vendedor" && (
         <>
           <div className="kpi-grid">
-            <MetricCard tone="green" icon={"\u{1F4B8}"} label="Venta de hoy" value={formatCurrency(totalHoy)} sublabel={`${ticketsHoy} tickets`} />
-            <MetricCard tone="blue" icon={"\u{1F4B5}"} label="Efectivo" value={formatCurrency(resumenPago.efectivo || 0)} />
-            <MetricCard tone="success" icon={"\u{1F4B3}"} label="Tarjeta" value={formatCurrency(resumenPago.tarjeta || 0)} />
+            <MetricCard tone="green" icon={<FiTrendingUp aria-hidden="true" />} label="Venta de hoy" value={formatCurrency(totalHoy)} sublabel={`${ticketsHoy} tickets`} />
+            <MetricCard tone="blue" icon={<FiDollarSign aria-hidden="true" />} label="Efectivo" value={formatCurrency(resumenPago.efectivo || 0)} />
+            <MetricCard tone="success" icon={<FiCreditCard aria-hidden="true" />} label="Tarjeta" value={formatCurrency(resumenPago.tarjeta || 0)} />
           </div>
           <div className="home-role-grid">
             {serviciosHabilitados && (
@@ -1179,6 +1114,7 @@ export default function Home() {
           )}
         </>
       )}
+      {premiumState === "free" && <Advertising placement="dashboard" />}
     </div>
   );
 }

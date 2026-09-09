@@ -304,6 +304,65 @@
   background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
 }
 
+.prod-buscador-inventario {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.prod-buscador-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(100%, 720px);
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.prod-buscador-input-wrap input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  color: #0f172a;
+  background: transparent;
+}
+
+.prod-buscador-input-wrap button {
+  border: 0;
+  color: #1d4ed8;
+  font-weight: 700;
+  cursor: pointer;
+  background: transparent;
+}
+
+.prod-buscador-inventario small {
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.prod-buscador-vacio {
+  padding: 28px !important;
+  text-align: center;
+  color: #64748b;
+}
+
+@media (max-width: 700px) {
+  .prod-buscador-inventario {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .prod-buscador-input-wrap {
+    width: 100%;
+  }
+}
+
 .prod-modal-conteo-aviso {
   width: min(92vw, 750px);
   padding: 24px;

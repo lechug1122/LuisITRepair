@@ -1,11 +1,9 @@
 import {
   arrayUnion,
-  doc,
   getDoc,
   setDoc,
 } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
-import { allowLegacyTenantFallback, resolveTenantId, withTenantData } from "./tenant";
+import { allowLegacyTenantFallback, getDocRef, resolveTenantId, withTenantData } from "./tenant";
 
 function getDateKeyLocal(date = new Date()) {
   const y = date.getFullYear();
@@ -31,7 +29,7 @@ export async function guardarEgreso(egreso = {}) {
     criadoEn: new Date(),
   };
 
-  const docRef = doc(db, "egresos_diarios", buildEgresosDocId(fechaKey));
+  const docRef = getDocRef("egresos_diarios", buildEgresosDocId(fechaKey));
   const docSnap = await getDoc(docRef);
 
   if (docSnap.exists()) {
@@ -57,12 +55,12 @@ export async function guardarEgreso(egreso = {}) {
 }
 
 export async function obtenerEgresosDia(fechaKey = getDateKeyLocal()) {
-  const docRef = doc(db, "egresos_diarios", buildEgresosDocId(fechaKey));
+  const docRef = getDocRef("egresos_diarios", buildEgresosDocId(fechaKey));
   const docSnap = await getDoc(docRef);
 
   if (!docSnap.exists()) {
     if (allowLegacyTenantFallback()) {
-      const legacySnap = await getDoc(doc(db, "egresos_diarios", fechaKey));
+      const legacySnap = await getDoc(getDocRef("egresos_diarios", fechaKey));
       if (legacySnap.exists()) {
         return {
           id: legacySnap.id,
@@ -87,7 +85,7 @@ export async function eliminarEgreso(
   egresoId = "",
   fechaKey = getDateKeyLocal(),
 ) {
-  const docRef = doc(db, "egresos_diarios", buildEgresosDocId(fechaKey));
+  const docRef = getDocRef("egresos_diarios", buildEgresosDocId(fechaKey));
   const docSnap = await getDoc(docRef);
 
   if (!docSnap.exists()) return null;
@@ -106,7 +104,7 @@ export async function actualizarEgreso(
   actualizacion = {},
   fechaKey = getDateKeyLocal(),
 ) {
-  const docRef = doc(db, "egresos_diarios", buildEgresosDocId(fechaKey));
+  const docRef = getDocRef("egresos_diarios", buildEgresosDocId(fechaKey));
   const docSnap = await getDoc(docRef);
 
   if (!docSnap.exists()) return null;

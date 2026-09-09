@@ -1,7 +1,5 @@
 import { signOut } from "firebase/auth";
 import {
-  collection,
-  doc,
   getDocs,
   onSnapshot,
   query,
@@ -12,7 +10,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../../initializer/firebase";
 import { toDate } from "./suscripciones";
-import { readTenantContext } from "./tenant";
+import { getCollectionRef, getDocRef, readTenantContext } from "./tenant";
 
 const DEVICE_SESSION_COLLECTION = "sesiones_dispositivo";
 const DEVICE_ID_STORAGE_KEY = "current_device_session_id_v1";
@@ -76,7 +74,7 @@ function getCurrentSessionDocId(uid, deviceId = getCurrentDeviceId()) {
 }
 
 function getCurrentSessionDocRef(uid, deviceId = getCurrentDeviceId()) {
-  return doc(db, DEVICE_SESSION_COLLECTION, getCurrentSessionDocId(uid, deviceId));
+  return getDocRef(DEVICE_SESSION_COLLECTION, getCurrentSessionDocId(uid, deviceId));
 }
 
 function isMainAccountLimited(autorizado = {}) {
@@ -132,7 +130,7 @@ async function fetchUserDeviceSessions(uid) {
   if (!safeUid) return [];
 
   const snapshot = await getDocs(
-    query(collection(db, DEVICE_SESSION_COLLECTION), where("uid", "==", safeUid)),
+    query(getCollectionRef(DEVICE_SESSION_COLLECTION), where("uid", "==", safeUid)),
   );
 
   return snapshot.docs
@@ -235,7 +233,7 @@ export async function closeOtherSessionsAndKeepCurrent({
     if (!item.id || item.deviceId === currentDeviceId) return;
 
     batch.set(
-      doc(db, DEVICE_SESSION_COLLECTION, item.id),
+      getDocRef(DEVICE_SESSION_COLLECTION, item.id),
       {
         activa: false,
         updatedAt: serverTimestamp(),

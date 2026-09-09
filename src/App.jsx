@@ -18,6 +18,8 @@ import Home from "./pages/HomeGateway";
 import POS from "./pages/POSGateway";
 import Productos from "./pages/ProductosGateway";
 import Reportes from "./pages/reportes";
+import Promociones from "./pages/Promociones";
+import Fiado from "./pages/Fiado";
 import Configuracion from "./pages/Configuracion";
 import ConfiguracionEmpresa from "./pages/ConfiguracionEmpresa";
 import ConfiguracionPOS from "./pages/ConfiguracionPOS";
@@ -27,9 +29,10 @@ import ConfiguracionMetodosPago from "./pages/ConfiguracionMetodosPago";
 import ConfiguracionNotificaciones from "./pages/ConfiguracionNotificaciones";
 import ConfiguracionImpresoras from "./pages/ConfiguracionImpresoras";
 import ConfiguracionProveedores from "./pages/ConfiguracionProveedores";
-import ConfiguracionDonacion from "./pages/ConfiguracionDonacion";
 import ConfiguracionAdministracion from "./pages/ConfiguracionAdministracion";
 import ConfiguracionMiSuscripcion from "./pages/ConfiguracionMiSuscripcion";
+import ConfiguracionPagoPremium from "./pages/ConfiguracionPagoPremium";
+import ConfiguracionDonacion from "./pages/ConfiguracionDonacion";
 import ConfiguracionRestaurante from "./pages/ConfiguracionRestaurante";
 import TerminosCajaLibre from "./pages/TerminosCajaLibre";
 import ConfiguracionInicial from "./pages/ConfiguracionInicial";
@@ -170,6 +173,22 @@ export default function App() {
           }
         />
         <Route
+          path="/promociones"
+          element={
+            <PermissionRoute permission="promociones.gestionar" permissionsAny={["descuentos.gestionar"]}>
+              <Promociones />
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/fiado"
+          element={
+            <PermissionRoute permission="clientes.ver">
+              <Fiado />
+            </PermissionRoute>
+          }
+        />
+        <Route
           path="/configuracion"
           element={
             <PermissionRoute permission="configuracion.ver" allowAnalyticsAccess>
@@ -218,6 +237,14 @@ export default function App() {
             element={
               <PermissionRoute permission="productos.ver">
                 <Productos embedded />
+              </PermissionRoute>
+            }
+          />
+          <Route
+            path="pago-premium"
+            element={
+              <PermissionRoute requireSubscriptionOwner fallbackPath="/configuracion">
+                <ConfiguracionPagoPremium />
               </PermissionRoute>
             }
           />

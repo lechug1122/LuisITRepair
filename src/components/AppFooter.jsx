@@ -7,8 +7,6 @@ import termsPdf from "../assets/Terminos_y_Condiciones_Caja_Libre.pdf";
 const WHATSAPP_URL =
   "https://wa.me/522731430147?text=Hola%2C%20necesito%20ayuda%20con%20CajaLibre.";
 const WHATSAPP_NUMBER = "522731430147";
-const PAYPAL_URL = "https://paypal.me/CajaLibre";
-const MERCADO_PAGO_URL = "https://link.mercadopago.com.mx/cajalibre";
 
 const whatsappUrl = (message) =>
   `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
@@ -45,7 +43,6 @@ const FOOTER_COLUMNS = [
   {
     title: "Proyecto",
     links: [
-      { label: "Donar", href: "/#donar", sameTab: true },
       { label: "Términos y condiciones", href: termsPdf },
       { label: "Estado del servicio", to: "/status" },
     ],
@@ -103,13 +100,6 @@ function LandingFooter({ onNavigateSection }) {
           <Link to="/privacidad">Política de privacidad</Link>
           <Link to="/cookies">Política de cookies</Link>
           <a href={termsPdf} target="_blank" rel="noreferrer">Términos y condiciones</a>
-          <button type="button" onClick={() => navigateSection("donar")}>Donar al proyecto</button>
-        </div>
-        <div>
-          <h3>Donaciones</h3>
-          <a href={PAYPAL_URL} target="_blank" rel="noreferrer">PayPal</a>
-          <a href={MERCADO_PAGO_URL} target="_blank" rel="noreferrer">Mercado Pago</a>
-          <a href={whatsappUrl("Hola, quiero apoyar a CajaLibre mediante transferencia bancaria. ¿Me pueden compartir los datos?")} target="_blank" rel="noreferrer">Transferencia bancaria</a>
         </div>
       </div>
       <div className="landing-container footer-bottom">

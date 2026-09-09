@@ -1189,7 +1189,9 @@ export async function generarPdfHojaServicio(form, folio, options = {}) {
     let logoDataUrlPng = null;
     let checklistDataUrlPng = null;
     try {
-      const dataUrl = await fetchAsDataURL(logoUrl);
+      // El logo del negocio (si lo subio) reemplaza al del sistema.
+      const logoNegocio = String(empresaCfg?.logo || empresaCache?.logo || "").trim();
+      const dataUrl = await fetchAsDataURL(logoNegocio || logoUrl);
       logoDataUrlPng = await convertirADataURLPNG(dataUrl);
     } catch (e) {
       console.warn("Logo no cargado:", e.message);

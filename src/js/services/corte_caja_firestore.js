@@ -1,18 +1,18 @@
 import {
-  doc,
   getDoc,
   getDocs,
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
-import { db } from "../../initializer/firebase";
 import {
   allowLegacyTenantFallback,
   filterItemsByTenant,
   getTenantCollectionQuery,
+  getDocRef,
   resolveTenantId,
   withTenantData,
 } from "./tenant";
+import { obtenerEfectivoNetoVenta } from "./efectivo_venta";
 
 function toDate(value) {
   if (!value) return null;
@@ -49,6 +49,8 @@ export function calcularResumenVentasDia(ventasDia = []) {
     tarjeta: 0,
     transferencia: 0,
     otros: 0,
+    descuentos: 0,
+    ventasFiadas: 0,
     unidades: 0,
   };
 
@@ -59,6 +61,8 @@ export function calcularResumenVentasDia(ventasDia = []) {
     resumen.subtotal += subtotalVenta;
     resumen.iva += ivaVenta;
     resumen.total += totalVenta;
+    resumen.descuentos += Number(v?.descuentoManual || 0) + Number(v?.descuentoRegla || 0) + Number(v?.descuentoPuntos || 0);
+    if (String(v?.tipoPago || "").toLowerCase() === "fiado") resumen.ventasFiadas += totalVenta;
 
     (v?.productos || []).forEach((p) => {
       resumen.unidades += Number(p?.cantidad || 0);
@@ -67,7 +71,7 @@ export function calcularResumenVentasDia(ventasDia = []) {
     const detalle = v?.pagoDetalle || {};
     const tipo = String(v?.tipoPago || "").toLowerCase().trim();
 
-    resumen.efectivo += Number(detalle?.efectivo || (tipo === "efectivo" ? totalVenta : 0) || 0);
+    resumen.efectivo += obtenerEfectivoNetoVenta(v);
     resumen.tarjeta += Number(detalle?.tarjeta || (tipo === "tarjeta" ? totalVenta : 0) || 0);
     resumen.transferencia += Number(
       detalle?.transferencia || (tipo === "transferencia" ? totalVenta : 0) || 0
@@ -87,6 +91,8 @@ export function calcularResumenVentasDia(ventasDia = []) {
     tarjeta: Number(resumen.tarjeta.toFixed(2)),
     transferencia: Number(resumen.transferencia.toFixed(2)),
     otros: Number(resumen.otros.toFixed(2)),
+    descuentos: Number(resumen.descuentos.toFixed(2)),
+    ventasFiadas: Number(resumen.ventasFiadas.toFixed(2)),
   };
 }
 
@@ -108,7 +114,7 @@ export async function obtenerCorteCajaDia(fechaKey = getDateKeyLocal()) {
   if (tenantMatch) return { id: tenantMatch.id, ...tenantMatch.data() };
 
   if (allowLegacyTenantFallback()) {
-    const legacySnap = await getDoc(doc(db, "cortes_caja", fechaKey));
+    const legacySnap = await getDoc(getDocRef("cortes_caja", fechaKey));
     if (legacySnap.exists()) return { id: legacySnap.id, ...legacySnap.data() };
   }
   return null;
@@ -127,7 +133,7 @@ export async function registrarAperturaCaja(fondoInicialCaja = 0, cajero = {}) {
     aperturaEn: serverTimestamp(),
   };
 
-  await setDoc(doc(db, "cortes_caja", buildCorteCajaDocId(fechaKey)), withTenantData(payload), { merge: true });
+  await setDoc(getDocRef("cortes_caja", buildCorteCajaDocId(fechaKey)), withTenantData(payload), { merge: true });
   return obtenerCorteCajaDia(fechaKey);
 }
 
@@ -215,12 +221,21 @@ export async function cerrarCajaHoy(ventasFuente = null, meta = {}) {
     Number(efectivoDenominaciones || 0) > 0
       ? Number(efectivoDenominaciones.toFixed(2))
       : contadoMeta;
-  const diferencia = efectivoContado === null
-    ? null
-    : Number((efectivoContado - Number(resumen.efectivo || 0)).toFixed(2));
   const cajaFinalEsperada = Number(
     (fondoInicialCaja + Number(resumen.efectivo || 0) - totalRetiros).toFixed(2)
   );
+  const diferencia = efectivoContado === null
+    ? null
+    : Number((efectivoContado - cajaFinalEsperada).toFixed(2));
+  const hayDescuadre = diferencia !== null && Math.abs(diferencia) >= 0.01;
+  const notasCorte = String(meta?.notasCorte || "").trim();
+  if (hayDescuadre && (meta?.permitirDescuadre !== true || !notasCorte)) {
+    const error = new Error(
+      "El descuadre debe confirmarse y documentarse antes de cerrar la caja.",
+    );
+    error.code = "corte-caja/descuadre-no-confirmado";
+    throw error;
+  }
 
   const payload = {
     fechaKey,
@@ -239,15 +254,16 @@ export async function cerrarCajaHoy(ventasFuente = null, meta = {}) {
     egresos,
     totalRetiros,
     conteoEfectivo: {
-      esperado: Number(resumen.efectivo || 0),
+      esperado: cajaFinalEsperada,
       contado: efectivoContado,
       diferencia,
     },
-    notasCorte: String(meta?.notasCorte || "").trim(),
+    notasCorte,
+    descuadreReconocido: hayDescuadre && meta?.permitirDescuadre === true,
     ventasIds: ventasDia.map((v) => v.id),
   };
 
-  await setDoc(doc(db, "cortes_caja", buildCorteCajaDocId(fechaKey)), withTenantData(payload), { merge: true });
+  await setDoc(getDocRef("cortes_caja", buildCorteCajaDocId(fechaKey)), withTenantData(payload), { merge: true });
   return { yaCerrado: false, corte: payload };
 }
 
@@ -303,7 +319,9 @@ export async function autoCerrarCortesPendientes() {
       retiros: Array.isArray(corte?.retiros) ? corte.retiros : [],
       totalRetiros: Number(corte?.totalRetiros || 0),
       conteoEfectivo: corte?.conteoEfectivo || {
-        esperado: Number(resumen.efectivo || 0),
+        esperado: Number(
+          (Number(corte?.fondoInicialCaja || 0) + Number(resumen.efectivo || 0) - Number(corte?.totalRetiros || 0)).toFixed(2)
+        ),
         contado: null,
         diferencia: null,
       },
@@ -312,7 +330,7 @@ export async function autoCerrarCortesPendientes() {
     };
 
     tareas.push(
-      setDoc(doc(db, "cortes_caja", buildCorteCajaDocId(fechaKey)), withTenantData(payload), { merge: true }),
+      setDoc(getDocRef("cortes_caja", buildCorteCajaDocId(fechaKey)), withTenantData(payload), { merge: true }),
     );
   }
 

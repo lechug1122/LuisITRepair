@@ -131,9 +131,8 @@ export default function Icon({ name = "box", className = "" }) {
     case "donacion":
       return (
         <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 21s-7.5-4.6-9.2-9.3C1.6 8.4 3.7 5 7.2 5c2 0 3.5 1.1 4.3 2.3C12.3 6.1 13.8 5 15.8 5c3.5 0 5.6 3.4 4.4 6.7C18.5 16.4 12 21 12 21z" stroke="#BE123C" strokeWidth="1.35" fill="#FFE4E6" strokeLinejoin="round" />
-          <path d="M9.2 12.2h5.6" stroke="#BE123C" strokeWidth="1.25" strokeLinecap="round" />
-          <path d="M12 9.4V15" stroke="#BE123C" strokeWidth="1.25" strokeLinecap="round" />
+          <path d="M12 20.5s-7.5-4.6-9.5-9.4C1.3 8.1 3 5 6.2 5c1.9 0 3.4 1 4.8 2.7C12.4 6 13.9 5 15.8 5 19 5 20.7 8.1 19.5 11.1 17.5 15.9 12 20.5 12 20.5z" stroke="#DC2626" strokeWidth="1.4" fill="#FEE2E2" strokeLinejoin="round" />
+          <path d="M12 9v6M9 12h6" stroke="#DC2626" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
       );
 

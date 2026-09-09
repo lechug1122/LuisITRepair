@@ -27,31 +27,7 @@
     <meta name="theme-color" content="#092648" />
     <meta name="google-adsense-account" content="ca-pub-6040311717869766" />
     <title>CajaLibre | Punto de venta gratuito para tu negocio</title>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      (function () {
-        var choice = null;
-        try { choice = localStorage.getItem("cajalibre_cookie_consent"); } catch (_) {}
-        var granted = choice === "accepted";
-        gtag("consent", "default", {
-          ad_storage: granted ? "granted" : "denied",
-          ad_user_data: granted ? "granted" : "denied",
-          ad_personalization: granted ? "granted" : "denied",
-          analytics_storage: granted ? "granted" : "denied",
-          functionality_storage: "granted",
-          security_storage: "granted",
-          wait_for_update: 500
-        });
-        gtag("set", "ads_data_redaction", !granted);
-      })();
-    </script>
     
-    <script
-      async
-      src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6040311717869766"
-      crossorigin="anonymous"
-    ></script>
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -84,6 +60,30 @@
       if (window.location.pathname !== "/") {
         document.querySelector('meta[name="robots"]').content = "noindex, nofollow";
       }
+    </script>
+    <script>
+      (function () {
+        var recoveryKey = "cajalibre_module_recovery_at";
+        function recoverModuleLoad() {
+          var now = Date.now();
+          var lastAttempt = Number(sessionStorage.getItem(recoveryKey) || 0);
+          if (now - lastAttempt < 15000) return;
+          sessionStorage.setItem(recoveryKey, String(now));
+          var nextUrl = new URL(window.location.href);
+          nextUrl.searchParams.set("app_refresh", String(now));
+          window.location.replace(nextUrl.toString());
+        }
+        window.addEventListener("vite:preloadError", function (event) {
+          event.preventDefault();
+          recoverModuleLoad();
+        });
+        window.addEventListener("error", function (event) {
+          var target = event && event.target;
+          if (target && target.tagName === "SCRIPT" && target.type === "module") {
+            recoverModuleLoad();
+          }
+        }, true);
+      })();
     </script>
   </head>
   <body>

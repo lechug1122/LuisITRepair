@@ -1,3 +1,4 @@
+import { getCollectionRef } from "../js/services/tenant";
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "firebase/auth";
@@ -45,7 +46,7 @@ export default function Navbar({
     email: auth.currentUser?.email,
   });
   const ownerBase = cuentaPrincipalUid || uid;
-  const { nombreEmpresa, serviciosHabilitados, tipoNegocioActivo } = useEmpresaConfig();
+  const { nombreEmpresa, logoEmpresa, serviciosHabilitados, tipoNegocioActivo } = useEmpresaConfig();
   const [usuarioNombre, setUsuarioNombre] = useState("Usuario");
   const [cerrandoSesion, setCerrandoSesion] = useState(false);
   const [menuUsuarioAbierto, setMenuUsuarioAbierto] = useState(false);
@@ -141,7 +142,7 @@ export default function Navbar({
     };
 
     const unsubEmpleados = onSnapshot(
-      query(collection(db, "empleados"), where("cuentaPrincipalUid", "==", ownerBase)),
+      query(getCollectionRef("empleados"), where("cuentaPrincipalUid", "==", ownerBase)),
       (snapshot) => {
         empleados = snapshot.docs
           .map((item) => ({ id: item.id, ...item.data() }))
@@ -244,6 +245,9 @@ export default function Navbar({
           to="/home"
           onClick={() => setMenuMovilAbierto(false)}
         >
+          {logoEmpresa && (
+            <img className="navbar-brand-logo" src={logoEmpresa} alt="" />
+          )}
           {nombreEmpresa || "LuisITRepair"}
         </NavLink>
 

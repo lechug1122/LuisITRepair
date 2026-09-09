@@ -1,11 +1,23 @@
 {
   "projects": {
-    "default": "hojaservice-3ab3d",
+    "default": "cajalibre-b4ca5",
+    "cajalibre": "cajalibre-b4ca5",
     "hojasservice-3a3d": "hojaservice-3ab3d",
     "hojaservice-3ab3d": "hojaservice-3ab3d",
     "hajasservice": "hojaservice-3ab3d",
     "hojaservice": "hojaservice-3ab3d"
   },
-  "targets": {},
+  "targets": {
+    "cajalibre-b4ca5": {
+      "hosting": {
+        "app": [
+          "cajalibre-b4ca5"
+        ],
+        "ads": [
+          "cajalibre-ads"
+        ]
+      }
+    }
+  },
   "etags": {}
 }

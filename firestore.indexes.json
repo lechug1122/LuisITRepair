@@ -46,6 +46,102 @@
   //     ]
   //   },
   // ]
-  "indexes": [],
-  "fieldOverrides": []
+  "indexes": [
+    {
+        "collectionGroup": "negocios",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "estado",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "createdAt",
+                "order": "DESCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "negocios",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "estado",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "nombre",
+                "order": "ASCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "negocios",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "estado",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "ultimaActividad",
+                "order": "DESCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "negocios",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "setupCompleto",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "createdAt",
+                "order": "DESCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "negocios",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "setupCompleto",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "nombre",
+                "order": "ASCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "negocios",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "setupCompleto",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "ultimaActividad",
+                "order": "DESCENDING"
+            }
+        ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "servicios",
+      "fieldPath": "folio",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    }
+  ]
 }

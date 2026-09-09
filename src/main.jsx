@@ -5,6 +5,7 @@ import './index.css'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App'
+import { AutorizacionProvider } from './hooks/useAutorizacionActual';
 import { applyAparienciaFromStorage } from "./js/services/apariencia_config";
 import { auth } from "./initializer/firebase";
 import { readEmpresaConfigCache, syncEmpresaDocumentTitle } from "./js/services/configure_empresa";
@@ -37,6 +38,6 @@ if ("serviceWorker" in navigator) {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <BrowserRouter>
-    <App />
+    <AutorizacionProvider><App /></AutorizacionProvider>
   </BrowserRouter>
 )

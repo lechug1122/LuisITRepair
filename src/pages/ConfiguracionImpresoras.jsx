@@ -65,6 +65,7 @@ export default function ConfiguracionImpresoras() {
   const [nombreImpresoraTicket, setNombreImpresoraTicket] = useState(
     impresoras.nombreImpresoraTicket,
   );
+  const [tamanoTicket, setTamanoTicket] = useState(impresoras.tamanoTicket);
   const [nombreImpresoraHojaServicio, setNombreImpresoraHojaServicio] = useState(
     impresoras.nombreImpresoraHojaServicio,
   );
@@ -88,6 +89,7 @@ export default function ConfiguracionImpresoras() {
   useEffect(() => {
     setModoImpresion(impresoras.modoImpresion);
     setNombreImpresoraTicket(impresoras.nombreImpresoraTicket);
+    setTamanoTicket(impresoras.tamanoTicket);
     setNombreImpresoraHojaServicio(impresoras.nombreImpresoraHojaServicio);
     setTamanoHojaServicio(impresoras.tamanoHojaServicio);
     setSalidaTicketMovil(impresoras.salidaTicketMovil);
@@ -101,6 +103,7 @@ export default function ConfiguracionImpresoras() {
     impresoras.modoImpresion,
     impresoras.nombreImpresoraHojaServicio,
     impresoras.nombreImpresoraTicket,
+    impresoras.tamanoTicket,
     impresoras.salidaTicketMovil,
     impresoras.tamanoHojaServicio,
   ]);
@@ -230,6 +233,7 @@ export default function ConfiguracionImpresoras() {
       await actualizarImpresorasConfig({
         modoImpresion,
         nombreImpresoraTicket,
+        tamanoTicket,
         nombreImpresoraHojaServicio,
         tamanoHojaServicio,
         salidaTicketMovil,
@@ -319,6 +323,14 @@ export default function ConfiguracionImpresoras() {
 
           <div className="cfg-ticket-block">
             <h4>Impresora de tickets</h4>
+            <label>Ancho del papel térmico</label>
+            <select value={tamanoTicket} onChange={(e) => setTamanoTicket(e.target.value)}>
+              <option value="58mm">58 mm</option>
+              <option value="80mm">80 mm</option>
+            </select>
+            <small className="cfg-pos-help">
+              Se aplica a tickets de POS y documentos térmicos de facturación.
+            </small>
             <label>Nombre o alias para tickets</label>
             <select
               value={nombreImpresoraTicket}

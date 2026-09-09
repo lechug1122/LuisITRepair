@@ -15,6 +15,7 @@ import {
   Cell,
 } from "recharts";
 import Calendar from "react-calendar";
+import { FiBarChart2, FiChevronDown, FiFileText } from "react-icons/fi";
 import "react-calendar/dist/Calendar.css";
 import Layout from "../components/Layout";
 import { getDocs } from "firebase/firestore";
@@ -36,6 +37,8 @@ import { filterItemsByTenant, getTenantCollectionQuery } from "../js/services/te
 import ModalEgresos from "../components/modal_egresos";
 import { imprimirTicketVenta, visualizarTicketVenta } from "../components/print_ticket_venta";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
+import { obtenerEfectivoNetoVenta } from "../js/services/efectivo_venta";
+import { generarExcelFacturaGlobal, generarExcelReporteNegocio } from "../js/services/excel_reporte_negocio";
 import "../css/reportes.css";
 
 const money = (value) =>
@@ -213,9 +216,11 @@ const TIPO_EGRESO_META = {
 };
 
 export default function Reportes() {
-  const { serviciosHabilitados } = useEmpresaConfig();
+  const { empresa, serviciosHabilitados } = useEmpresaConfig();
   const [ventas, setVentas] = useState([]);
+  const [cuentasPorCobrar, setCuentasPorCobrar] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [generandoExcel, setGenerandoExcel] = useState("");
   const [cerrandoCaja, setCerrandoCaja] = useState(false);
   const [cajaCerradaHoy, setCajaCerradaHoy] = useState(false);
   const [mostrarModalCierre, setMostrarModalCierre] = useState(false);
@@ -223,6 +228,7 @@ export default function Reportes() {
   const [fondoInicialCaja, setFondoInicialCaja] = useState("");
   const [denominaciones, setDenominaciones] = useState({});
   const [notasCorte, setNotasCorte] = useState("");
+  const [descuadreConfirmado, setDescuadreConfirmado] = useState(false);
   const [cortesHistorial, setCortesHistorial] = useState([]);
   const [filtroCajero, setFiltroCajero] = useState("");
   const [fechaCorteDesde, setFechaCorteDesde] = useState("");
@@ -266,6 +272,7 @@ export default function Reportes() {
         cargarHistorialCortes(),
         cargarEgresosDia(),
         cargarNombresEmpleados(),
+        cargarCuentasPorCobrar(),
       ]);
     };
 
@@ -273,6 +280,11 @@ export default function Reportes() {
       console.warn("[reportes] No se pudo completar la carga inicial:", error?.code || error);
     });
   }, []);
+
+  const cargarCuentasPorCobrar = async () => {
+    const snapshot = await getDocs(getTenantCollectionQuery("fiados"));
+    setCuentasPorCobrar(filterItemsByTenant(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))));
+  };
 
   useEffect(() => {
     try {
@@ -455,6 +467,7 @@ export default function Reportes() {
 
   const updateDenominacion = (valor, cantidad) => {
     const key = String(valor);
+    setDescuadreConfirmado(false);
     setDenominaciones((prev) => ({
       ...prev,
       [key]: Math.max(0, Number(cantidad || 0)),
@@ -466,7 +479,7 @@ export default function Reportes() {
     const servicioItem = getVentaServicioItem(venta);
 
     return {
-      ventaId: String(venta?.id || "-"),
+      ventaId: String(venta?.folioTicket || venta?.id || "-"),
       fecha: toDate(venta?.fecha) || new Date(),
       atendio: getVentaAtendioLabel(venta, empleadosNombreIndex),
       cliente: getVentaClienteTicketData(venta),
@@ -479,7 +492,11 @@ export default function Reportes() {
       aplicaIVA: venta?.aplicarIVA !== false,
       ivaPorcentaje: Number(venta?.ivaPorcentaje || 0.16),
       iva: Number(venta?.iva || 0),
+      ieps: Number(venta?.ieps || 0),
       total: Number(venta?.total || 0),
+      montoRecibido: Number(detalle?.efectivo || 0),
+      cambio: Number(detalle?.cambio || 0),
+      preciosIncluyenImpuestos: venta?.preciosIncluyenImpuestos === true,
     };
   };
 
@@ -501,10 +518,60 @@ export default function Reportes() {
     }
   };
 
+  const generarReporteFacturaGlobal = async () => {
+    const fechaBase = fechaHasta ? new Date(`${fechaHasta}T12:00:00`) : new Date();
+    const year = fechaBase.getFullYear();
+    const month = fechaBase.getMonth();
+    const ventasMes = ventas
+      .filter((venta) => {
+        const fecha = toDate(venta?.fecha);
+        return fecha && fecha.getFullYear() === year && fecha.getMonth() === month;
+      })
+      .sort((a, b) => (toDate(a?.fecha)?.getTime() || 0) - (toDate(b?.fecha)?.getTime() || 0));
+
+    if (ventasMes.length === 0) {
+      alert("No hay ventas registradas en el mes seleccionado.");
+      return;
+    }
+
+    try {
+      setGenerandoExcel("factura");
+      await generarExcelFacturaGlobal({ empresa, ventas: ventasMes, fechaBase });
+    } catch (error) {
+      console.error("No se pudo generar el reporte para factura global:", error);
+      alert("No se pudo generar el reporte para factura global.");
+    } finally {
+      setGenerandoExcel("");
+    }
+  };
+
+  const handleGenerarExcel = async () => {
+    if (generandoExcel) return;
+    if (!ventasFiltradas.length) {
+      alert("No hay ventas en el periodo seleccionado para generar el reporte.");
+      return;
+    }
+    try {
+      setGenerandoExcel("ejecutivo");
+      await generarExcelReporteNegocio({ empresa, ventas: ventasFiltradas, fechaDesde, fechaHasta });
+    } catch (error) {
+      console.error("No se pudo generar el reporte de Excel:", error);
+      alert("No se pudo generar el reporte de Excel. Intenta nuevamente.");
+    } finally {
+      setGenerandoExcel("");
+    }
+  };
+
   const handleCorteCaja = async () => {
     if (cerrandoCaja) return;
     if (!fondoInicialValido) {
       alert("Captura un fondo inicial valido (0 o mayor) antes de cerrar.");
+      return;
+    }
+    if (hayDescuadre && (!descuadreConfirmado || !notasCorte.trim())) {
+      alert(
+        "El efectivo contado no coincide con el esperado. Para cerrar con un descuadre, confirma el faltante o sobrante y documenta el motivo en Notas del corte.",
+      );
       return;
     }
 
@@ -525,6 +592,7 @@ export default function Reportes() {
           nombre: currentCajeroNombre || "",
         },
         notasCorte,
+        permitirDescuadre: descuadreConfirmado,
       });
       setCajaCerradaHoy(true);
       setCorteHoyDetalle(res.corte || null);
@@ -539,6 +607,7 @@ export default function Reportes() {
       await generarPdfCorteCajaDia(ventas, {
         corte: res.corte || null,
         fechaKey: res?.corte?.fechaKey || ymd(new Date()),
+        cuentasPorCobrar,
       });
       setMostrarModalCierre(false);
     } catch (err) {
@@ -554,11 +623,13 @@ export default function Reportes() {
       await generarPdfCorteCajaDia(ventas, {
         corte: corteHoyDetalle || null,
         fechaKey: ymd(new Date()),
+        cuentasPorCobrar,
       });
       return;
     }
     // Sincroniza egresos del dia antes de abrir el modal de cierre.
     await cargarEgresosDia();
+    setDescuadreConfirmado(false);
     setMostrarModalCierre(true);
   };
 
@@ -572,6 +643,7 @@ export default function Reportes() {
     await generarPdfCorteCajaDia(ventasDia, {
       corte: corte || null,
       fechaKey: key,
+      cuentasPorCobrar,
     });
   };
 
@@ -622,6 +694,9 @@ export default function Reportes() {
     const iva = ventasFiltradas.reduce((acc, v) => acc + Number(v.iva || 0), 0);
     return { total, tickets, promedio, totalHoy, unidades, servicios, iva };
   }, [ventas, ventasFiltradas]);
+
+  const totalDescuentosPeriodo = ventasFiltradas.reduce((total, venta) => total + Number(venta?.descuentoManual || 0) + Number(venta?.descuentoRegla || 0) + Number(venta?.descuentoPuntos || 0), 0);
+  const totalFiadoPeriodo = ventasFiltradas.filter((venta) => String(venta?.tipoPago || "").toLowerCase() === "fiado").reduce((total, venta) => total + Number(venta?.total || 0), 0);
 
   const ventasPorDia = useMemo(() => {
     const map = new Map();
@@ -829,7 +904,7 @@ export default function Reportes() {
       const detalle = v?.pagoDetalle || {};
       const tipo = String(v?.tipoPago || "").toLowerCase();
 
-      resumen.efectivo += Number(detalle.efectivo || (tipo === "efectivo" ? v.total : 0) || 0);
+      resumen.efectivo += obtenerEfectivoNetoVenta(v);
       resumen.tarjeta += Number(detalle.tarjeta || (tipo === "tarjeta" ? v.total : 0) || 0);
       resumen.transferencia += Number(
         detalle.transferencia || (tipo === "transferencia" ? v.total : 0) || 0
@@ -914,10 +989,7 @@ export default function Reportes() {
 
   const efectivoEsperadoHoy = useMemo(() => {
     return ventasHoy.reduce((acc, v) => {
-      const tipo = String(v?.tipoPago || "").toLowerCase();
-      const detalle = v?.pagoDetalle || {};
-      const efectivo = Number(detalle.efectivo || (tipo === "efectivo" ? v.total : 0) || 0);
-      return acc + efectivo;
+      return acc + obtenerEfectivoNetoVenta(v);
     }, 0);
   }, [ventasHoy]);
 
@@ -951,7 +1023,10 @@ export default function Reportes() {
 
   const totalSalidasCaja = totalEgresosDia;
   const cajaFinalEsperada = fondoInicialNum + efectivoEsperadoHoy - totalSalidasCaja;
-  const diferenciaContado = totalDenominaciones - efectivoEsperadoHoy;
+  const diferenciaContado = totalDenominaciones - cajaFinalEsperada;
+  const hayDescuadre = Math.abs(diferenciaContado) >= 0.01;
+  const cierreConDescuadreDocumentado =
+    !hayDescuadre || (descuadreConfirmado && notasCorte.trim().length > 0);
   const aperturaPendiente = !cajaCerradaHoy && !fondoInicialValido;
 
   const cortesHistorialFiltrado = useMemo(() => {
@@ -1110,10 +1185,28 @@ export default function Reportes() {
           <h1>Reportes</h1>
           <div className="reportes-header-actions">
 
+            <details className="excel-report-menu">
+              <summary className={`btn-excel-report ${generandoExcel || loading ? "is-disabled" : ""}`}>
+                <FiBarChart2 aria-hidden="true" />
+                <span>{generandoExcel ? "Generando Excel..." : "Generar Excel"}</span>
+                <FiChevronDown className="excel-menu-chevron" aria-hidden="true" />
+              </summary>
+              <div className="excel-report-options">
+                <button type="button" onClick={handleGenerarExcel} disabled={!!generandoExcel || loading}>
+                  <FiBarChart2 aria-hidden="true" />
+                  <span><strong>Reporte ejecutivo</strong><small>Periodo y filtros seleccionados</small></span>
+                </button>
+                <button type="button" onClick={generarReporteFacturaGlobal} disabled={!!generandoExcel || loading}>
+                  <FiFileText aria-hidden="true" />
+                  <span><strong>Factura global</strong><small>Mes de la fecha final seleccionada</small></span>
+                </button>
+              </div>
+            </details>
+
             <button
               className="btn-refresh"
               onClick={async () => {
-                await Promise.all([obtenerVentas(), cargarEstadoCorteHoy(), cargarHistorialCortes(), cargarEgresosDia()]);
+                await Promise.all([obtenerVentas(), cargarEstadoCorteHoy(), cargarHistorialCortes(), cargarEgresosDia(), cargarCuentasPorCobrar()]);
               }}
               type="button"
             >
@@ -1181,7 +1274,14 @@ export default function Reportes() {
             <small>IVA total</small>
             <b>{money(kpis.iva)}</b>
           </div>
+          <div className="kpi-card"><small>Descuentos aplicados</small><b>{money(totalDescuentosPeriodo)}</b></div>
+          <div className="kpi-card"><small>Ventas fiadas</small><b>{money(totalFiadoPeriodo)}</b></div>
         </div>
+
+        <section className="reportes-deudas-card">
+          <div className="reportes-deudas-head"><div><span>Cuentas por cobrar</span><h2>Quiénes deben</h2><p>Saldos vigentes y vencidos registrados mediante ventas fiadas.</p></div><strong>{money(cuentasPorCobrar.reduce((total, cuenta) => total + Number(cuenta.saldo || 0), 0))}</strong></div>
+          <div className="reportes-deudas-table-wrap"><table><thead><tr><th>Cliente</th><th>Teléfono</th><th>Venta</th><th>Vencimiento</th><th>Estado</th><th>Saldo</th></tr></thead><tbody>{cuentasPorCobrar.filter((cuenta) => Number(cuenta.saldo || 0) > 0).sort((a,b) => String(a.fechaVencimiento || "").localeCompare(String(b.fechaVencimiento || ""))).map((cuenta) => { const vencida = cuenta.fechaVencimiento && cuenta.fechaVencimiento < ymd(new Date()); return <tr key={cuenta.id}><td><strong>{cuenta.clienteNombre || "Sin nombre"}</strong></td><td>{cuenta.clienteTelefono || "-"}</td><td>{cuenta.folioVenta || cuenta.ventaId || "-"}</td><td>{cuenta.fechaVencimiento || "-"}</td><td><span className={vencida ? "deuda-vencida" : "deuda-vigente"}>{vencida ? "Vencida" : "Vigente"}</span></td><td><b>{money(cuenta.saldo)}</b></td></tr>})}{!cuentasPorCobrar.some((cuenta) => Number(cuenta.saldo || 0) > 0) && <tr><td colSpan="6" className="deudas-empty">No hay cuentas pendientes.</td></tr>}</tbody></table></div>
+        </section>
 
         <div className="reportes-grid">
           <div className="chart-card chart-card-sales">
@@ -1748,11 +1848,11 @@ export default function Reportes() {
                   />
                 </div>
                 <div>
-                  <label>Efectivo esperado</label>
+                  <label>Ventas netas en efectivo</label>
                   <div className="conteo-caja-value">{money(efectivoEsperadoHoy)}</div>
                 </div>
                 <div>
-                  <label>Caja final esperada</label>
+                  <label>Efectivo esperado</label>
                   <div className="conteo-caja-value">{money(cajaFinalEsperada)}</div>
                 </div>
               </div>
@@ -1782,7 +1882,7 @@ export default function Reportes() {
                 </div>
                 <div>
                   <label>Diferencia</label>
-                  <div className={`conteo-caja-value ${diferenciaContado < 0 ? "neg" : "pos"}`}>
+                  <div className={`conteo-caja-value ${hayDescuadre ? (diferenciaContado < 0 ? "neg" : "pos") : "ok"}`}>
                     {money(diferenciaContado)}
                   </div>
                 </div>
@@ -1791,6 +1891,26 @@ export default function Reportes() {
                   <div className="conteo-caja-value">{money(totalSalidasCaja)}</div>
                 </div>
               </div>
+
+              {hayDescuadre && (
+                <div className="alerta-descuadre-caja" role="alert">
+                  <strong>
+                    {diferenciaContado < 0 ? "Faltante detectado" : "Sobrante detectado"}: {money(Math.abs(diferenciaContado))}
+                  </strong>
+                  <span>
+                    El cierre no coincide con el fondo inicial, las ventas en efectivo y las salidas registradas.
+                    Revisa las denominaciones o escribe el motivo en Notas del corte y confirma el descuadre.
+                  </span>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={descuadreConfirmado}
+                      onChange={(e) => setDescuadreConfirmado(e.target.checked)}
+                    />
+                    Confirmo que revisé el conteo y deseo registrar este descuadre.
+                  </label>
+                </div>
+              )}
 
               <div className="retiros-wrap">
                 <div className="retiros-head">
@@ -1856,7 +1976,7 @@ export default function Reportes() {
                   className="btn-corte"
                   type="button"
                   onClick={handleCorteCaja}
-                  disabled={cerrandoCaja}
+                  disabled={cerrandoCaja || !cierreConDescuadreDocumentado}
                 >
                   {cerrandoCaja ? "Cerrando..." : "Confirmar cierre y generar PDF"}
                 </button>

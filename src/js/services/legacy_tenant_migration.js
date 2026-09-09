@@ -1,4 +1,5 @@
-import { collection, doc, getDoc, getDocs, writeBatch } from "firebase/firestore";
+import { getDocRef } from "./tenant";
+import { collection, getDoc, getDocs, writeBatch } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
 
 const MIGRATION_KEY_PREFIX = "tenant_legacy_migrated_v1";
@@ -61,11 +62,11 @@ async function ensureConfigTenantCopies(tenantId) {
   ];
 
   for (const name of configNames) {
-    const scopedRef = doc(db, "configuracion", `${name}__${tenantId}`);
+    const scopedRef = getDocRef("configuracion", `${name}__${tenantId}`);
     const scopedSnap = await getDoc(scopedRef);
     if (scopedSnap.exists()) continue;
 
-    const legacyRef = doc(db, "configuracion", name);
+    const legacyRef = getDocRef("configuracion", name);
     const legacySnap = await getDoc(legacyRef);
     if (!legacySnap.exists()) continue;
 

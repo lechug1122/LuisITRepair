@@ -13,6 +13,7 @@ export function createDefaultFacturacionConfig() {
     autoIncrement: true,
     razonSocial: empresa.nombre,
     rfcEmisor: "",
+    rfcReceptorPublicoGeneral: "XAXX010101000",
     regimenFiscal: "626",
     codigoPostalEmisor: "",
     usoCFDI: "G03",
@@ -64,6 +65,9 @@ export function buildFacturacionConfig(raw = {}) {
     autoIncrement: toBool(raw.autoIncrement, defaults.autoIncrement),
     razonSocial: toText(raw.razonSocial, defaults.razonSocial),
     rfcEmisor: normalizeRFC(toText(raw.rfcEmisor, defaults.rfcEmisor)),
+    rfcReceptorPublicoGeneral: normalizeRFC(
+      toText(raw.rfcReceptorPublicoGeneral, defaults.rfcReceptorPublicoGeneral),
+    ),
     regimenFiscal: toText(raw.regimenFiscal, defaults.regimenFiscal),
     codigoPostalEmisor: toText(raw.codigoPostalEmisor, defaults.codigoPostalEmisor)
       .replace(/\D/g, "")

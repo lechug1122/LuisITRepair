@@ -39,6 +39,16 @@ export const PERMISOS_CATALOGO = [
     description: "Permite entrar a Punto de Venta y cobrar.",
   },
   {
+    key: "promociones.gestionar",
+    label: "Gestionar promociones",
+    description: "Permite crear, editar, activar y eliminar promociones.",
+  },
+  {
+    key: "descuentos.gestionar",
+    label: "Gestionar descuentos",
+    description: "Permite crear, editar, activar y eliminar reglas de descuento.",
+  },
+  {
     key: "productos.ver",
     label: "Ver inventario",
     description: "Permite abrir y gestionar el inventario.",

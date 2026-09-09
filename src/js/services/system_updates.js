@@ -1,11 +1,23 @@
+/**
+ * Aviso de version que se muestra en el panel de notificaciones de los
+ * administradores (ver MainLayout).
+ *
+ * Es un anuncio local, no un documento de Firestore: no genera lecturas ni
+ * escrituras. Para retirarlo basta con poner `activo: false`.
+ */
 export const CURRENT_SYSTEM_UPDATE = {
-  key: "",
-  fecha: 0,
-  titulo: "",
-  detalle: "",
-  accion: "",
-  accionTexto: "",
-  activo: false,
+  key: "cajalibre-2-2",
+  // Fecha de publicacion de la version. Fija a proposito: el aviso debe
+  // mostrar cuando salio la actualizacion, no cuando se abrio el sistema.
+  fecha: Date.UTC(2026, 8, 8, 12, 0, 0),
+  titulo: "CajaLibre 2.2 disponible",
+  detalle:
+    "Llega CajaLibre Premium: sin publicidad, soporte preferente, logo de tu negocio, "
+    + "funciones adicionales y usuarios ilimitados por $300 MXN al mes. "
+    + "El plan gratuito sigue igual. Consulta las novedades desde el pie de pagina.",
+  accion: "/configuracion/mi-suscripcion",
+  accionTexto: "Ver Premium",
+  activo: true,
 };
 
 export function buildSystemUpdateNotification() {

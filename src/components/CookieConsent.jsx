@@ -2,34 +2,27 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import "../css/cookie-consent.css";
 
-const STORAGE_KEY = "cajalibre_cookie_consent";
+// Se versiona la llave para que el aviso se muestre otra vez cuando cambia lo
+// que comunica. Antes ofrecia aceptar o rechazar la publicidad, pero esa
+// eleccion no se respetaba: los anuncios se cargaban igual. Ahora el aviso
+// informa (la publicidad forma parte del plan gratuito) en vez de ofrecer una
+// opcion inexistente, asi que quien ya habia respondido debe volver a verlo.
+const STORAGE_KEY = "cajalibre_aviso_cookies_v2";
 
-function updateGoogleConsent(accepted) {
-  window.dataLayer = window.dataLayer || [];
-  window.gtag = window.gtag || function gtag() {
-    window.dataLayer.push(arguments);
-  };
-  window.gtag("consent", "update", {
-    ad_storage: accepted ? "granted" : "denied",
-    ad_user_data: accepted ? "granted" : "denied",
-    ad_personalization: accepted ? "granted" : "denied",
-    analytics_storage: accepted ? "granted" : "denied",
-    functionality_storage: "granted",
-    security_storage: "granted",
-  });
-  window.gtag("set", "ads_data_redaction", !accepted);
+function faltaAvisar() {
+  try {
+    return !localStorage.getItem(STORAGE_KEY);
+  } catch {
+    // Sin acceso al almacenamiento no se puede saber si ya lo vio: se muestra.
+    return true;
+  }
 }
 
 export default function CookieConsent() {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(faltaAvisar);
   const [details, setDetails] = useState(false);
 
   useEffect(() => {
-    try {
-      setOpen(!localStorage.getItem(STORAGE_KEY));
-    } catch {
-      setOpen(true);
-    }
     const reopen = () => {
       setDetails(true);
       setOpen(true);
@@ -38,13 +31,12 @@ export default function CookieConsent() {
     return () => window.removeEventListener("cajalibre:cookie-settings", reopen);
   }, []);
 
-  const save = (accepted) => {
+  const confirmar = () => {
     try {
-      localStorage.setItem(STORAGE_KEY, accepted ? "accepted" : "rejected");
+      localStorage.setItem(STORAGE_KEY, "visto");
     } catch {
-      // La preferencia se conserva al menos durante la pagina actual.
+      // El aviso se oculta al menos durante la pagina actual.
     }
-    updateGoogleConsent(accepted);
     setOpen(false);
     setDetails(false);
   };
@@ -56,15 +48,17 @@ export default function CookieConsent() {
       <div className="cookie-consent-copy">
         <span className="cookie-consent-icon" aria-hidden="true">🍪</span>
         <div>
-          <h2 id="cookie-title">Tu privacidad importa</h2>
+          <h2 id="cookie-title">Cookies y publicidad</h2>
           <p>
-            Usamos almacenamiento necesario para que CajaLibre funcione. Con tu permiso,
-            Google puede usar cookies y datos para mostrar y medir anuncios.
+            Usamos almacenamiento necesario para que CajaLibre funcione. El plan
+            gratuito muestra anuncios y el proveedor puede usar cookies para
+            servirlos y medirlos. Con CajaLibre Premium no se muestran anuncios.
           </p>
           {details && (
             <div className="cookie-consent-details">
               <p><strong>Necesarias:</strong> seguridad, sesión y preferencias básicas; permanecen activas.</p>
-              <p><strong>Publicidad y medición:</strong> Google AdSense y medición publicitaria; son opcionales.</p>
+              <p><strong>Publicidad y medición:</strong> los anuncios los sirve Adsterra desde un dominio independiente, aislado de tu sesión y de los datos de tu negocio. Puede usar cookies para servir, limitar y medir anuncios y detectar fraude.</p>
+              <p><strong>Cómo desactivarlos:</strong> los anuncios forman parte del plan gratuito y ayudan a sostener el proyecto. Para usar CajaLibre sin anuncios, activa Premium.</p>
             </div>
           )}
           <div className="cookie-consent-links">
@@ -74,11 +68,16 @@ export default function CookieConsent() {
         </div>
       </div>
       <div className="cookie-consent-actions">
-        <button type="button" className="cookie-btn secondary" onClick={() => setDetails((value) => !value)}>
-          {details ? "Ocultar" : "Configurar"}
+        <button
+          type="button"
+          className="cookie-btn secondary"
+          onClick={() => setDetails((value) => !value)}
+        >
+          {details ? "Ocultar" : "Más información"}
         </button>
-        <button type="button" className="cookie-btn secondary" onClick={() => save(false)}>Rechazar</button>
-        <button type="button" className="cookie-btn primary" onClick={() => save(true)}>Aceptar</button>
+        <button type="button" className="cookie-btn primary" onClick={confirmar}>
+          Entendido
+        </button>
       </div>
     </div>
   );

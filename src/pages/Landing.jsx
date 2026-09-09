@@ -14,11 +14,9 @@ import AppFooter from "../components/AppFooter";
 import logo from "../assets/logo.png";
 import "../css/landing.css";
 
-const WHATSAPP_NUMBER = "522731430147";
+const WHATSAPP_NUMBER = "522731159520";
 const whatsappUrl = (message) =>
   `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
-const PAYPAL_URL = "https://paypal.me/CajaLibre";
-const MERCADO_PAGO_URL = "https://link.mercadopago.com.mx/cajalibre";
 
 const features = [
   [FiShoppingCart, "Punto de venta", "Registra ventas con rapidez y genera tickets."],
@@ -55,7 +53,6 @@ const faqs = [
   ["¿Mis datos están seguros?", "Aplicamos controles de acceso y cada negocio administra sus propios usuarios. También recomendamos contraseñas únicas y mantener tus dispositivos protegidos."],
   ["¿Puedo usar lectores de código de barras?", "Sí. CajaLibre está preparado para agilizar ventas usando códigos de barras y lectores compatibles con tu dispositivo."],
   ["¿Ofrecen soporte o capacitación?", "Sí. La instalación, configuración, capacitación y asesoría personalizada son servicios opcionales que pueden tener un costo."],
-  ["¿Cómo puedo apoyar el proyecto?", "Puedes donar por PayPal, Mercado Pago o transferencia bancaria. Cada aportación ayuda a mantener y mejorar la plataforma."]
 ];
 
 function Brand({ footer = false }) {
@@ -166,7 +163,7 @@ export default function Landing() {
         <nav className={menu ? "open" : ""} aria-label="Navegación principal">
           <button onClick={() => scroll("inicio")}>Inicio</button><button onClick={() => scroll("funciones")}>Funciones</button>
           <button onClick={() => scroll("negocios")}>Negocios</button><button onClick={() => scroll("como-funciona")}>Cómo funciona</button>
-          <button onClick={() => scroll("preguntas")}>Preguntas frecuentes</button><button onClick={() => scroll("donar")}>Donar</button>
+          <button onClick={() => scroll("preguntas")}>Preguntas frecuentes</button>
           <div className="mobile-actions"><button className="outline-btn" onClick={() => { setLogin(true); setMenu(false); }}>Iniciar sesión</button>{register}</div>
         </nav>
         <div className="nav-actions"><button className="outline-btn" onClick={() => setLogin(true)}>Iniciar sesión</button>{register}</div>
@@ -218,15 +215,6 @@ export default function Landing() {
         <div className="section-heading"><span className="section-kicker">Comienza hoy</span><h2>Tu negocio bajo control en tres pasos</h2><p>No necesitas experiencia previa ni procesos complicados.</p></div>
         <div className="steps-grid"><article><b>01</b><span><FiUser /></span><h3>Crea tu cuenta</h3><p>Regístrate gratuitamente con los datos básicos de tu negocio.</p></article><article><b>02</b><span><FiTool /></span><h3>Configura tu negocio</h3><p>Agrega usuarios, productos, impresoras y la información de tus tickets.</p></article><article><b>03</b><span><FiShoppingCart /></span><h3>Comienza a vender</h3><p>Registra ventas, controla inventario y consulta el rendimiento en tiempo real.</p></article></div>
         <div className="steps-cta">{register}</div>
-      </div></section>
-
-      <section id="donar" className="support-section"><div className="landing-container support-card">
-        <div><span className="section-kicker">Un proyecto con propósito</span><h2>Tecnología accesible para pequeños negocios</h2><p>CajaLibre nació para apoyar a quienes necesitan ordenar y hacer crecer su negocio, pero no pueden pagar sistemas costosos.</p>
-          <ul><li><FiCheck /> El uso del sistema no tiene mensualidades.</li><li><FiCheck /> Tus donaciones ayudan a mantener servidores y desarrollar mejoras.</li><li><FiCheck /> Instalación, configuración, capacitación o asesoría personalizada pueden tener un costo opcional.</li></ul>
-        </div>
-        <div className="donation-panel"><div className="heart-bubble"><FiHeart /></div><h3>Ayúdanos a mantener CajaLibre gratuito</h3><p>Cada aportación, grande o pequeña, impulsa el proyecto.</p>
-          <a href={PAYPAL_URL} target="_blank" rel="noreferrer" className="donate-btn paypal">Donar con <b>PayPal</b></a><a href={MERCADO_PAGO_URL} target="_blank" rel="noreferrer" className="donate-btn mp">Donar con <b>Mercado Pago</b></a><a href={whatsappUrl("Hola, quiero apoyar a CajaLibre mediante transferencia bancaria. ¿Me pueden compartir los datos?")} target="_blank" rel="noreferrer" className="donate-btn transfer">Transferencia bancaria</a>
-        </div>
       </div></section>
 
       <section id="preguntas" className="section faq-section"><div className="landing-container faq-layout">

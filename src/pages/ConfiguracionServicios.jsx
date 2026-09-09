@@ -464,10 +464,10 @@ export default function ConfiguracionServicios() {
             {mostrarCanjesEnVistas ? "Visible en POS y Clientes" : "Oculto en POS y Clientes"}
           </div>
 
-          <small className="cfg-pos-help">
-            Cuando actives este ajuste, el catalogo se conserva pero la interfaz de cliente,
-            puntos, metas y canjes deja de mostrarse en el punto de venta y en clientes.
-          </small>
+              <small className="cfg-pos-help">
+                Cuando actives este ajuste, el catalogo se conserva pero los puntos, metas y canjes
+                dejan de mostrarse. La busqueda y el registro de clientes siguen disponibles.
+              </small>
         </div>
 
         <div className="cfg-servicios-canje-summary">

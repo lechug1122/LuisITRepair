@@ -82,7 +82,10 @@ function header(doc, data, empresa, logo) {
   doc.rect(x, 18, 113, 10, "FD");
   doc.setFont(getPdfFontFamily(), "bold");
   doc.setFontSize(16);
-  doc.text("BOLETA DE VENTA", x + 56.5, 25, { align: "center" });
+  const tituloDocumento = data.tipoDocumento === "cotizacion"
+    ? "BOLETA DE COTIZACION"
+    : "BOLETA DE VENTA";
+  doc.text(tituloDocumento, x + 56.5, 25, { align: "center" });
   doc.setFontSize(8.5);
   doc.text(`Folio: ${clean(data.folio, "S/F")}`, x + 110, 15, { align: "right" });
 }
@@ -122,8 +125,10 @@ export async function generarPdfBoletaVenta(data = {}) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
   let empresa = readEmpresaConfigCache();
   try { empresa = await obtenerEmpresa(); } catch { /* usa caché */ }
+  // El logo del negocio (si lo subio) reemplaza al del sistema.
+  const logoNegocio = String(empresa?.logo || "").trim();
   let logo = null;
-  try { logo = await loadImage(logoUrl); } catch (error) { console.warn("Logo PDF no disponible", error); }
+  try { logo = await loadImage(logoNegocio || logoUrl); } catch (error) { console.warn("Logo PDF no disponible", error); }
 
   const items = (Array.isArray(data.items) ? data.items : []).map((item, index) => {
     const cantidad = Math.max(0, numeric(item?.cantidad));
@@ -174,7 +179,21 @@ export async function generarPdfBoletaVenta(data = {}) {
   }
   doc.setFont(getPdfFontFamily(), "bold");
   doc.setFontSize(8.5);
-  doc.text(`Forma de pago: ${clean(data.formaPago, "No especificada")}`, 12, y);
+  if (data.tipoDocumento === "cotizacion") {
+    if (clean(data.nombreCotizacion)) {
+      doc.text(`Cotizacion: ${clean(data.nombreCotizacion)}`, 12, y);
+      y += 6;
+    }
+    if (clean(data.servicioFolio)) {
+      doc.text(`Servicio asignado: ${clean(data.servicioFolio)}${clean(data.servicioDescripcion) ? ` - ${clean(data.servicioDescripcion)}` : ""}`, 12, y);
+      y += 6;
+    }
+    doc.text(`Forma de pago propuesta: ${clean(data.formaPago, "No especificada")}`, 12, y);
+    doc.setFont(getPdfFontFamily(), "normal");
+    doc.text("Documento informativo. Los precios pueden cambiar hasta confirmar el servicio.", 12, y + 6);
+  } else {
+    doc.text(`Forma de pago: ${clean(data.formaPago, "No especificada")}`, 12, y);
+  }
   if (clean(data.notas)) {
     doc.text("Notas:", 12, y + 7);
     doc.setFont(getPdfFontFamily(), "normal");
@@ -182,10 +201,11 @@ export async function generarPdfBoletaVenta(data = {}) {
   }
 
   const folio = clean(data.folio, Date.now()).replace(/[^\w-]+/g, "-");
+  const esCotizacion = data.tipoDocumento === "cotizacion";
   doc.setProperties({
-    title: `Boleta de venta ${folio}`,
+    title: `${esCotizacion ? "Boleta de cotizacion" : "Boleta de venta"} ${folio}`,
     author: clean(empresa?.nombre, "CajaLibre"),
     creator: "CajaLibre",
   });
-  doc.save(`boleta-${folio}.pdf`);
+  doc.save(`${esCotizacion ? "cotizacion" : "boleta"}-${folio}.pdf`);
 }

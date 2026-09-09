@@ -1,11 +1,9 @@
 import { db } from "../../initializer/firebase";
 import {
-  collection,
   addDoc,
   getDoc,
   getDocs,
   deleteDoc,
-  doc,
   setDoc,
   updateDoc,
   writeBatch,
@@ -17,6 +15,8 @@ import {
   getTenantCollectionQuery,
   getLegacyConfigDocRef,
   getTenantConfigDocRef,
+  getCollectionRef,
+  getDocRef,
   withTenantData,
 } from "./tenant";
 
@@ -42,7 +42,7 @@ export const obtenerProductos = async () => {
   if (expiredDailyMenus.length) {
     try {
       const batch = writeBatch(db);
-      expiredDailyMenus.forEach((item) => batch.delete(doc(db, "productos", item.id)));
+      expiredDailyMenus.forEach((item) => batch.delete(getDocRef("productos", item.id)));
       await batch.commit();
     } catch (error) {
       console.warn("No se pudieron eliminar los menús del día vencidos:", error?.code || error);
@@ -57,7 +57,7 @@ export const obtenerProductos = async () => {
 export const crearProducto = async (data) => {
 
   // 1️⃣ Crear documento
-  const docRef = await addDoc(collection(db, "productos"), withTenantData(data));
+  const docRef = await addDoc(getCollectionRef("productos"), withTenantData(data));
 
   // 2️⃣ Guardar el ID real dentro del documento
   await updateDoc(docRef, {
@@ -70,13 +70,13 @@ export const crearProducto = async (data) => {
 
 // ACTUALIZAR PRODUCTO
 export const actualizarProducto = async (id, data) => {
-  const productoRef = doc(db, "productos", id);
+  const productoRef = getDocRef("productos", id);
   await updateDoc(productoRef, withTenantData(data));
 };
 
 // ELIMINAR PRODUCTO
 export const eliminarProductoDB = async (id) => {
-  await deleteDoc(doc(db, "productos", id));
+  await deleteDoc(getDocRef("productos", id));
 };
 
 /* ================= CATEGORIAS INVENTARIO ================= */
@@ -234,7 +234,7 @@ export const buscarClientePorTelefono = async (telefono) => {
 
 export const sumarPuntosCliente = async (clienteId, puntosNuevos) => {
 
-  const ref = doc(db, "clientes", clienteId);
+  const ref = getDocRef("clientes", clienteId);
 
   const snapshot = await getDoc(ref);
 
@@ -263,11 +263,11 @@ export const sumarPuntosCliente = async (clienteId, puntosNuevos) => {
 /* ================= VENTAS ================= */
 
 export const registrarVenta = async (data) => {
-  const docRef = await addDoc(collection(db, "ventas"), withTenantData(data));
+  const docRef = await addDoc(getCollectionRef("ventas"), withTenantData(data));
   return docRef.id;
 };
 
 export const descontarStock = async (productoId, nuevoStock) => {
-  const ref = doc(db, "productos", productoId);
+  const ref = getDocRef("productos", productoId);
   await updateDoc(ref, { stock: nuevoStock });
 };

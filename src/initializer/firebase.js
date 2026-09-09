@@ -3,13 +3,13 @@ import { getAuth } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyBj5ffv-VNRqxkiaWKUhzY4FBKRkzp5rW4",
-  authDomain: "hojaservice-3ab3d.firebaseapp.com",
-  projectId: "hojaservice-3ab3d",
-  storageBucket: "hojaservice-3ab3d.firebasestorage.app",
-  messagingSenderId: "747179979894",
-  appId: "1:747179979894:web:0a86e472eb8b34fb7e5b57",
-  measurementId: "G-CP172JQXTD"
+  apiKey: "AIzaSyAejG1aDFn_5zqM3hePPW6m0uzqUH0X0_4",
+  authDomain: "cajalibre-b4ca5.firebaseapp.com",
+  projectId: "cajalibre-b4ca5",
+  storageBucket: "cajalibre-b4ca5.firebasestorage.app",
+  messagingSenderId: "1039326139431",
+  appId: "1:1039326139431:web:f7cf205be9cf03a703aa02",
+  measurementId: "G-T2VV42Z408"
 };
 
 const app = initializeApp(firebaseConfig);

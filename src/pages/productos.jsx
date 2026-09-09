@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Layout from "../components/Layout";
 import "../css/productos.css";
 import imgProductsUrl from "../img/img_products.png";
+import inventarioTemplateUrl from "../assets/plantilla_inventario_cajalibre.xlsx?url";
 import { auth } from "../initializer/firebase";
 import {
   obtenerProductos,
@@ -17,6 +18,11 @@ import {
   readInventarioConfigStorage,
   saveInventarioConfigStorage,
 } from "../js/services/inventario_config";
+import {
+  crearInventarioDesdePlantilla,
+  INVENTARIO_EXCEL_COLUMNS,
+  INVENTARIO_EXCEL_NUMERIC_KEYS,
+} from "../js/services/inventario_excel";
 
 const TIPO_OPTIONS = ["producto", "refaccion", "servicio", "accesorio", "consumible"];
 const UNIDAD_OPTIONS = ["Pza", "Caja", "Paquete", "Juego", "Kit", "Litro", "Metro"];
@@ -27,34 +33,21 @@ const OBJETO_IMPUESTO_OPTIONS = [
   { value: "03", label: "03 - Si objeto y no obligado al desglose" },
 ];
 const IVA_OPTIONS = ["0", "8", "16"];
-const CONTEO_INVENTARIO_STORAGE_KEY = "inventario_conteo_meta_v1";
-const INVENTARIO_EXCEL_COLUMNS = [
-  { key: "codigo", label: "Codigo" },
-  { key: "nombre", label: "Producto" },
-  { key: "sku", label: "SKU" },
-  { key: "categoria", label: "Categoria" },
-  { key: "marca", label: "Marca" },
-  { key: "tipo", label: "Tipo" },
-  { key: "proveedorPrincipal", label: "Proveedor" },
-  { key: "ubicacion", label: "Ubicacion" },
-  { key: "unidadMedida", label: "Unidad" },
-  { key: "descripcion", label: "Descripcion" },
-  { key: "precioCompra", label: "Precio compra" },
-  { key: "ultimoCosto", label: "Ultimo costo" },
-  { key: "precioVenta", label: "Precio venta" },
-  { key: "stock", label: "Stock" },
-  { key: "stockMinimo", label: "Stock minimo" },
-  { key: "stockMaximo", label: "Stock maximo" },
-  { key: "puntoReorden", label: "Punto reorden" },
-  { key: "compatibilidad", label: "Compatibilidad" },
-  { key: "claveSat", label: "Clave SAT" },
-  { key: "claveUnidadSat", label: "Clave unidad SAT" },
-  { key: "descripcionFactura", label: "Descripcion factura" },
-  { key: "objetoImpuesto", label: "Objeto impuesto" },
-  { key: "iva", label: "IVA" },
-  { key: "notasInternas", label: "Notas internas" },
-  { key: "estadoInventario", label: "Estado" },
+const TIPO_IMPUESTO_OPTIONS = [
+  { value: "IVA_0", label: "IVA tasa 0%" },
+  { value: "IVA_8", label: "IVA tasa 8%" },
+  { value: "IVA_16", label: "IVA tasa 16%" },
+  { value: "IEPS_MIXTO", label: "IEPS / tratamiento mixto" },
+  { value: "NO_OBJETO", label: "No objeto de impuesto" },
 ];
+const IEPS_TIPO_OPTIONS = [
+  { value: "ninguno", label: "No aplica" },
+  { value: "porcentaje", label: "Tasa porcentual" },
+  { value: "cuota", label: "Cuota fija por unidad/litro/kilo" },
+];
+const CONTEO_INVENTARIO_STORAGE_KEY = "inventario_conteo_meta_v1";
+const INVENTARIO_TEMPLATE_FILENAME = "plantilla_inventario_cajalibre.xlsx";
+const INVENTARIO_EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const CAMPOS_AUTOCOMPLETE_CATALOGO = [
   "nombre",
   "descripcion",
@@ -91,6 +84,10 @@ const productoVacio = {
   descripcionFactura: "",
   objetoImpuesto: "02",
   iva: "16",
+  tipoImpuesto: "IVA_16",
+  ieps: "0",
+  iepsTipo: "ninguno",
+  iepsUnidad: "pieza",
   notasInternas: "",
   estadoInventario: "Activo",
   generaPuntos: true,
@@ -137,7 +134,11 @@ const INVENTARIO_PAGES_COMPLETAS = [
       { key: "claveUnidadSat", label: "Clave SAT unidad" },
       { key: "descripcionFactura", label: "Descripcion para factura" },
       { key: "objetoImpuesto", label: "Objeto de impuesto", type: "select", options: OBJETO_IMPUESTO_OPTIONS },
+      { key: "tipoImpuesto", label: "Tipo de impuesto", type: "select", options: TIPO_IMPUESTO_OPTIONS },
       { key: "iva", label: "IVA", type: "select", options: IVA_OPTIONS },
+      { key: "iepsTipo", label: "Tasa o Cuota IEPS", type: "select", options: IEPS_TIPO_OPTIONS },
+      { key: "ieps", label: "Valor IEPS (% o cuota)", type: "number", min: "0", step: "0.000001", inputMode: "decimal" },
+      { key: "iepsUnidad", label: "Unidad de la cuota IEPS", placeholder: "pieza, litro o kilogramo" },
       { key: "notasInternas", label: "Notas internas", type: "textarea", full: true, rows: 2 },
     ],
   },
@@ -209,6 +210,26 @@ function buildExcelFilename(prefix) {
   return `${prefix}_${getTodayKey()}.xlsx`;
 }
 
+async function cargarPlantillaInventario() {
+  const response = await fetch(inventarioTemplateUrl);
+  if (!response.ok) {
+    throw new Error(`No se pudo cargar la plantilla (${response.status}).`);
+  }
+  return response.arrayBuffer();
+}
+
+function descargarExcelBuffer(buffer, filename) {
+  const blob = new Blob([buffer], { type: INVENTARIO_EXCEL_MIME });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function formatDateTime(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -268,13 +289,6 @@ function getExcelValue(row, key, label) {
   return entry ? entry[1] : "";
 }
 
-function productoToExcelRow(producto = {}) {
-  return INVENTARIO_EXCEL_COLUMNS.reduce((acc, column) => {
-    acc[column.label] = producto[column.key] ?? "";
-    return acc;
-  }, {});
-}
-
 function excelRowToForm(row = {}) {
   const next = { ...productoVacio };
 
@@ -292,6 +306,10 @@ function excelRowToForm(row = {}) {
     unidadMedida: text(next.unidadMedida) || "Pza",
     objetoImpuesto: text(next.objetoImpuesto) || "02",
     iva: text(next.iva) || "16",
+    tipoImpuesto: text(next.tipoImpuesto) || `IVA_${text(next.iva) || "16"}`,
+    ieps: text(next.ieps) || "0",
+    iepsTipo: text(next.iepsTipo) || "ninguno",
+    iepsUnidad: text(next.iepsUnidad) || "pieza",
   };
 }
 
@@ -322,6 +340,10 @@ function toFormState(producto = {}) {
     descripcionFactura: asText(producto.descripcionFactura || producto.nombre),
     objetoImpuesto: asText(producto.objetoImpuesto) || "02",
     iva: asNumberText(producto.iva ?? 16),
+    tipoImpuesto: asText(producto.tipoImpuesto) || `IVA_${Number(producto.iva ?? 16)}`,
+    ieps: asNumberText(producto.ieps ?? 0),
+    iepsTipo: asText(producto.iepsTipo) || "ninguno",
+    iepsUnidad: asText(producto.iepsUnidad) || "pieza",
     notasInternas: asText(producto.notasInternas),
     estadoInventario: asText(producto.estadoInventario) || (producto.activo === false ? "Inactivo" : "Activo"),
     generaPuntos: producto.generaPuntos !== false,
@@ -359,6 +381,10 @@ function toPayload(form) {
     descripcionFactura: text(form.descripcionFactura || form.nombre),
     objetoImpuesto: text(form.objetoImpuesto) || "02",
     iva: toNumber(form.iva),
+    tipoImpuesto: text(form.tipoImpuesto) || `IVA_${toNumber(form.iva)}`,
+    ieps: toNumber(form.ieps),
+    iepsTipo: text(form.iepsTipo) || "ninguno",
+    iepsUnidad: text(form.iepsUnidad) || "pieza",
     notasInternas: text(form.notasInternas),
     estadoInventario,
     activo: estadoInventario === "Activo",
@@ -433,6 +459,7 @@ function aplicarCamposCatalogo(prev, coincidencia) {
 
 export default function Productos({ embedded = false }) {
   const [productos, setProductos] = useState([]);
+  const [busquedaInventario, setBusquedaInventario] = useState("");
   const [categoriasCatalogo, setCategoriasCatalogo] = useState([]);
   const [form, setForm] = useState(productoVacio);
   const [mostrarModal, setMostrarModal] = useState(false);
@@ -494,6 +521,24 @@ export default function Productos({ embedded = false }) {
     proveedores: uniqueOptions(productos.map((producto) => producto.proveedorPrincipal)),
     ubicaciones: uniqueOptions(productos.map((producto) => producto.ubicacion)),
   }), [categoriasCatalogo, productos]);
+
+  const productosFiltrados = useMemo(() => {
+    const termino = normalizedText(busquedaInventario);
+    if (!termino) return productos;
+
+    return productos.filter((producto) =>
+      [
+        producto?.nombre,
+        producto?.codigo,
+        producto?.sku,
+        producto?.categoria,
+        producto?.marca,
+        producto?.proveedorPrincipal,
+        producto?.descripcion,
+        producto?.descripcionFactura,
+      ].some((valor) => normalizedText(valor).includes(termino)),
+    );
+  }, [busquedaInventario, productos]);
 
   const categoriasInventario = useMemo(() => {
     const productosPorCategoria = new Map();
@@ -574,7 +619,7 @@ export default function Productos({ embedded = false }) {
         codigoActual
           ? {
               type: "info",
-              text: "Autocompletado por codigo desactivado en Configuracion > POS y Facturacion.",
+              text: "Autocompletado por codigo desactivado en Configuracion > Punto de venta.",
             }
           : null,
       );
@@ -885,20 +930,18 @@ export default function Productos({ embedded = false }) {
     setFiltroConteo("todos");
   };
 
-  const descargarWorkbook = async (rows, sheetName, filename) => {
-    const XLSX = await import("xlsx");
-    const worksheet = XLSX.utils.json_to_sheet(rows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-    XLSX.writeFile(workbook, filename);
-  };
-
   const exportarExcel = async () => {
     try {
-      await descargarWorkbook(
-        productos.map(productoToExcelRow),
-        "Inventario",
-        buildExcelFilename("inventario"),
+      const templateBuffer = await cargarPlantillaInventario();
+      const workbookBuffer = await crearInventarioDesdePlantilla({
+        templateBuffer,
+        productos,
+        columns: INVENTARIO_EXCEL_COLUMNS,
+        numericKeys: INVENTARIO_EXCEL_NUMERIC_KEYS,
+      });
+      descargarExcelBuffer(
+        workbookBuffer,
+        buildExcelFilename("inventario_cajalibre"),
       );
     } catch (error) {
       console.error("No se pudo exportar inventario:", error);
@@ -908,13 +951,10 @@ export default function Productos({ embedded = false }) {
 
   const descargarPlantillaExcel = async () => {
     try {
-      await descargarWorkbook(
-        [productoToExcelRow(productoVacio)],
-        "Plantilla",
-        buildExcelFilename("plantilla_inventario"),
-      );
+      const templateBuffer = await cargarPlantillaInventario();
+      descargarExcelBuffer(templateBuffer, INVENTARIO_TEMPLATE_FILENAME);
     } catch (error) {
-      console.error("No se pudo crear plantilla:", error);
+      console.error("No se pudo descargar la plantilla:", error);
       alert("No se pudo descargar la plantilla.");
     }
   };
@@ -930,10 +970,13 @@ export default function Productos({ embedded = false }) {
 
     setImportandoExcel(true);
     try {
-      const XLSX = await import("xlsx");
+      const XLSX = await import("xlsx-js-style");
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array" });
-      const sheetName = workbook.SheetNames[0];
+      const sheetName = workbook.SheetNames.find(
+        (name) => normalizeExcelHeader(name) === "plantilla",
+      ) || workbook.SheetNames[0];
+      if (!sheetName) throw new Error("El archivo no contiene hojas para importar.");
       const worksheet = workbook.Sheets[sheetName];
       const rows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
       const productosValidos = rows
@@ -1223,7 +1266,7 @@ export default function Productos({ embedded = false }) {
               onClick={descargarPlantillaExcel}
               type="button"
             >
-              Plantilla Excel
+              Descargar plantilla
             </button>
           </div>
           <input
@@ -1235,6 +1278,29 @@ export default function Productos({ embedded = false }) {
           />
         </div>
       </div>
+
+      {!mostrarModalCategorias && (
+        <section className="prod-buscador-inventario" aria-label="Buscar productos">
+          <div className="prod-buscador-input-wrap">
+            <span aria-hidden="true">Buscar</span>
+            <input
+              type="search"
+              value={busquedaInventario}
+              onChange={(event) => setBusquedaInventario(event.target.value)}
+              placeholder="Buscar por producto, codigo, SKU, categoria o marca"
+              aria-label="Buscar en el inventario"
+            />
+            {busquedaInventario && (
+              <button type="button" onClick={() => setBusquedaInventario("")}>
+                Limpiar
+              </button>
+            )}
+          </div>
+          <small>
+            {productosFiltrados.length} de {productos.length} producto(s)
+          </small>
+        </section>
+      )}
 
       {mostrarModalCatalogo && (
         <div className="prod-modal-overlay">
@@ -1651,7 +1717,7 @@ export default function Productos({ embedded = false }) {
               </tr>
             </thead>
             <tbody>
-              {productos.map((producto) => (
+              {productosFiltrados.map((producto) => (
                 <tr key={producto.id}>
                   <td className="tabla-producto-main">
                     <strong>{producto.nombre || "-"}</strong>
@@ -1699,6 +1765,13 @@ export default function Productos({ embedded = false }) {
                   </td>
                 </tr>
               ))}
+              {productosFiltrados.length === 0 && (
+                <tr>
+                  <td colSpan="10" className="prod-buscador-vacio">
+                    No se encontraron productos con “{busquedaInventario.trim()}”.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

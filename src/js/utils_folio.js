@@ -1,4 +1,5 @@
-import { doc, runTransaction, serverTimestamp } from "firebase/firestore";
+import { getDocRef } from "./services/tenant";
+import { runTransaction, serverTimestamp } from "firebase/firestore";
 import { db } from "../initializer/firebase";
 
 // helper
@@ -20,7 +21,7 @@ export async function generarFolio(marca = "") {
 
   // 🔹 clave única por DÍA + MARCA
   const contadorId = `${baseFolio}_${letras}`;
-  const contadorRef = doc(db, "contadores_folio", contadorId);
+  const contadorRef = getDocRef("contadores_folio", contadorId);
 
   // 🔥 contador seguro
   const secuencia = await runTransaction(db, async (tx) => {

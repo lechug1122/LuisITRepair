@@ -2,6 +2,7 @@
 import logoUrl from "../../assets/logo.png";
 import { getPdfFontFamily } from "./apariencia_config";
 import { obtenerEmpresa, readEmpresaConfigCache } from "./configure_empresa";
+import { obtenerEfectivoNetoVenta } from "./efectivo_venta";
 
 const money = (value) =>
   new Intl.NumberFormat("es-MX", {
@@ -245,9 +246,12 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
     })
     .sort((a, b) => (normalizeDate(a?.fecha)?.getTime() || 0) - (normalizeDate(b?.fecha)?.getTime() || 0));
 
+  // El logo del negocio (si lo subio) manda sobre el del sistema. Pasa por el
+  // mismo conversor para garantizar PNG, que es lo que acepta jsPDF.
+  const logoNegocio = String(empresaCfg?.logo || empresaCache?.logo || "").trim();
   let logoPng = null;
   try {
-    logoPng = await imageToPngDataUrl(logoUrl);
+    logoPng = await imageToPngDataUrl(logoNegocio || logoUrl);
   } catch (err) {
     console.warn("PDF corte: logo no cargado", err);
   }
@@ -261,6 +265,8 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
     tarjeta: 0,
     transferencia: 0,
     otros: 0,
+    descuentos: 0,
+    ventasFiadas: 0,
   };
 
   const filasMovimientos = [];
@@ -288,7 +294,9 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
     resumen.subtotal += subtotalVenta;
     resumen.iva += ivaVenta;
     resumen.total += total;
-    resumen.efectivo += Number(detalle?.efectivo || (tipoPago === "efectivo" ? total : 0) || 0);
+    resumen.descuentos += Number(v?.descuentoManual || 0) + Number(v?.descuentoRegla || 0) + Number(v?.descuentoPuntos || 0);
+    if (tipoPago === "fiado") resumen.ventasFiadas += total;
+    resumen.efectivo += obtenerEfectivoNetoVenta(v);
     resumen.tarjeta += Number(detalle?.tarjeta || (tipoPago === "tarjeta" ? total : 0) || 0);
     resumen.transferencia += Number(
       detalle?.transferencia || (tipoPago === "transferencia" ? total : 0) || 0
@@ -558,6 +566,10 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   drawKeyValueRow(doc, 74, y, 38, 24, 6, "Ticket prom.", money(ticketProm));
   drawKeyValueRow(doc, 136, y, 38, 24, 6, "Total", money(resumen.total));
   y += 7;
+  drawKeyValueRow(doc, 12, y, 38, 24, 6, "Descuentos", money(resumen.descuentos));
+  drawKeyValueRow(doc, 74, y, 38, 24, 6, "Vendido fiado", money(resumen.ventasFiadas));
+  drawKeyValueRow(doc, 136, y, 38, 24, 6, "Cobrado", money(Math.max(0, resumen.total - resumen.ventasFiadas)));
+  y += 7;
   drawKeyValueRow(doc, 12, y, 38, 24, 6, "Efectivo", money(resumen.efectivo));
   drawKeyValueRow(doc, 74, y, 38, 24, 6, "Tarjeta", money(resumen.tarjeta));
   drawKeyValueRow(doc, 136, y, 38, 24, 6, "Transferencia", money(resumen.transferencia));
@@ -599,14 +611,16 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   y2 += 8;
 
   const fondoInicial = Number(corte?.fondoInicialCaja || 0);
-  const efectivoEsperado = Number(corte?.conteoEfectivo?.esperado || 0);
   const efectivoContado =
     corte?.conteoEfectivo?.contado === null || corte?.conteoEfectivo?.contado === undefined
       ? 0
       : Number(corte?.conteoEfectivo?.contado || 0);
-  const diferencia = Number(corte?.conteoEfectivo?.diferencia || 0);
   const totalRetiros = Number(corte?.totalRetiros || 0);
-  const cajaFinalEsperada = Number(corte?.cajaFinalEsperada || fondoInicial + efectivoEsperado - totalRetiros);
+  // Se recalcula desde las ventas para que los cortes creados antes de la
+  // correccion del cambio tambien produzcan un informe contablemente valido.
+  const cajaFinalEsperada = Number((fondoInicial + resumen.efectivo - totalRetiros).toFixed(2));
+  const efectivoEsperado = cajaFinalEsperada;
+  const diferencia = Number((efectivoContado - efectivoEsperado).toFixed(2));
 
   drawTitleBar(doc, 12, y2, 186, 6, "1.- SALDO INICIAL", titleFill);
   y2 += 7;
@@ -771,11 +785,11 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
 
   const rowsResumen = [
     ["Saldo inicial", money(fondoInicial)],
-    ["Documentos", money(resumen.total - totalRetiros)],
-    ["Resultado esperado", money(cajaFinalEsperada)],
-    ["Efectivo", money(efectivoContado)],
-    ["Equivalente efectivo", money(resumen.tarjeta + resumen.transferencia)],
-    ["Total", money(efectivoContado + resumen.tarjeta + resumen.transferencia)],
+    ["Ventas totales", money(resumen.total)],
+    ["Ventas en efectivo", money(resumen.efectivo)],
+    ["Salidas de caja", money(totalRetiros)],
+    ["Efectivo esperado", money(cajaFinalEsperada)],
+    ["Efectivo contado", money(efectivoContado)],
     ["Diferencia", money(diferencia)],
     ["Faltante/Sobrante", diferencia < 0 ? "FALTANTE" : diferencia > 0 ? "SOBRANTE" : "OK"],
   ];
@@ -798,6 +812,42 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   const notas = String(corte?.notasCorte || "Sin observaciones.");
   const notasLines = doc.splitTextToSize(notas, 84);
   doc.text(notasLines, 112, y2 + 5);
+
+  const cuentasPorCobrar = (Array.isArray(options?.cuentasPorCobrar) ? options.cuentasPorCobrar : [])
+    .filter((cuenta) => Number(cuenta?.saldo || 0) > 0)
+    .sort((a, b) => String(a?.fechaVencimiento || "").localeCompare(String(b?.fechaVencimiento || "")));
+  const totalPorCobrar = cuentasPorCobrar.reduce((total, cuenta) => total + Number(cuenta?.saldo || 0), 0);
+  const hoyKey = toDateKey(now);
+  const totalVencido = cuentasPorCobrar
+    .filter((cuenta) => String(cuenta?.fechaVencimiento || "") < hoyKey)
+    .reduce((total, cuenta) => total + Number(cuenta?.saldo || 0), 0);
+
+  doc.addPage();
+  drawPageFrame(doc);
+  let yCobranza = 12;
+  drawRestaurantTitleBar(doc, 12, yCobranza, 186, 9, "CUENTAS POR COBRAR - QUIENES DEBEN");
+  yCobranza += 14;
+  setPdfFont(doc, "normal");
+  doc.setFontSize(8);
+  doc.text(`Cuentas pendientes: ${cuentasPorCobrar.length}   Total por cobrar: ${money(totalPorCobrar)}   Total vencido: ${money(totalVencido)}`, 12, yCobranza);
+  yCobranza += 7;
+  drawTable(doc, {
+    x: 12,
+    y: yCobranza,
+    widths: [45, 28, 34, 28, 25, 26],
+    headers: ["Cliente", "Telefono", "Venta", "Vencimiento", "Estado", "Saldo"],
+    rows: cuentasPorCobrar.length ? cuentasPorCobrar.map((cuenta) => [
+      String(cuenta?.clienteNombre || "Sin nombre"),
+      String(cuenta?.clienteTelefono || "-"),
+      String(cuenta?.folioVenta || cuenta?.ventaId || "-"),
+      String(cuenta?.fechaVencimiento || "-"),
+      String(cuenta?.fechaVencimiento || "") < hoyKey ? "VENCIDA" : "VIGENTE",
+      money(cuenta?.saldo || 0),
+    ]) : [["Sin cuentas pendientes", "-", "-", "-", "-", money(0)]],
+    rowHeight: 6,
+    fontSize: 7.5,
+    headerFill: [254, 243, 199],
+  });
 
   const ordenesRestaurante = Array.isArray(options?.restaurante?.orders)
     ? options.restaurante.orders.filter((order) => {
@@ -963,5 +1013,3 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
 
   doc.save(`corte-caja-${fechaKeyObjetivo}.pdf`);
 }
-
-

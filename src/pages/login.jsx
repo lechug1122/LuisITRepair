@@ -7,7 +7,7 @@ import { obtenerEstadoAutorizacion } from "../js/services/autorizacion";
 import { consumeDeviceConflictMessage } from "../js/services/device_sessions";
 import { crearNegocioInicial } from "../js/services/negocios";
 import { permisosBasePorRol } from "../js/services/permisos";
-import { saveTenantContext } from "../js/services/tenant";
+import { getDocRef, saveTenantContext } from "../js/services/tenant";
 import intlTelInput from "intl-tel-input";
 import "intl-tel-input/styles";
 import "../css/login.scss";
@@ -154,7 +154,7 @@ async function recuperarRegistroIncompleto(user) {
 
   const batch = writeBatch(db);
   batch.set(
-    doc(db, "empleados", `principal_${user.uid}`),
+    getDocRef("empleados", `principal_${user.uid}`, user.uid),
     {
       ...administrador,
       uid: user.uid,
@@ -164,7 +164,7 @@ async function recuperarRegistroIncompleto(user) {
     { merge: true },
   );
   batch.set(
-    doc(db, "configuracion", `empresa__${user.uid}`),
+    getDocRef("configuracion", "empresa", user.uid),
     {
       nombre: "Mi negocio",
       subtitulo: "",
@@ -407,14 +407,14 @@ export default function Login() {
       });
 
       const batch = writeBatch(db);
-      batch.set(doc(db, "empleados", `principal_${user.uid}`), {
+      batch.set(getDocRef("empleados", `principal_${user.uid}`, user.uid), {
         ...administrador,
         uid: user.uid,
         estado: "Activo",
         updatedAt: serverTimestamp(),
       });
 
-      batch.set(doc(db, "configuracion", `empresa__${user.uid}`), {
+      batch.set(getDocRef("configuracion", "empresa", user.uid), {
         nombre: negocioLimpio,
         subtitulo: "",
         telefono: telefonoLimpio,

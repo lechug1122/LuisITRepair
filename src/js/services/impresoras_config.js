@@ -19,6 +19,7 @@ function getDefaultSalidaTicketMovil() {
 const DEFAULT_LOCAL_IMPRESORAS_CONFIG = {
   modoImpresion: "dialogo",
   nombreImpresoraTicket: "",
+  tamanoTicket: "58mm",
   nombreImpresoraHojaServicio: "",
   tamanoHojaServicio: "a4",
   salidaTicketMovil: getDefaultSalidaTicketMovil(),
@@ -57,6 +58,10 @@ function normalizeSalidaTicketMovil(value) {
   return normalized === "imagen" ? "imagen" : "dialogo";
 }
 
+function normalizeTamanoTicket(value) {
+  return String(value || "").trim().toLowerCase() === "80mm" ? "80mm" : "58mm";
+}
+
 function normalizeDocumentoAlIniciarServicio(value) {
   const normalized = toText(
     value,
@@ -83,6 +88,7 @@ function normalizeLocalImpresorasConfig(raw = {}) {
   return {
     modoImpresion: normalizeModoImpresion(raw?.modoImpresion),
     nombreImpresoraTicket: toText(raw?.nombreImpresoraTicket ?? legacyPrinterName),
+    tamanoTicket: normalizeTamanoTicket(raw?.tamanoTicket),
     nombreImpresoraHojaServicio: toText(
       raw?.nombreImpresoraHojaServicio ?? legacyPrinterName,
     ),

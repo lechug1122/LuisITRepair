@@ -27,7 +27,7 @@ function LegalLayout({ title, children }) {
           <Link to="/cookies">Cookies</Link>
           <a href="mailto:cajalibre.puntodeventa@gmail.com">Contacto</a>
           <button type="button" onClick={() => window.dispatchEvent(new Event("cajalibre:cookie-settings"))}>
-            Cambiar preferencias
+            Ver aviso de cookies
           </button>
         </nav>
       </article>
@@ -46,13 +46,13 @@ export function PoliticaPrivacidad() {
         <li>Datos de cuenta y contacto, como nombre, correo y datos del negocio.</li>
         <li>Información operativa que el usuario registra para utilizar el sistema.</li>
         <li>Datos técnicos, como dirección IP, navegador, dispositivo, registros de seguridad y actividad.</li>
-        <li>Preferencias de cookies y, con autorización, información publicitaria y de medición.</li>
+        <li>Preferencias de la interfaz y, en el plan gratuito, información publicitaria y de medición del proveedor de anuncios.</li>
       </ul>
       <h2>3. Finalidades</h2>
-      <p>Utilizamos la información para prestar y proteger el servicio, autenticar usuarios, guardar configuraciones, atender soporte, prevenir abuso, mejorar la plataforma, cumplir obligaciones aplicables y, cuando exista consentimiento, mostrar y medir publicidad.</p>
-      <h2>4. Google AdSense y terceros</h2>
-      <p>Este sitio utiliza Google AdSense. Google y otros proveedores pueden colocar o leer cookies, usar balizas web, direcciones IP u otros identificadores para mostrar, limitar y medir anuncios. Google puede utilizar cookies publicitarias para mostrar anuncios basados en visitas anteriores a este u otros sitios.</p>
-      <p>Puedes administrar la personalización en <a href="https://adssettings.google.com/" target="_blank" rel="noreferrer">Configuración de anuncios de Google</a> y conocer <a href="https://policies.google.com/technologies/partner-sites?hl=es" target="_blank" rel="noreferrer">cómo usa Google los datos en sitios de sus socios</a>.</p>
+      <p>Utilizamos la información para prestar y proteger el servicio, autenticar usuarios, guardar configuraciones, atender soporte, prevenir abuso, mejorar la plataforma, cumplir obligaciones aplicables y, en el plan gratuito, mostrar y medir publicidad.</p>
+      <h2>4. Publicidad de terceros</h2>
+      <p>El plan gratuito puede mostrar anuncios servidos por Adsterra. El proveedor puede colocar o leer cookies, usar balizas web, direcciones IP u otros identificadores para mostrar, limitar y medir anuncios, así como para detectar fraude. Los anuncios se cargan dentro de un marco aislado en un dominio independiente, sin acceso a tu sesión ni a los datos de tu negocio en CajaLibre.</p>
+      <p>Puedes consultar el <a href="https://adsterra.com/privacy-policy/" target="_blank" rel="noreferrer">aviso de privacidad de Adsterra</a>. CajaLibre Premium no muestra anuncios.</p>
       <h2>5. Conservación y transferencias</h2>
       <p>Conservamos la información durante el tiempo necesario para prestar el servicio, protegerlo y cumplir obligaciones. Algunos proveedores tecnológicos pueden procesar datos fuera de México bajo sus propias salvaguardas contractuales y legales.</p>
       <h2>6. Seguridad y menores</h2>
@@ -70,12 +70,13 @@ export function PoliticaCookies() {
       <h2>Categorías utilizadas</h2>
       <ul>
         <li><strong>Necesarias:</strong> inicio de sesión, seguridad, preferencias de interfaz y funcionamiento del sistema.</li>
-        <li><strong>Publicidad y medición:</strong> Google AdSense puede usar cookies o identificadores para servir, limitar y medir anuncios, detectar fraude y, si autorizas, personalizarlos.</li>
+        <li><strong>Publicidad y medición:</strong> el proveedor de anuncios puede usar cookies o identificadores para servir, limitar y medir anuncios y detectar fraude. Forman parte del plan gratuito.</li>
       </ul>
       <h2>Proveedores</h2>
-      <p>Google puede usar dominios como google.com o doubleclick.net para tecnologías publicitarias. Consulta la <a href="https://policies.google.com/technologies/cookies?hl=es" target="_blank" rel="noreferrer">información de cookies de Google</a> y sus <a href="https://adssettings.google.com/" target="_blank" rel="noreferrer">controles de anuncios</a>.</p>
-      <h2>Administrar el consentimiento</h2>
-      <p>Puedes aceptar o rechazar las cookies opcionales desde el aviso y cambiar tu decisión posteriormente. Rechazarlas no impide el funcionamiento básico, aunque Google podría mostrar anuncios limitados o no personalizados donde corresponda.</p>
+      <p>La publicidad la sirve Adsterra desde un dominio independiente del sistema. Consulta su <a href="https://adsterra.com/privacy-policy/" target="_blank" rel="noreferrer">aviso de privacidad</a> para conocer las tecnologías que utiliza.</p>
+      <h2>Cómo desactivar la publicidad</h2>
+      <p>Los anuncios y las cookies que utiliza el proveedor forman parte del plan gratuito y ayudan a sostener el proyecto: no pueden desactivarse por separado dentro del plan gratuito. Para usar CajaLibre sin anuncios y sin esas cookies, puedes activar CajaLibre Premium desde Configuración.</p>
+      <p>También puedes bloquear o borrar cookies de terceros desde tu navegador, o instalar un bloqueador de anuncios. En ese caso el espacio publicitario queda vacío y CajaLibre sigue funcionando con normalidad.</p>
       <h2>Navegador</h2>
       <p>Los navegadores permiten borrar o bloquear cookies. Si bloqueas las necesarias, algunas funciones de autenticación o preferencias podrían dejar de funcionar correctamente.</p>
     </LegalLayout>

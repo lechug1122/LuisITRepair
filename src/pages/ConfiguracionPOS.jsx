@@ -17,16 +17,23 @@ import {
 } from "../js/services/inventario_config";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useMonedaConfig from "../hooks/useMonedaConfig";
+import { readPOSFeatureConfig, savePOSFeatureConfig } from "../js/services/pos_feature_config";
+import {
+  calcularIVA,
+  guardarIVAConfig,
+  obtenerIVAConfig,
+  readIVAConfigStorage,
+  saveIVAConfigStorage,
+} from "../js/services/iva_config";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import {
+  guardarPasswordDescuentoManual,
+  obtenerConfigDescuentoManual,
+} from "../js/services/descuento_manual_config";
 
-const IVA_STORAGE_KEY = "pos_aplicar_iva";
-
-function leerIVAStorage() {
-  try {
-    return localStorage.getItem(IVA_STORAGE_KEY) !== "0";
-  } catch {
-    return true;
-  }
-}
+// El modulo de facturacion queda oculto hasta terminarlo. Toda su logica y su
+// panel siguen intactos aqui: para reactivarlo basta poner esto en true.
+const MOSTRAR_FACTURACION = false;
 
 function formatDate(value) {
   if (!value) return "-";
@@ -47,13 +54,25 @@ function formatFacturaFolio(serie, folio) {
 }
 
 export default function ConfiguracionPOS() {
-  const { nombreEmpresa, serviciosHabilitados } = useEmpresaConfig();
+  const { nombreEmpresa, logoEmpresa, serviciosHabilitados } = useEmpresaConfig();
   const { formatCurrency } = useMonedaConfig();
-  const [aplicarIVA, setAplicarIVA] = useState(leerIVAStorage);
+  const [aplicarIVA, setAplicarIVA] = useState(() => readIVAConfigStorage().aplicarIVA);
+  const [preciosIncluyenImpuestos, setPreciosIncluyenImpuestos] = useState(
+    () => readIVAConfigStorage().preciosIncluyenImpuestos,
+  );
   const [ticketCfg, setTicketCfg] = useState(readTicketConfigStorage);
   const [factCfg, setFactCfg] = useState(readFacturacionConfigStorage);
   const [inventarioCfg, setInventarioCfg] = useState(readInventarioConfigStorage);
+  const [funcionesPOS, setFuncionesPOS] = useState(readPOSFeatureConfig);
   const [guardado, setGuardado] = useState(false);
+  const [ivaHidratado, setIvaHidratado] = useState(false);
+  const { rol, superAdmin } = useAutorizacionActual();
+  const esJefeSistema = superAdmin || String(rol || "").trim().toLowerCase() === "administrador";
+  const [passwordDescuento, setPasswordDescuento] = useState("");
+  const [passwordDescuentoConfirmar, setPasswordDescuentoConfirmar] = useState("");
+  const [descuentoConfigurado, setDescuentoConfigurado] = useState(false);
+  const [guardandoPasswordDescuento, setGuardandoPasswordDescuento] = useState(false);
+  const [mensajePasswordDescuento, setMensajePasswordDescuento] = useState("");
   const [panelesAbiertos, setPanelesAbiertos] = useState({
     iva: true,
     catalogo: true,
@@ -62,12 +81,57 @@ export default function ConfiguracionPOS() {
   });
 
   useEffect(() => {
+    let activo = true;
+    obtenerIVAConfig().then((config) => {
+      if (!activo) return;
+      setAplicarIVA(config.aplicarIVA);
+      setPreciosIncluyenImpuestos(config.preciosIncluyenImpuestos);
+      setIvaHidratado(true);
+    });
+    return () => { activo = false; };
+  }, []);
+
+  useEffect(() => {
+    obtenerConfigDescuentoManual()
+      .then((config) => setDescuentoConfigurado(config.configurado))
+      .catch(() => setDescuentoConfigurado(false));
+  }, []);
+
+  const guardarAccesoDescuento = async (event) => {
+    event.preventDefault();
+    setMensajePasswordDescuento("");
+    if (!esJefeSistema) {
+      setMensajePasswordDescuento("Solo el administrador de la tienda o jefe del sistema puede cambiar esta contraseña.");
+      return;
+    }
+    if (passwordDescuento !== passwordDescuentoConfirmar) {
+      setMensajePasswordDescuento("Las contraseñas no coinciden.");
+      return;
+    }
     try {
-      localStorage.setItem(IVA_STORAGE_KEY, aplicarIVA ? "1" : "0");
+      setGuardandoPasswordDescuento(true);
+      await guardarPasswordDescuentoManual(passwordDescuento);
+      setPasswordDescuento("");
+      setPasswordDescuentoConfirmar("");
+      setDescuentoConfigurado(true);
+      setMensajePasswordDescuento("Contraseña de autorización guardada.");
+    } catch (error) {
+      setMensajePasswordDescuento(error?.message || "No se pudo guardar la contraseña.");
+    } finally {
+      setGuardandoPasswordDescuento(false);
+    }
+  };
+
+  useEffect(() => {
+    try {
+      if (!saveIVAConfigStorage({ aplicarIVA, preciosIncluyenImpuestos })) {
+        throw new Error("No se pudo guardar la configuracion de IVA");
+      }
       const ok =
         saveTicketConfigStorage(ticketCfg) &&
         saveFacturacionConfigStorage(factCfg) &&
-        saveInventarioConfigStorage(inventarioCfg);
+        saveInventarioConfigStorage(inventarioCfg) &&
+        savePOSFeatureConfig(funcionesPOS);
       if (!ok) throw new Error("No se pudo guardar ticket config");
       setGuardado(true);
       const t = setTimeout(() => setGuardado(false), 1200);
@@ -76,7 +140,14 @@ export default function ConfiguracionPOS() {
       setGuardado(false);
       return undefined;
     }
-  }, [aplicarIVA, factCfg, inventarioCfg, ticketCfg]);
+  }, [aplicarIVA, preciosIncluyenImpuestos, factCfg, funcionesPOS, inventarioCfg, ticketCfg]);
+
+  useEffect(() => {
+    if (!ivaHidratado) return;
+    guardarIVAConfig({ aplicarIVA, preciosIncluyenImpuestos }).catch((error) => {
+      console.warn("No se pudo sincronizar la configuración de IVA:", error);
+    });
+  }, [aplicarIVA, ivaHidratado, preciosIncluyenImpuestos]);
 
   const actualizarTicket = (key, value) => {
     setTicketCfg((prev) => ({ ...prev, [key]: value }));
@@ -84,6 +155,17 @@ export default function ConfiguracionPOS() {
 
   const actualizarFacturacion = (key, value) => {
     setFactCfg((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const configurarFacturaGlobal = () => {
+    setFactCfg((prev) => ({
+      ...prev,
+      enabled: true,
+      emisionMode: "factura_bajo_solicitud",
+      rfcReceptorPublicoGeneral: "XAXX010101000",
+      usoCFDI: "S01",
+      requiereRFCCliente: false,
+    }));
   };
 
   const actualizarInventario = (key, value) => {
@@ -132,8 +214,14 @@ export default function ConfiguracionPOS() {
     [productosEjemplo],
   );
   const ivaRateEjemplo = aplicarIVA ? 0.16 : 0;
-  const ivaEjemplo = subtotalEjemplo * ivaRateEjemplo;
-  const totalEjemplo = subtotalEjemplo + ivaEjemplo;
+  const calculoIVAEjemplo = calcularIVA(
+    subtotalEjemplo,
+    ivaRateEjemplo,
+    preciosIncluyenImpuestos,
+  );
+  const subtotalFiscalEjemplo = calculoIVAEjemplo.subtotalSinIVA;
+  const ivaEjemplo = calculoIVAEjemplo.iva;
+  const totalEjemplo = calculoIVAEjemplo.total;
   const topLinesPreview = useMemo(
     () => splitTicketLines(ticketCfg.extraTopLines),
     [ticketCfg.extraTopLines],
@@ -158,11 +246,12 @@ export default function ConfiguracionPOS() {
       referenciaTarjeta: "",
       productos: productosEjemplo,
       estado: "Pagado",
-      subtotal: subtotalEjemplo,
+      subtotal: subtotalFiscalEjemplo,
       aplicaIVA: aplicarIVA,
       ivaPorcentaje: ivaRateEjemplo,
       iva: ivaEjemplo,
       total: totalEjemplo,
+      preciosIncluyenImpuestos,
       ticketConfig: ticketCfg,
     });
   };
@@ -170,8 +259,66 @@ export default function ConfiguracionPOS() {
   return (
     <section className="cfg-pos-wrap">
       <div className="cfg-pos-page-head">
-        <h2>POS y Facturacion</h2>
-        <p>Configura IVA, facturacion y ticket de venta desde un solo lugar.</p>
+        <h2>Punto de venta</h2>
+        <p>Configura las funciones de venta, los impuestos, el catálogo y el ticket desde un solo lugar.</p>
+      </div>
+
+      <div className="cfg-pos-card cfg-pos-overview-card">
+        <div className="cfg-collapse-body">
+          <div className="cfg-pos-section-head">
+            <h3>Funciones de venta y ticket</h3>
+            <p>Activa únicamente las herramientas que utiliza tu negocio.</p>
+          </div>
+          <div className="cfg-pos-feature-list">
+            <label className="cfg-pos-feature">
+              <input
+                type="checkbox"
+                checked={funcionesPOS.promocionesDescuentos}
+                onChange={(e) => setFuncionesPOS((v) => ({ ...v, promocionesDescuentos: e.target.checked }))}
+              />
+              <span className="cfg-pos-feature-text">
+                <strong>Descuentos y promociones</strong>
+                <small>Permite aplicar promociones y descuentos durante la venta.</small>
+              </span>
+            </label>
+            <label className="cfg-pos-feature">
+              <input
+                type="checkbox"
+                checked={funcionesPOS.fiado}
+                onChange={(e) => setFuncionesPOS((v) => ({ ...v, fiado: e.target.checked }))}
+              />
+              <span className="cfg-pos-feature-text">
+                <strong>Ventas fiadas</strong>
+                <small>Habilita cuentas por cobrar y registro de abonos del cliente.</small>
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div className="cfg-pos-card cfg-pos-overview-card">
+        <div className="cfg-collapse-body">
+          <div className="cfg-pos-section-head">
+            <h3>Descuento manual autorizado</h3>
+            <p>El cajero elige el porcentaje de descuento en el POS y debe validarlo con esta contraseña. La contraseña se guarda protegida y nunca se muestra.</p>
+          </div>
+          <form className="cfg-manual-discount-form" onSubmit={guardarAccesoDescuento}>
+            <div className="cfg-manual-discount-status">
+              Estado: <strong>{descuentoConfigurado ? "Configurado" : "Sin configurar"}</strong>
+            </div>
+            <label>
+              <span>{descuentoConfigurado ? "Nueva contraseña" : "Contraseña"}</span>
+              <input type="password" minLength="4" autoComplete="new-password" value={passwordDescuento} onChange={(event) => setPasswordDescuento(event.target.value)} disabled={!esJefeSistema || guardandoPasswordDescuento} required />
+            </label>
+            <label>
+              <span>Confirmar contraseña</span>
+              <input type="password" minLength="4" autoComplete="new-password" value={passwordDescuentoConfirmar} onChange={(event) => setPasswordDescuentoConfirmar(event.target.value)} disabled={!esJefeSistema || guardandoPasswordDescuento} required />
+            </label>
+            <button type="submit" disabled={!esJefeSistema || guardandoPasswordDescuento}>{guardandoPasswordDescuento ? "Guardando..." : descuentoConfigurado ? "Cambiar contraseña" : "Asignar contraseña"}</button>
+            {!esJefeSistema && <small>Solo el administrador de la tienda o jefe del sistema puede configurar este acceso.</small>}
+            {mensajePasswordDescuento && <small role="status">{mensajePasswordDescuento}</small>}
+          </form>
+        </div>
       </div>
 
       <div className="cfg-pos-card cfg-pos-overview-card">
@@ -182,15 +329,13 @@ export default function ConfiguracionPOS() {
           aria-expanded={panelesAbiertos.iva}
         >
           <div className="cfg-collapse-title-wrap">
-            <h3 className="cfg-collapse-title">Configuracion de IVA</h3>
+            <h3 className="cfg-collapse-title">Configuracion de impuestos</h3>
             <p className="cfg-collapse-subtitle">
-              Activa o desactiva el IVA para POS y ticket de venta.
+              El IVA y el IEPS se toman de la configuracion individual de cada producto.
             </p>
           </div>
           <div className="cfg-collapse-meta">
-            <span className={`cfg-pos-overview-pill ${aplicarIVA ? "on" : "off"}`}>
-              {aplicarIVA ? "IVA activo" : "IVA inactivo"}
-            </span>
+            <span className="cfg-pos-overview-pill on">Impuestos por producto</span>
             <span className={`cfg-collapse-arrow ${panelesAbiertos.iva ? "open" : ""}`}>v</span>
           </div>
         </button>
@@ -204,16 +349,25 @@ export default function ConfiguracionPOS() {
                   checked={aplicarIVA}
                   onChange={(e) => setAplicarIVA(e.target.checked)}
                 />
-                <span>Habilitar IVA (16%)</span>
+                <span>Aplicar IVA en el Punto de Venta</span>
+              </label>
+              <label className="cfg-pos-iva-row">
+                <input
+                  type="checkbox"
+                  checked={preciosIncluyenImpuestos}
+                  onChange={(e) => setPreciosIncluyenImpuestos(e.target.checked)}
+                />
+                <span>Los precios de los productos ya incluyen impuestos</span>
               </label>
 
-              <div className={`cfg-pos-status ${aplicarIVA ? "on" : "off"}`}>
-                Estado actual: {aplicarIVA ? "IVA habilitado" : "IVA deshabilitado"}
+              <div className="cfg-pos-status on">
+                Estado actual: tasas de IVA e IEPS definidas por producto
               </div>
             </div>
 
             <small className="cfg-pos-help">
-              Este ajuste impacta el total mostrado en POS y el ticket de venta.
+              Si los precios ya incluyen impuestos, el POS conserva el precio de venta y
+              extrae el IVA para su desglose contable en lugar de sumarlo al total.
             </small>
           </div>
         )}
@@ -325,7 +479,7 @@ export default function ConfiguracionPOS() {
         )}
       </div>
 
-      <div className="cfg-pos-card cfg-billing-card">
+      {MOSTRAR_FACTURACION && <div className="cfg-pos-card cfg-billing-card">
         <button
           type="button"
           className="cfg-collapse-head"
@@ -453,6 +607,27 @@ export default function ConfiguracionPOS() {
 
           <div className="cfg-billing-block">
             <h4>CFDI por defecto</h4>
+            <button
+              type="button"
+              className="cfg-ticket-test-btn"
+              onClick={configurarFacturaGlobal}
+            >
+              Configurar para Factura Global
+            </button>
+
+            <label>RFC receptor publico en general</label>
+            <input
+              value={factCfg.rfcReceptorPublicoGeneral}
+              onChange={(e) =>
+                actualizarFacturacion(
+                  "rfcReceptorPublicoGeneral",
+                  e.target.value.toUpperCase().replace(/[^A-Z0-9&]/g, "").slice(0, 13),
+                )
+              }
+              disabled={!factCfg.enabled}
+              placeholder="XAXX010101000"
+            />
+
             <label>Uso CFDI</label>
             <select
               value={factCfg.usoCFDI}
@@ -571,7 +746,7 @@ export default function ConfiguracionPOS() {
             Configuracion guardada automaticamente para el flujo de facturacion.
           </small>
         </div>}
-      </div>
+      </div>}
 
       <div className="cfg-pos-card cfg-ticket-card">
         <button
@@ -615,7 +790,7 @@ export default function ConfiguracionPOS() {
                 <div className="cfg-ticket-preview-header">
                   {ticketCfg.showLogo && (
                     <div className="cfg-ticket-preview-logo">
-                      <img src={logoUrl} alt="Logo negocio" />
+                      <img src={logoEmpresa || logoUrl} alt="Logo negocio" />
                     </div>
                   )}
 
@@ -708,8 +883,8 @@ export default function ConfiguracionPOS() {
 
                 <div className="cfg-ticket-preview-section">
                   <div className="cfg-ticket-preview-item-row">
-                    <span>Subtotal</span>
-                    <span>{formatCurrency(subtotalEjemplo)}</span>
+                    <span>{aplicarIVA ? "Subtotal sin IVA" : "Subtotal"}</span>
+                    <span>{formatCurrency(subtotalFiscalEjemplo)}</span>
                   </div>
                   {aplicarIVA && (
                     <div className="cfg-ticket-preview-item-row">

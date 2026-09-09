@@ -1,640 +1,400 @@
-import { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
-import { db } from "../initializer/firebase";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import AdminStats from "../components/superadmin/AdminStats";
+import BusinessFilters from "../components/superadmin/BusinessFilters";
+import BusinessTable from "../components/superadmin/BusinessTable";
+import BusinessDrawer from "../components/superadmin/BusinessDrawer";
+import { actualizarEstadoNegocio } from "../js/services/negocios";
+import { establecerPremiumAdmin } from "../js/services/premium_payments";
 import {
-  NEGOCIO_ESTADOS,
-  PLAN_GRATUITO,
-  actualizarConteosNegocio,
-  actualizarEstadoNegocio,
-  eliminarNegocioConDatos,
-  normalizeNegocio,
-} from "../js/services/negocios";
+  listarNegociosPagina,
+  obtenerProductosNegocio,
+  obtenerResumenGlobal,
+  registrarAccionAdmin,
+} from "../js/services/superadmin_negocios";
+import {
+  exportarExpedienteNegocio,
+  exportarNegociosCSV,
+  exportarNegociosExcel,
+  exportarNegociosPDF,
+} from "../js/services/superadmin_export";
+import { FILTROS_SERVIDOR } from "../js/services/superadmin_filtros";
+import "../css/superadmin.css";
 
-function statusClassName(estado = "") {
-  if (estado === "activo" || estado === "gratuito") return "status-al-corriente";
-  if (estado === "bloqueado" || estado === "suspendido") return "status-bloqueada";
-  return "status-pendiente";
-}
+const ES_FILTRO_SERVIDOR = new Set(FILTROS_SERVIDOR.map((item) => item.id));
 
-function formatDate(value) {
-  if (!value) return "Sin fecha";
-  const date = typeof value?.toDate === "function" ? value.toDate() : new Date(value);
-  if (Number.isNaN(date.getTime())) return "Sin fecha";
-  return date.toLocaleDateString("es-MX", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+const MENSAJES_VACIO = {
+  bloqueados: "No hay negocios bloqueados.",
+  incompletos: "No hay negocios con configuración incompleta.",
+  premium: "Todavía no hay negocios Premium.",
+};
+
+function normalizar(texto) {
+  return String(texto || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 export default function ConfiguracionSuscripciones() {
   const { loading, uid: currentUid, superAdmin } = useAutorizacionActual();
+
   const [negocios, setNegocios] = useState([]);
-  const [empleados, setEmpleados] = useState([]);
-  const [configuraciones, setConfiguraciones] = useState([]);
-  const [sesiones, setSesiones] = useState([]);
-  const [savingId, setSavingId] = useState("");
-  const [feedback, setFeedback] = useState({ type: "", message: "" });
-  const [drafts, setDrafts] = useState({});
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [deleteConfirmText, setDeleteConfirmText] = useState("");
-  const [deleteReason, setDeleteReason] = useState("");
-  const [deleteError, setDeleteError] = useState("");
+  const [resumen, setResumen] = useState(null);
+  const [cargando, setCargando] = useState(true);
+  const [cargandoResumen, setCargandoResumen] = useState(true);
+  const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  const [busqueda, setBusqueda] = useState("");
+  const [filtro, setFiltro] = useState("todos");
+  const [orden, setOrden] = useState("recientes");
+  const [pageSize, setPageSize] = useState(25);
+  const [pagina, setPagina] = useState(0);
+  const [hayMas, setHayMas] = useState(false);
+  const [seleccionado, setSeleccionado] = useState(null);
+  const [confirmacion, setConfirmacion] = useState(null);
+  const [notaConfirmacion, setNotaConfirmacion] = useState("");
+  const [mesesPremium, setMesesPremium] = useState(1);
+
+  // Cursores de Firestore por pagina visitada: permite ir y volver sin
+  // recorrer la coleccion completa.
+  const cursores = useRef([null]);
+  const [recarga, setRecarga] = useState(0);
+
+  // Un filtro que Firestore no puede resolver se pide sin restriccion y se
+  // refina sobre la pagina; el resto viaja como where() al servidor.
+  const filtroServidor = ES_FILTRO_SERVIDOR.has(filtro) ? filtro : "todos";
 
   useEffect(() => {
-    const unsubNegocios = onSnapshot(
-      collection(db, "negocios"),
-      (snapshot) => {
-        setNegocios(snapshot.docs.map((item) => normalizeNegocio(item.data(), item.id)));
-      },
-      () => setNegocios([]),
-    );
+    if (!superAdmin) return undefined;
+    let cancelado = false;
+    setCargando(true);
+    setError("");
 
-    const unsubEmpleados = onSnapshot(
-      collection(db, "autorizados"),
-      (snapshot) => setEmpleados(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
-      () => setEmpleados([]),
-    );
+    listarNegociosPagina({
+      pageSize,
+      cursor: cursores.current[pagina] || null,
+      orden,
+      filtro: filtroServidor,
+    })
+      .then((resultado) => {
+        if (cancelado) return;
+        setNegocios(resultado.negocios);
+        setHayMas(resultado.hayMas);
+        cursores.current[pagina + 1] = resultado.cursor;
+      })
+      .catch((problema) => {
+        if (cancelado) return;
+        setNegocios([]);
+        setHayMas(false);
+        setError(
+          problema?.code === "failed-precondition"
+            ? "Firestore necesita un índice para este orden o filtro. Revisa el enlace del error en la consola."
+            : "No se pudieron cargar los negocios.",
+        );
+      })
+      .finally(() => {
+        if (!cancelado) setCargando(false);
+      });
 
-    const unsubConfiguraciones = onSnapshot(
-      collection(db, "configuracion"),
-      (snapshot) =>
-        setConfiguraciones(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
-      () => setConfiguraciones([]),
-    );
+    return () => { cancelado = true; };
+  }, [superAdmin, pageSize, pagina, orden, filtroServidor, recarga]);
 
-    const unsubSesiones = onSnapshot(
-      collection(db, "sesiones_dispositivo"),
-      (snapshot) => setSesiones(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
-      () => setSesiones([]),
-    );
+  useEffect(() => {
+    if (!superAdmin) return undefined;
+    let cancelado = false;
+    setCargandoResumen(true);
+    obtenerResumenGlobal()
+      .then((datos) => { if (!cancelado) setResumen(datos); })
+      .catch(() => { if (!cancelado) setResumen(null); })
+      .finally(() => { if (!cancelado) setCargandoResumen(false); });
+    return () => { cancelado = true; };
+  }, [superAdmin, recarga]);
 
-    return () => {
-      unsubNegocios();
-      unsubEmpleados();
-      unsubConfiguraciones();
-      unsubSesiones();
-    };
+  // Cambiar filtro, orden o tamaño invalida los cursores acumulados.
+  const reiniciarPaginacion = useCallback(() => {
+    cursores.current = [null];
+    setPagina(0);
   }, []);
 
-  const conteosPorNegocio = useMemo(() => {
-    const map = {};
+  const cambiarFiltro = useCallback((valor) => {
+    setFiltro(valor);
+    reiniciarPaginacion();
+  }, [reiniciarPaginacion]);
 
-    empleados.forEach((user) => {
-      const negocioId = String(user?.negocioId || user?.cuentaPrincipalUid || user?.uid || "").trim();
-      if (!negocioId) return;
-      if (!map[negocioId]) {
-        map[negocioId] = {
-          usuariosTotal: 0,
-          usuariosActivos: 0,
-          usuariosPendientes: 0,
-          usuariosDeshabilitados: 0,
-          equiposTotal: 0,
-        };
-      }
+  const cambiarOrden = useCallback((valor) => {
+    setOrden(valor);
+    reiniciarPaginacion();
+  }, [reiniciarPaginacion]);
 
-      map[negocioId].usuariosTotal += 1;
-      if (user.activo === false || user.estado === "Deshabilitado") {
-        map[negocioId].usuariosDeshabilitados += 1;
-      } else if (user.estado === "Pendiente" || user.activo === null) {
-        map[negocioId].usuariosPendientes += 1;
-      } else {
-        map[negocioId].usuariosActivos += 1;
-      }
+  const cambiarPageSize = useCallback((valor) => {
+    setPageSize(valor);
+    reiniciarPaginacion();
+  }, [reiniciarPaginacion]);
+
+  const recargar = useCallback(() => {
+    reiniciarPaginacion();
+    setRecarga((valor) => valor + 1);
+  }, [reiniciarPaginacion]);
+
+  // Busqueda y filtros de actividad se resuelven sobre la pagina cargada:
+  // Firestore no indexa texto libre ni el nivel de uso calculado.
+  const visibles = useMemo(() => {
+    const termino = normalizar(busqueda).trim();
+    return negocios.filter((negocio) => {
+      if (filtro === "free" && negocio.plan.esPremium) return false;
+      if (filtro === "frecuente" && !["frecuente", "activo"].includes(negocio.actividad.id)) return false;
+      if (filtro === "poco" && negocio.actividad.id !== "poco") return false;
+      if (filtro === "inactivo" && negocio.actividad.id !== "inactivo") return false;
+      if (!termino) return true;
+      return [negocio.nombre, negocio.correo, negocio.negocioId, negocio.titularNombre]
+        .some((campo) => normalizar(campo).includes(termino));
     });
+  }, [negocios, busqueda, filtro]);
 
-    sesiones.forEach((session) => {
-      const negocioId = String(session?.negocioId || session?.cuentaPrincipalUid || "").trim();
-      if (!negocioId) return;
-      if (!map[negocioId]) {
-        map[negocioId] = {
-          usuariosTotal: 0,
-          usuariosActivos: 0,
-          usuariosPendientes: 0,
-          usuariosDeshabilitados: 0,
-          equiposTotal: 0,
-        };
-      }
-      map[negocioId].equiposTotal += 1;
-    });
-
-    return map;
-  }, [empleados, sesiones]);
-
-  const empresasPorNegocio = useMemo(() => {
-    const map = {};
-    configuraciones.forEach((config) => {
-      const id = String(config?.id || "").trim();
-      if (!id.startsWith("empresa__")) return;
-      const negocioId = String(config?.negocioId || config?.cuentaPrincipalUid || id.replace("empresa__", "")).trim();
-      if (!negocioId) return;
-      map[negocioId] = config;
-    });
-    return map;
-  }, [configuraciones]);
-
-  const negociosBase = useMemo(() => {
-    const map = new Map();
-
-    negocios.forEach((negocio) => {
-      if (!negocio.negocioId) return;
-      map.set(negocio.negocioId, negocio);
-    });
-
-    empleados.forEach((user) => {
-      const negocioId = String(user?.negocioId || user?.cuentaPrincipalUid || user?.uid || user?.id || "").trim();
-      if (!negocioId || map.has(negocioId)) return;
-
-      const esPrincipal =
-        user?.esCuentaPrincipal === true ||
-        String(user?.uid || user?.id || "").trim() === negocioId;
-      if (!esPrincipal) return;
-
-      const empresa = empresasPorNegocio[negocioId] || {};
-      map.set(
-        negocioId,
-        normalizeNegocio(
-          {
-            negocioId,
-            cuentaPrincipalUid: negocioId,
-            administradorUid: String(user?.uid || user?.id || negocioId).trim(),
-            nombre: empresa.nombre || user?.nombre || user?.correo || "Negocio sin nombre",
-            telefono: empresa.telefono || user?.telefono || "",
-            correo: user?.correo || empresa.correo || "",
-            estado: user?.setupCompleto === false ? "pendiente" : "gratuito",
-            planActual: PLAN_GRATUITO,
-            modalidad: "gratuito",
-            gratuito: true,
-            usuariosGratis: true,
-            cobrosAutomaticos: false,
-            setupCompleto: user?.setupCompleto === true,
-            terminosAceptados: user?.terminosAceptados === true,
-            terminosVersion: user?.terminosVersion || "",
-            sintetizado: true,
-          },
-          negocioId,
-        ),
-      );
-    });
-
-    Object.entries(empresasPorNegocio).forEach(([negocioId, empresa]) => {
-      if (!negocioId || map.has(negocioId)) return;
-      map.set(
-        negocioId,
-        normalizeNegocio(
-          {
-            negocioId,
-            cuentaPrincipalUid: negocioId,
-            nombre: empresa.nombre || "Negocio sin nombre",
-            telefono: empresa.telefono || "",
-            estado: "gratuito",
-            planActual: PLAN_GRATUITO,
-            modalidad: "gratuito",
-            gratuito: true,
-            usuariosGratis: true,
-            cobrosAutomaticos: false,
-            setupCompleto: true,
-            sintetizado: true,
-          },
-          negocioId,
-        ),
-      );
-    });
-
-    return [...map.values()];
-  }, [empleados, empresasPorNegocio, negocios]);
-
-  const negociosConConteos = useMemo(() => {
-    return negociosBase
-      .map((negocio) => ({
-        ...negocio,
-        conteos: {
-          ...negocio.conteos,
-          ...(conteosPorNegocio[negocio.negocioId] || {}),
-        },
-      }))
-      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), "es"));
-  }, [conteosPorNegocio, negociosBase]);
-
-  const resumen = useMemo(() => {
-    return negociosConConteos.reduce(
-      (acc, item) => {
-        acc.negocios += 1;
-        acc.usuarios += item.conteos.usuariosTotal || 0;
-        acc.equipos += item.conteos.equiposTotal || 0;
-        if (item.estado === "bloqueado" || item.estado === "suspendido") acc.bloqueados += 1;
-        return acc;
-      },
-      { negocios: 0, usuarios: 0, equipos: 0, bloqueados: 0 },
-    );
-  }, [negociosConConteos]);
-
-  const getDraft = (negocio) => {
-    const current = drafts[negocio.negocioId];
-    return {
-      estado: current?.estado || negocio.estado || "gratuito",
-      razon: current?.razon ?? negocio.bloqueoRazon ?? "",
-    };
-  };
-
-  const updateDraft = (negocioId, patch) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [negocioId]: {
-        ...(prev[negocioId] || {}),
-        ...patch,
-      },
-    }));
-  };
-
-  const guardarEstado = async (negocio) => {
-    const draft = getDraft(negocio);
-    setSavingId(negocio.negocioId);
-    setFeedback({ type: "", message: "" });
-
+  const exportarGlobal = useCallback(async (formato) => {
     try {
-      await actualizarEstadoNegocio({
-        negocioId: negocio.negocioId,
-        estado: draft.estado,
-        razon: draft.razon,
-        actorUid: currentUid,
-      });
-      await actualizarConteosNegocio(negocio.negocioId).catch(() => null);
-      setFeedback({ type: "success", message: "Estado del negocio actualizado." });
-    } catch (error) {
-      setFeedback({
-        type: "error",
-        message: error?.message || "No se pudo actualizar el negocio.",
-      });
-    } finally {
-      setSavingId("");
+      if (formato === "csv") exportarNegociosCSV(visibles);
+      else if (formato === "excel") await exportarNegociosExcel(visibles);
+      else await exportarNegociosPDF(visibles);
+    } catch {
+      setFeedback({ tipo: "error", texto: "No se pudo generar el archivo." });
     }
-  };
+  }, [visibles]);
 
-  const crearRegistroNegocio = async (negocio) => {
-    setSavingId(negocio.negocioId);
-    setFeedback({ type: "", message: "" });
+  const exportarNegocio = useCallback(async (negocio, usuarios, historial) => {
+    setOcupado(true);
+    setFeedback(null);
+    try {
+      // El catálogo se lee aquí, no al abrir el drawer: solo se paga la
+      // lectura del inventario cuando de verdad se descarga el expediente.
+      const { productos, truncado } = await obtenerProductosNegocio(negocio.negocioId)
+        .catch(() => ({ productos: [], truncado: false }));
+      await exportarExpedienteNegocio({
+        negocio,
+        usuarios,
+        historial,
+        productos,
+        productosTruncados: truncado,
+      });
+      if (truncado) {
+        setFeedback({
+          tipo: "error",
+          texto: `El catálogo de ${negocio.nombre} superó el tope de exportación y se recortó.`,
+        });
+      }
+    } catch {
+      setFeedback({ tipo: "error", texto: "No se pudo generar el expediente." });
+    } finally {
+      setOcupado(false);
+    }
+  }, []);
+
+  const pedirConfirmacion = useCallback((tipo, negocio) => {
+    setConfirmacion({ tipo, negocio });
+    setNotaConfirmacion("");
+    setMesesPremium(1);
+  }, []);
+
+  const ejecutarConfirmacion = useCallback(async () => {
+    if (!confirmacion) return;
+    const { tipo, negocio } = confirmacion;
+    setOcupado(true);
+    setFeedback(null);
 
     try {
-      await setDoc(
-        doc(db, "negocios", negocio.negocioId),
-        {
+      if (tipo === "bloquear") {
+        await actualizarEstadoNegocio({
           negocioId: negocio.negocioId,
-          cuentaPrincipalUid: negocio.cuentaPrincipalUid || negocio.negocioId,
-          administradorUid: negocio.administradorUid || negocio.negocioId,
-          nombre: negocio.nombre || "Negocio sin nombre",
-          telefono: negocio.telefono || "",
-          correo: negocio.correo || "",
-          estado: negocio.estado || "gratuito",
-          planActual: PLAN_GRATUITO,
-          modalidad: "gratuito",
-          gratuito: true,
-          usuariosGratis: true,
-          cobrosAutomaticos: false,
-          setupCompleto: negocio.setupCompleto === true,
-          terminosAceptados: negocio.terminosAceptados === true,
-          terminosVersion: negocio.terminosVersion || "",
-          conteos: negocio.conteos || {},
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          updatedByUid: currentUid || null,
-        },
-        { merge: true },
-      );
-      await actualizarConteosNegocio(negocio.negocioId).catch(() => null);
-      setFeedback({ type: "success", message: "Registro de negocio creado correctamente." });
-    } catch (error) {
+          estado: "bloqueado",
+          razon: notaConfirmacion,
+          actorUid: currentUid,
+        });
+        setFeedback({ tipo: "success", texto: `${negocio.nombre} quedó bloqueado.` });
+      } else if (tipo === "desbloquear") {
+        await actualizarEstadoNegocio({
+          negocioId: negocio.negocioId,
+          estado: "activo",
+          razon: "",
+          actorUid: currentUid,
+        });
+        await registrarAccionAdmin({
+          negocioId: negocio.negocioId,
+          action: "negocio_desbloqueado",
+          actorUid: currentUid,
+          detalle: notaConfirmacion,
+        }).catch(() => null);
+        setFeedback({ tipo: "success", texto: `${negocio.nombre} quedó desbloqueado.` });
+      } else {
+        // Premium solo se puede escribir desde Cloud Functions: las reglas de
+        // Firestore bloquean esos campos para cualquier cliente.
+        const activar = tipo === "premium_on";
+        await establecerPremiumAdmin({
+          negocioId: negocio.negocioId,
+          activar,
+          meses: mesesPremium,
+          motivo: notaConfirmacion,
+        });
+        setFeedback({
+          tipo: "success",
+          texto: activar
+            ? `Premium activado para ${negocio.nombre} por ${mesesPremium} mes(es).`
+            : `Premium desactivado para ${negocio.nombre}.`,
+        });
+      }
+
+      setConfirmacion(null);
+      setSeleccionado(null);
+      setRecarga((valor) => valor + 1);
+    } catch (problema) {
       setFeedback({
-        type: "error",
-        message: error?.message || "No se pudo crear el registro del negocio.",
+        tipo: "error",
+        texto: problema?.message || "No se pudo completar la acción administrativa.",
       });
     } finally {
-      setSavingId("");
+      setOcupado(false);
     }
-  };
-
-  const abrirEliminarNegocio = (negocio) => {
-    setDeleteTarget(negocio);
-    setDeleteConfirmText("");
-    setDeleteReason("");
-    setDeleteError("");
-  };
-
-  const cerrarEliminarNegocio = () => {
-    if (savingId) return;
-    setDeleteTarget(null);
-    setDeleteConfirmText("");
-    setDeleteReason("");
-    setDeleteError("");
-  };
-
-  const confirmarEliminarNegocio = async () => {
-    if (!deleteTarget?.negocioId || savingId) return;
-    const expected = String(deleteTarget.nombre || deleteTarget.negocioId).trim();
-    if (deleteConfirmText.trim() !== expected) {
-      setDeleteError(`Escribe exactamente "${expected}" para confirmar.`);
-      return;
-    }
-
-    setSavingId(deleteTarget.negocioId);
-    setDeleteError("");
-    setFeedback({ type: "", message: "" });
-
-    try {
-      const result = await eliminarNegocioConDatos({
-        negocioId: deleteTarget.negocioId,
-        actorUid: currentUid,
-        razon: deleteReason,
-      });
-      setFeedback({
-        type: "success",
-        message: `Negocio eliminado. Documentos Firestore procesados: ${result.totalDeleted}.`,
-      });
-      setDeleteTarget(null);
-      setDeleteConfirmText("");
-      setDeleteReason("");
-      setDeleteError("");
-    } catch (error) {
-      setDeleteError(error?.message || "No se pudo eliminar el negocio.");
-    } finally {
-      setSavingId("");
-    }
-  };
+  }, [confirmacion, notaConfirmacion, mesesPremium, currentUid]);
 
   if (loading) {
     return (
-      <div className="cfg-sus-wrap">
-        <div className="cfg-pos-card cfg-sus-guard-card">
-          <h2>Superadministracion</h2>
-          <p>Cargando permisos del usuario...</p>
-        </div>
+      <div className="sa-wrap">
+        <AdminStats resumen={null} cargando />
       </div>
     );
   }
 
   if (!superAdmin) {
     return (
-      <div className="cfg-sus-wrap">
-        <div className="cfg-pos-card cfg-sus-guard-card">
-          <h2>Superadministracion</h2>
-          <p>Solo el superadministrador de CajaLibre puede consultar negocios globales.</p>
+      <div className="sa-wrap">
+        <div className="sa-error">
+          Solo el superadministrador de CajaLibre puede consultar negocios globales.
         </div>
       </div>
     );
   }
 
+  const textoConfirmacion = {
+    bloquear: {
+      titulo: "Bloquear negocio",
+      cuerpo: "El negocio perderá el acceso operativo a CajaLibre hasta que lo desbloquees. Sus datos no se eliminan.",
+    },
+    desbloquear: {
+      titulo: "Desbloquear negocio",
+      cuerpo: "El negocio recuperará el acceso operativo de inmediato.",
+    },
+    premium_on: {
+      titulo: "Activar Premium manualmente",
+      cuerpo: "Se concede Premium sin cobro asociado. No activa renovación automática y queda asentado en la bitácora.",
+    },
+    premium_off: {
+      titulo: "Desactivar Premium",
+      cuerpo: "El negocio perderá Premium de inmediato, aunque su periodo pagado siguiera vigente.",
+    },
+  }[confirmacion?.tipo] || {};
+
   return (
-    <div className="cfg-sus-wrap">
-      <div className="cfg-header">
-        <h1>Panel de Superadministrador</h1>
-        <p>
-          Control informativo de negocios registrados. CajaLibre permanece en plan gratuito:
-          no hay cobros automaticos ni datos bancarios.
-        </p>
-      </div>
+    <div className="sa-wrap">
+      <AdminStats resumen={resumen} cargando={cargandoResumen} />
 
-      <div className="cfg-pos-card cfg-sus-model-card">
-        <div className="cfg-sus-model-head">
-          <div>
-            <span className="cfg-sus-model-kicker">Servicio gratuito</span>
-            <h2>Negocios separados por negocioId</h2>
-            <p>
-              Este panel muestra conteos y estados por negocio. Los administradores de negocio
-              solo administran su propio espacio; los estados globales se cambian aqui.
-            </p>
-          </div>
-        </div>
-        <div className="cfg-sus-model-points">
-          <span>Sin cobros automaticos</span>
-          <span>Usuarios añadidos gratuitos</span>
-          <span>Conteos informativos</span>
-          <span>Bitacora administrativa</span>
-        </div>
-      </div>
+      <BusinessFilters
+        busqueda={busqueda}
+        onBuscar={setBusqueda}
+        filtro={filtro}
+        onFiltrar={cambiarFiltro}
+        orden={orden}
+        onOrdenar={cambiarOrden}
+        pageSize={pageSize}
+        onPageSize={cambiarPageSize}
+        onExportar={exportarGlobal}
+        onRecargar={recargar}
+        ocupado={cargando}
+      />
 
-      <div className="cfg-sus-summary-grid">
-        <div className="cfg-sus-summary-card">
-          <span>Negocios</span>
-          <strong>{resumen.negocios}</strong>
-          <small>Total de negocios registrados.</small>
-        </div>
-        <div className="cfg-sus-summary-card">
-          <span>Usuarios</span>
-          <strong>{resumen.usuarios}</strong>
-          <small>Usuarios registrados gratuitamente.</small>
-        </div>
-        <div className="cfg-sus-summary-card">
-          <span>Equipos</span>
-          <strong>{resumen.equipos}</strong>
-          <small>Equipos detectados de forma informativa.</small>
-        </div>
-        <div className="cfg-sus-summary-card">
-          <span>Bloqueados</span>
-          <strong>{resumen.bloqueados}</strong>
-          <small>Negocios sin acceso operativo.</small>
-        </div>
-      </div>
-
-      {feedback.message ? (
-        <div className={`cfg-sus-feedback ${feedback.type || ""}`}>
-          {feedback.message}
-        </div>
+      {error ? <div className="sa-error">{error}</div> : null}
+      {feedback ? (
+        <div className={`sa-feedback ${feedback.tipo}`}>{feedback.texto}</div>
       ) : null}
 
-      <div className="cfg-sus-list-grid cfg-business-list-grid">
-        {negociosConConteos.map((negocio) => {
-          const draft = getDraft(negocio);
-          return (
-            <article key={negocio.negocioId} className="cfg-sus-card cfg-business-card">
-              <div className="cfg-sus-card-head">
-                <div>
-                  <h3>{negocio.nombre}</h3>
-                  <p>{negocio.correo || negocio.negocioId}</p>
-                  {negocio.sintetizado ? (
-                    <small className="cfg-business-synth-label">
-                      Detectado desde registros existentes
-                    </small>
-                  ) : null}
-                </div>
-                <span className={`cfg-sus-status ${statusClassName(negocio.estado)}`}>
-                  {negocio.estado}
-                </span>
-              </div>
+      <BusinessTable
+        negocios={visibles}
+        cargando={cargando}
+        seleccionadoId={seleccionado?.negocioId || ""}
+        onSeleccionar={setSeleccionado}
+        pagina={pagina}
+        hayMas={hayMas && visibles.length === negocios.length}
+        onAnterior={() => setPagina((valor) => Math.max(0, valor - 1))}
+        onSiguiente={() => setPagina((valor) => valor + 1)}
+        mensajeVacio={
+          busqueda
+            ? "No existen negocios con estos filtros."
+            : MENSAJES_VACIO[filtro] || "No se encontraron negocios."
+        }
+      />
 
-              <div className="cfg-sus-card-grid">
-                <div>
-                  <span className="cfg-proveedores-label">Plan actual</span>
-                  <p>{negocio.planActual || PLAN_GRATUITO}</p>
-                </div>
-                <div>
-                  <span className="cfg-proveedores-label">Terminos</span>
-                  <p>{negocio.terminosAceptados ? "Aceptados" : "Pendientes"}</p>
-                </div>
-                <div>
-                  <span className="cfg-proveedores-label">Version terminos</span>
-                  <p>{negocio.terminosVersion || "Sin aceptar"}</p>
-                </div>
-                <div>
-                  <span className="cfg-proveedores-label">Configuracion</span>
-                  <p>{negocio.setupCompleto ? "Completa" : "Pendiente"}</p>
-                </div>
-                <div>
-                  <span className="cfg-proveedores-label">Usuarios</span>
-                  <p>{negocio.conteos.usuariosTotal}</p>
-                </div>
-                <div>
-                  <span className="cfg-proveedores-label">Activos</span>
-                  <p>{negocio.conteos.usuariosActivos}</p>
-                </div>
-                <div>
-                  <span className="cfg-proveedores-label">Pendientes</span>
-                  <p>{negocio.conteos.usuariosPendientes}</p>
-                </div>
-                <div>
-                  <span className="cfg-proveedores-label">Deshabilitados</span>
-                  <p>{negocio.conteos.usuariosDeshabilitados}</p>
-                </div>
-                <div>
-                  <span className="cfg-proveedores-label">Equipos</span>
-                  <p>{negocio.conteos.equiposTotal}</p>
-                </div>
-                <div>
-                  <span className="cfg-proveedores-label">Bloqueo fecha</span>
-                  <p>{formatDate(negocio.bloqueoFecha)}</p>
-                </div>
-              </div>
+      <BusinessDrawer
+        key={seleccionado?.negocioId || "sin-negocio"}
+        negocio={seleccionado}
+        onCerrar={() => setSeleccionado(null)}
+        onBloquear={(negocio) => pedirConfirmacion("bloquear", negocio)}
+        onDesbloquear={(negocio) => pedirConfirmacion("desbloquear", negocio)}
+        onPremium={(negocio, activar) =>
+          pedirConfirmacion(activar ? "premium_on" : "premium_off", negocio)}
+        onExportar={exportarNegocio}
+        ocupado={ocupado}
+      />
 
-              <div className="cfg-business-state-box">
-                <label className="emp-field">
-                  <span>Estado del negocio</span>
-                  <select
-                    value={draft.estado}
-                    onChange={(e) => updateDraft(negocio.negocioId, { estado: e.target.value })}
-                  >
-                    {NEGOCIO_ESTADOS.map((estado) => (
-                      <option key={estado} value={estado}>
-                        {estado}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+      {confirmacion ? (
+        <div className="sa-confirm-backdrop" role="presentation" onClick={() => !ocupado && setConfirmacion(null)}>
+          <div
+            className="sa-confirm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sa-confirm-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 id="sa-confirm-title">{textoConfirmacion.titulo}</h3>
+            <p>{textoConfirmacion.cuerpo}</p>
 
-                <label className="emp-field">
-                  <span>Razon de bloqueo o nota interna</span>
-                  <textarea
-                    rows={3}
-                    value={draft.razon}
-                    onChange={(e) => updateDraft(negocio.negocioId, { razon: e.target.value })}
-                    placeholder="Motivo visible para soporte interno"
-                  />
-                </label>
-              </div>
-
-              <p className="cfg-sus-card-note">
-                Los cambios de estado solo los puede guardar el superadministrador. Un negocio
-                bloqueado o suspendido no entra a modulos operativos.
-              </p>
-
-              <div className="cfg-sus-card-actions">
-                <button
-                  type="button"
-                  className="emp-btn emp-btn-soft"
-                  onClick={() => actualizarConteosNegocio(negocio.negocioId)}
-                  disabled={savingId === negocio.negocioId}
+            {confirmacion.tipo === "premium_on" ? (
+              <label>
+                Meses de Premium
+                <select
+                  value={mesesPremium}
+                  onChange={(event) => setMesesPremium(Number(event.target.value))}
                 >
-                  Actualizar conteos
-                </button>
-                {negocio.sintetizado ? (
-                  <button
-                    type="button"
-                    className="emp-btn emp-btn-soft"
-                    onClick={() => crearRegistroNegocio(negocio)}
-                    disabled={savingId === negocio.negocioId}
-                  >
-                    Crear registro
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className="emp-btn emp-btn-primary"
-                  onClick={() => guardarEstado(negocio)}
-                  disabled={savingId === negocio.negocioId}
-                >
-                  {savingId === negocio.negocioId ? "Guardando..." : "Guardar estado"}
-                </button>
-                <button
-                  type="button"
-                  className="emp-btn emp-btn-danger"
-                  onClick={() => abrirEliminarNegocio(negocio)}
-                  disabled={savingId === negocio.negocioId}
-                >
-                  Eliminar negocio
-                </button>
-              </div>
-            </article>
-          );
-        })}
+                  {[1, 3, 6, 12].map((meses) => (
+                    <option key={meses} value={meses}>{meses} mes(es)</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
-        {negociosConConteos.length === 0 && (
-          <div className="cfg-grid-empty">
-            Todavia no hay negocios registrados en la coleccion negocios.
-          </div>
-        )}
-      </div>
-
-      {deleteTarget ? (
-        <div className="cfg-business-delete-backdrop" role="dialog" aria-modal="true">
-          <div className="cfg-business-delete-modal">
-            <span className="cfg-sus-model-kicker">Aviso importante</span>
-            <h2>Eliminar negocio y sus datos</h2>
-            <p>
-              Esta accion eliminara documentos de Firestore relacionados con este negocio:
-              usuarios autorizados, empleados, clientes, productos, proveedores, ventas,
-              cortes, egresos, servicios, sesiones, configuracion y terminos aceptados.
-            </p>
-            <p>
-              No elimina automaticamente usuarios de Firebase Authentication. Si necesitas
-              limpiar esas cuentas de acceso, hazlo despues desde Firebase Console o Admin SDK.
-            </p>
-
-            <div className="cfg-business-delete-summary">
-              <strong>{deleteTarget.nombre}</strong>
-              <span>{deleteTarget.negocioId}</span>
-            </div>
-
-            <label className="emp-field">
-              <span>Razon o nota de eliminacion</span>
+            <label>
+              Motivo o nota interna
               <textarea
                 rows={3}
-                value={deleteReason}
-                onChange={(e) => setDeleteReason(e.target.value)}
-                placeholder="Ej. negocio duplicado, prueba interna, solicitud del titular..."
+                value={notaConfirmacion}
+                onChange={(event) => setNotaConfirmacion(event.target.value)}
+                placeholder="Queda registrado en el historial administrativo"
               />
             </label>
 
-            <label className="emp-field">
-              <span>Para confirmar escribe: {deleteTarget.nombre || deleteTarget.negocioId}</span>
-              <input
-                value={deleteConfirmText}
-                onChange={(e) => setDeleteConfirmText(e.target.value)}
-                placeholder={deleteTarget.nombre || deleteTarget.negocioId}
-              />
-            </label>
-
-            {deleteError ? <div className="cfg-sus-feedback error">{deleteError}</div> : null}
-
-            <div className="cfg-sus-card-actions cfg-business-delete-actions">
-              <button type="button" className="emp-btn emp-btn-soft" onClick={cerrarEliminarNegocio}>
+            <div className="sa-confirm-actions">
+              <button
+                type="button"
+                className="sa-btn"
+                onClick={() => setConfirmacion(null)}
+                disabled={ocupado}
+              >
                 Cancelar
               </button>
               <button
                 type="button"
-                className="emp-btn emp-btn-danger"
-                onClick={confirmarEliminarNegocio}
-                disabled={savingId === deleteTarget.negocioId}
+                className={`sa-btn ${confirmacion.tipo === "desbloquear" ? "sa-btn-primary" : "sa-btn-danger"}`}
+                onClick={ejecutarConfirmacion}
+                disabled={ocupado}
               >
-                {savingId === deleteTarget.negocioId ? "Eliminando..." : "Eliminar definitivamente"}
+                {ocupado ? "Aplicando..." : "Confirmar"}
               </button>
             </div>
           </div>

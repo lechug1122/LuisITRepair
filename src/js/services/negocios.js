@@ -4,6 +4,7 @@ import {
   getCountFromServer,
   getDoc,
   getDocs,
+  increment,
   onSnapshot,
   query,
   serverTimestamp,
@@ -13,6 +14,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
+import { getCollectionRef, getDocRef } from "./tenant";
 
 export const TERMINOS_CAJA_LIBRE_VERSION = "2026-07-22";
 export const PLAN_GRATUITO = "Gratuito";
@@ -27,6 +29,27 @@ export const SOPORTE_CAJA_LIBRE = {
 
 function cleanText(value = "") {
   return String(value || "").trim();
+}
+
+function bitacoraRef(tipo, negocioId, uid = "") {
+  const safeTipo = cleanText(tipo).replace(/[^a-z0-9_-]/gi, "_");
+  const safeNegocioId = cleanText(negocioId).replace(/[^a-z0-9_-]/gi, "_");
+  const safeUid = cleanText(uid).replace(/[^a-z0-9_-]/gi, "_");
+  return doc(
+    db,
+    "negocios",
+    cleanText(negocioId),
+    "admin_bitacora",
+    [safeTipo, safeNegocioId, safeUid].filter(Boolean).join("__"),
+  );
+}
+
+function bitacoraData(data = {}) {
+  return {
+    ...data,
+    cantidad: increment(1),
+    createdAt: serverTimestamp(),
+  };
 }
 
 export function normalizeNegocio(raw = {}, id = "") {
@@ -84,8 +107,9 @@ export function escucharNegocio(negocioId = "", onData, onError) {
 
   return onSnapshot(
     doc(db, "negocios", safeId),
+    { includeMetadataChanges: true },
     (snap) => {
-      onData?.(snap.exists() ? normalizeNegocio(snap.data(), snap.id) : null);
+      onData?.(snap.exists() ? normalizeNegocio(snap.data(), snap.id) : null, snap.metadata);
     },
     onError,
   );
@@ -141,10 +165,10 @@ export async function aceptarTerminosNegocio({ uid, negocioId, nombre = "", corr
 
   const acceptedAt = serverTimestamp();
   const acceptanceNonce = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const aceptacionRef = doc(
-    db,
+  const aceptacionRef = getDocRef(
     "terminos_aceptaciones",
     `${safeNegocioId}_${safeUid}_${TERMINOS_CAJA_LIBRE_VERSION}_${acceptanceNonce}`,
+    safeNegocioId,
   );
 
   const logSoftError = (scope, error) => {
@@ -191,14 +215,13 @@ export async function aceptarTerminosNegocio({ uid, negocioId, nombre = "", corr
   ]);
 
   await setDoc(
-    doc(db, "admin_bitacora", `${Date.now()}_${safeUid}_terminos`),
-    {
+    bitacoraRef("terminos_aceptados", safeNegocioId, safeUid),
+    bitacoraData({
       tipo: "terminos_aceptados",
       uid: safeUid,
       negocioId: safeNegocioId,
       version: TERMINOS_CAJA_LIBRE_VERSION,
-      createdAt: serverTimestamp(),
-    },
+    }),
     { merge: true },
   ).catch((error) => logSoftError("bitacora", error));
 }
@@ -247,7 +270,7 @@ export async function completarConfiguracionInicial({
   );
 
   await setDoc(
-    doc(db, "configuracion", `empresa__${safeNegocioId}`),
+    getDocRef("configuracion", "empresa", safeNegocioId),
     {
       nombre: cleanText(nombre) || "Mi negocio",
       telefono: cleanText(telefono),
@@ -272,7 +295,7 @@ export async function completarConfiguracionInicial({
   try {
     const empleadosSnap = await getDocs(
       query(
-        collection(db, "empleados"),
+        getCollectionRef("empleados", safeNegocioId),
         where("cuentaPrincipalUid", "==", safeNegocioId),
       ),
     );
@@ -296,13 +319,12 @@ export async function completarConfiguracionInicial({
   }
 
   await setDoc(
-    doc(db, "admin_bitacora", `${Date.now()}_${safeUid}_setup`),
-    {
+    bitacoraRef("configuracion_inicial_completa", safeNegocioId, safeUid),
+    bitacoraData({
       tipo: "configuracion_inicial_completa",
       uid: safeUid,
       negocioId: safeNegocioId,
-      createdAt: serverTimestamp(),
-    },
+    }),
     { merge: true },
   ).catch((error) => logSoftError("bitacora", error));
 }
@@ -332,7 +354,7 @@ export async function actualizarConteosNegocio(negocioId = "") {
   });
 
   const equiposCount = await getCountFromServer(
-    query(collection(db, "sesiones_dispositivo"), where("negocioId", "==", safeNegocioId)),
+    getCollectionRef("sesiones_dispositivo", safeNegocioId),
   ).catch(() => null);
 
   const conteos = {
@@ -380,15 +402,14 @@ export async function actualizarEstadoNegocio({
     { merge: true },
   );
   batch.set(
-    doc(db, "admin_bitacora", `${Date.now()}_${cleanText(actorUid) || "system"}_${safeNegocioId}`),
-    {
+    bitacoraRef("estado_negocio_actualizado", safeNegocioId),
+    bitacoraData({
       tipo: "estado_negocio_actualizado",
       negocioId: safeNegocioId,
       estado: safeEstado,
       razon: cleanText(razon),
       actorUid: cleanText(actorUid),
-      createdAt: serverTimestamp(),
-    },
+    }),
     { merge: true },
   );
 
@@ -440,16 +461,15 @@ export async function eliminarNegocioConDatos({ negocioId, actorUid = "", razon 
   if (!safeNegocioId) throw new Error("Falta negocioId.");
 
   await setDoc(
-    doc(db, "admin_bitacora", `${Date.now()}_${cleanText(actorUid) || "system"}_${safeNegocioId}_delete`),
-    {
+    bitacoraRef("negocio_eliminado", safeNegocioId),
+    bitacoraData({
       tipo: "negocio_eliminado",
       negocioId: safeNegocioId,
       actorUid: cleanText(actorUid),
       razon: cleanText(razon),
       aviso:
         "Eliminacion solicitada desde panel superadmin. Se eliminan datos Firestore del negocio; Auth requiere limpieza aparte.",
-      createdAt: serverTimestamp(),
-    },
+    }),
     { merge: true },
   ).catch((error) => {
     console.warn("[negocios] No se pudo registrar bitacora de eliminacion:", error?.code || error);

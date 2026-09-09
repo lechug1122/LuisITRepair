@@ -1,0 +1,69 @@
+.workspace-layout-route-pos .resumen-descuento-aplicado {
+  border-color: #c4b5fd;
+  background: linear-gradient(135deg, #f5f3ff, #eef2ff);
+  color: #334155;
+}
+
+.workspace-layout-route-pos .resumen-descuento-icon {
+  background: #2563eb;
+  color: #fff;
+}
+
+.workspace-layout-route-pos .resumen-descuento-aplicado div small {
+  color: #2563eb;
+}
+
+.workspace-layout-route-pos .resumen-descuento-aplicado div strong {
+  color: #7c3aed;
+}
+
+.workspace-layout-route-pos .resumen-descuento-aplicado > b {
+  color: #dc2626;
+}
+
+.workspace-layout-route-pos .resumen-descuento-simple {
+  display: grid;
+  gap: 12px;
+  margin: 7px 0 9px;
+  padding: 14px;
+  border: 1px solid #c4b5fd;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #f5f3ff, #eef2ff);
+}
+
+.workspace-layout-route-pos .resumen-descuento-simple > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.workspace-layout-route-pos .resumen-descuento-simple span {
+  color: #2563eb;
+  font-size: 0.84rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.workspace-layout-route-pos .resumen-descuento-simple strong {
+  color: #7c3aed;
+  font-size: 0.9rem;
+  line-height: 1.25;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.workspace-layout-route-pos .resumen-descuento-simple .resumen-ahorro {
+  padding-top: 11px;
+  border-top: 1px dashed #c4b5fd;
+}
+
+.workspace-layout-route-pos .resumen-descuento-simple .resumen-ahorro span {
+  color: #166534;
+}
+
+.workspace-layout-route-pos .resumen-descuento-simple .resumen-ahorro strong {
+  color: #dc2626;
+  font-size: 1.15rem;
+  font-weight: 900;
+}

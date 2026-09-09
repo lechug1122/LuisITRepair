@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import "../css/status.css";
 
 import {
-  collection,
+  collectionGroup,
   query,
   where,
   limit,
@@ -360,7 +360,7 @@ export default function StatusDetalleCliente() {
     setServicio(null);
     setLookupError("");
 
-    const q = query(collection(db, COLLECTION), where("folio", "==", f), limit(1));
+    const q = query(collectionGroup(db, COLLECTION), where("folio", "==", f), limit(1));
 
     const unsub = onSnapshot(
       q,

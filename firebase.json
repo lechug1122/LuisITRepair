@@ -9,60 +9,71 @@
       "npm --prefix \"$RESOURCE_DIR\" run build"
     ]
   },
-  "hosting": {
-    "public": "dist",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "headers": [
-      {
-        "source": "/index.html",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "no-cache, no-store, must-revalidate"
-          },
-          {
-            "key": "Pragma",
-            "value": "no-cache"
-          },
-          {
-            "key": "Expires",
-            "value": "0"
-          }
-        ]
-      },
-      {
-        "source": "/assets/**",
-        "headers": [
-          {
-            "key": "Cache-Control",
-            "value": "public, max-age=31536000, immutable"
-          }
-        ]
-      }
-    ],
-    "rewrites": [
-      {
-        "source": "/api/ml/search",
-        "function": {
-          "functionId": "mlSearch",
-          "region": "southamerica-east1"
+  "hosting": [
+    {
+      "target": "app",
+      "public": "dist",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "/index.html",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache, no-store, must-revalidate"
+            },
+            {
+              "key": "Pragma",
+              "value": "no-cache"
+            },
+            {
+              "key": "Expires",
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "source": "/assets/**",
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
         }
-      },
-      {
-        "source": "/api/google-image/search",
-        "function": {
-          "functionId": "googleImageSearch",
-          "region": "southamerica-east1"
+      ],
+      "rewrites": [
+        {
+          "source": "/api/ml/search",
+          "function": {
+            "functionId": "mlSearch",
+            "region": "southamerica-east1"
+          }
+        },
+        {
+          "source": "/api/google-image/search",
+          "function": {
+            "functionId": "googleImageSearch",
+            "region": "southamerica-east1"
+          }
+        },
+        {
+          "source": "**",
+          "destination": "/index.html"
         }
-      },
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ]
-  }
+      ]
+    },
+    {
+      "target": "ads",
+      "public": "ads-public",
+      "ignore": [
+        "firebase.json",
+        "**/.*"
+      ]
+    }
+  ]
 }

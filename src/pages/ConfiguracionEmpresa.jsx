@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import { actualizarEmpresaConfig } from "../js/services/configure_empresa";
+import { LOGO_EXTENSIONES, procesarArchivoLogo } from "../js/services/empresa_logo";
 import {
   buildCampoHojaVacio,
   buildTipoNegocioVacio,
@@ -23,6 +26,7 @@ function cloneEmpresaConfig(config) {
     telefono: String(config?.telefono || ""),
     correoTickets: String(config?.correoTickets || ""),
     correoNotas: String(config?.correoNotas || ""),
+    logo: String(config?.logo || ""),
     tipoNegocioId: String(config?.tipoNegocioId || ""),
     tiposNegocio,
     restaurante: {
@@ -70,14 +74,21 @@ function createFieldDraft(tipo) {
 }
 
 export default function ConfiguracionEmpresa() {
+  const navigate = useNavigate();
   const { empresa } = useEmpresaConfig();
+  // isPremium solo es true cuando el plan esta confirmado, asi que mientras
+  // carga el logo queda bloqueado (falla del lado seguro).
+  const { isPremium } = useAutorizacionActual();
   const [draft, setDraft] = useState(() => cloneEmpresaConfig(empresa));
   const [tipoEditorId, setTipoEditorId] = useState(() => String(empresa?.tipoNegocioId || ""));
   const [mostrarEditorTipo, setMostrarEditorTipo] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [mensaje, setMensaje] = useState("");
   const [errorDetalle, setErrorDetalle] = useState("");
+  const [errorLogo, setErrorLogo] = useState("");
+  const [procesandoLogo, setProcesandoLogo] = useState(false);
   const editorRef = useRef(null);
+  const logoInputRef = useRef(null);
   const didMountEditorRef = useRef(false);
 
   useEffect(() => {
@@ -343,6 +354,33 @@ export default function ConfiguracionEmpresa() {
     }));
   }
 
+  async function handleLogoSeleccionado(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!isPremium) {
+      setErrorLogo("El logo del negocio esta disponible solo en el plan Premium.");
+      return;
+    }
+
+    setErrorLogo("");
+    setProcesandoLogo(true);
+    try {
+      const dataUrl = await procesarArchivoLogo(file);
+      setDraft((prev) => ({ ...prev, logo: dataUrl }));
+    } catch (error) {
+      setErrorLogo(String(error?.message || "No se pudo procesar la imagen."));
+    } finally {
+      setProcesandoLogo(false);
+    }
+  }
+
+  function handleQuitarLogo() {
+    if (!isPremium) return;
+    setErrorLogo("");
+    setDraft((prev) => ({ ...prev, logo: "" }));
+  }
+
   async function handleGuardar() {
     if (guardando) return;
 
@@ -430,94 +468,166 @@ export default function ConfiguracionEmpresa() {
 
       <div className="cfg-pos-card cfg-empresa-card cfg-empresa-editor-card">
         <div className="cfg-ticket-block cfg-ticket-block-wide">
-          <h4>Identidad del negocio</h4>
-          <label htmlFor="empresa-nombre">Nombre visible del sistema</label>
-          <input
-            id="empresa-nombre"
-            type="text"
-            value={draft.nombre}
-            onChange={(e) => setDraft((prev) => ({ ...prev, nombre: e.target.value }))}
-            placeholder="Ej. LuisITRepair"
-            maxLength={80}
-          />
+          <div className="cfg-empresa-section-head">
+            <div>
+              <h4>Identidad del negocio</h4>
+              <p>Estos datos se muestran en el sistema, en los tickets y en las boletas.</p>
+            </div>
+          </div>
 
-          <label htmlFor="empresa-subtitulo">Subtitulo interno</label>
-          <input
-            id="empresa-subtitulo"
-            type="text"
-            value={draft.subtitulo}
-            onChange={(e) => setDraft((prev) => ({ ...prev, subtitulo: e.target.value }))}
-            placeholder="Ej. Servicio tecnico y punto de venta"
-            maxLength={120}
-          />
+          <div className="cfg-logo-block">
+            <div className="cfg-logo-preview" aria-live="polite">
+              {draft.logo ? (
+                <img src={draft.logo} alt="Logo del negocio" />
+              ) : (
+                <span className="cfg-logo-empty">Sin logo</span>
+              )}
+            </div>
 
-          <label htmlFor="empresa-telefono">Número telefónico</label>
-          <input
-            id="empresa-telefono"
-            type="tel"
-            value={draft.telefono}
-            onChange={(e) =>
-              setDraft((prev) => ({ ...prev, telefono: e.target.value }))
-            }
-            placeholder="Ej. 273 143 0147"
-            maxLength={25}
-            autoComplete="tel"
-          />
-          <small className="cfg-pos-help">
-            Este número aparecerá en los tickets y en las boletas del negocio.
-          </small>
+            <div className="cfg-logo-info">
+              <div className="cfg-logo-title">
+                <strong>Logo del negocio</strong>
+                <span className="cfg-logo-premium-tag">Premium</span>
+              </div>
+              <p>
+                Se usará en el encabezado, el pie de página, los tickets y como marca de agua del
+                punto de venta. Lo verán también tus trabajadores.
+              </p>
 
-          <label htmlFor="empresa-correo-tickets">Correo para tickets</label>
-          <input
-            id="empresa-correo-tickets"
-            type="email"
-            value={draft.correoTickets}
-            onChange={(e) =>
-              setDraft((prev) => ({ ...prev, correoTickets: e.target.value }))
-            }
-            placeholder="Ej. ventas@minegocio.com"
-            maxLength={160}
-            autoComplete="email"
-          />
-          <small className="cfg-pos-help">
-            Este correo aparecerá en los tickets de venta.
-          </small>
+              <div className="cfg-logo-actions">
+                <input
+                  ref={logoInputRef}
+                  id="empresa-logo"
+                  type="file"
+                  accept={LOGO_EXTENSIONES}
+                  onChange={handleLogoSeleccionado}
+                  hidden
+                />
+                <button
+                  type="button"
+                  className="cfg-ticket-test-btn"
+                  onClick={() => logoInputRef.current?.click()}
+                  disabled={procesandoLogo || !isPremium}
+                >
+                  {procesandoLogo ? "Procesando..." : draft.logo ? "Cambiar logo" : "Subir logo"}
+                </button>
+                {draft.logo && (
+                  <button
+                    type="button"
+                    className="cfg-empresa-secondary-btn"
+                    onClick={handleQuitarLogo}
+                    disabled={procesandoLogo || !isPremium}
+                  >
+                    Quitar
+                  </button>
+                )}
+              </div>
 
-          <label htmlFor="empresa-correo-notas">Correo para notas y boletas</label>
-          <input
-            id="empresa-correo-notas"
-            type="email"
-            value={draft.correoNotas}
-            onChange={(e) =>
-              setDraft((prev) => ({ ...prev, correoNotas: e.target.value }))
-            }
-            placeholder="Ej. notas@minegocio.com"
-            maxLength={160}
-            autoComplete="email"
-          />
-          <small className="cfg-pos-help">
-            Este correo aparecerá en las notas y boletas PDF generadas por el sistema.
-          </small>
+              {isPremium ? (
+                <small className="cfg-pos-help">
+                  Formatos permitidos: PNG o ICO. La imagen se ajusta automáticamente.
+                </small>
+              ) : (
+                <small className="cfg-logo-bloqueado">
+                  Subir un logo propio está disponible solo en el plan Premium.{" "}
+                  <button
+                    type="button"
+                    className="cfg-logo-link"
+                    onClick={() => navigate("/configuracion/pago-premium")}
+                  >
+                    Mejorar a Premium
+                  </button>
+                </small>
+              )}
+              {errorLogo && <small className="cfg-logo-error">{errorLogo}</small>}
+            </div>
+          </div>
 
-          <label htmlFor="empresa-tipo-activo">Tipo de negocio activo</label>
-          <select
-            id="empresa-tipo-activo"
-            value={draft.tipoNegocioId}
-            onChange={(e) =>
-              setDraft((prev) => ({
-                ...prev,
-                tipoNegocioId: e.target.value,
-              }))
-            }
-          >
-            {tiposNegocio.map((tipo) => (
-              <option key={tipo.id} value={tipo.id}>
-                {tipo.nombre}
-              </option>
-            ))}
-          </select>
+          <div className="cfg-empresa-form-grid">
+            <label className="cfg-empresa-field">
+              <span>Nombre visible del sistema</span>
+              <input
+                id="empresa-nombre"
+                type="text"
+                value={draft.nombre}
+                onChange={(e) => setDraft((prev) => ({ ...prev, nombre: e.target.value }))}
+                placeholder="Ej. LuisITRepair"
+                maxLength={80}
+              />
+            </label>
+
+            <label className="cfg-empresa-field">
+              <span>Subtítulo interno</span>
+              <input
+                id="empresa-subtitulo"
+                type="text"
+                value={draft.subtitulo}
+                onChange={(e) => setDraft((prev) => ({ ...prev, subtitulo: e.target.value }))}
+                placeholder="Ej. Servicio tecnico y punto de venta"
+                maxLength={120}
+              />
+            </label>
+
+            <label className="cfg-empresa-field">
+              <span>Número telefónico</span>
+              <input
+                id="empresa-telefono"
+                type="tel"
+                value={draft.telefono}
+                onChange={(e) => setDraft((prev) => ({ ...prev, telefono: e.target.value }))}
+                placeholder="Ej. 273 143 0147"
+                maxLength={25}
+                autoComplete="tel"
+              />
+              <small className="cfg-pos-help">Aparece en tickets y boletas.</small>
+            </label>
+
+            <label className="cfg-empresa-field">
+              <span>Tipo de negocio activo</span>
+              <select
+                id="empresa-tipo-activo"
+                value={draft.tipoNegocioId}
+                onChange={(e) => setDraft((prev) => ({ ...prev, tipoNegocioId: e.target.value }))}
+              >
+                {tiposNegocio.map((tipo) => (
+                  <option key={tipo.id} value={tipo.id}>
+                    {tipo.nombre}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="cfg-empresa-field">
+              <span>Correo para tickets</span>
+              <input
+                id="empresa-correo-tickets"
+                type="email"
+                value={draft.correoTickets}
+                onChange={(e) => setDraft((prev) => ({ ...prev, correoTickets: e.target.value }))}
+                placeholder="Ej. ventas@minegocio.com"
+                maxLength={160}
+                autoComplete="email"
+              />
+              <small className="cfg-pos-help">Aparece en los tickets de venta.</small>
+            </label>
+
+            <label className="cfg-empresa-field">
+              <span>Correo para notas y boletas</span>
+              <input
+                id="empresa-correo-notas"
+                type="email"
+                value={draft.correoNotas}
+                onChange={(e) => setDraft((prev) => ({ ...prev, correoNotas: e.target.value }))}
+                placeholder="Ej. notas@minegocio.com"
+                maxLength={160}
+                autoComplete="email"
+              />
+              <small className="cfg-pos-help">Aparece en las notas y boletas PDF.</small>
+            </label>
+          </div>
 
           <div className="cfg-empresa-preview">
+            {draft.logo && <img className="cfg-empresa-preview-logo" src={draft.logo} alt="" />}
             <strong>Vista previa:</strong>{" "}
             {String(draft.nombre || "").trim() || "Tu negocio"}{" "}
             <span className="cfg-empresa-preview-pill">

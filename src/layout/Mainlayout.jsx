@@ -1,13 +1,13 @@
+import { getCollectionRef } from "../js/services/tenant";
 import Navbar from "../components/Navbar";
 import AppFooter from "../components/AppFooter";
 import UpdateModal from "../components/UpdateModal";
 import RestaurantePromoModal from "../components/RestaurantePromoModal";
 import ModalRecomendacion from "../components/ModalRecomendacion";
-import ModalDonacion from "../components/ModalDonacion";
+import PremiumPromoModal from "../components/PremiumPromoModal";
 import { Outlet, useLocation } from "react-router-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { db } from "../initializer/firebase";
+import { addDoc, serverTimestamp } from "firebase/firestore";
 import { suscribirNotificacionesGlobales } from "../js/services/realtime_notifications";
 import { autoCerrarCortesPendientes } from "../js/services/corte_caja_firestore";
 import {
@@ -23,10 +23,15 @@ import useAnalyticsTracking from "../hooks/useAnalyticsTracking";
 import "../css/notificaciones_globales.css";
 import "../css/sesion_dispositivo.css";
 
+// El aviso de planes solo aparece en el inicio: nunca debe interrumpir una
+// venta en el POS ni una hoja de servicio a medias.
+const RUTAS_PROMO_PLANES = ["/", "/home"];
+
 export default function MainLayout() {
   const location = useLocation();
   const authInfo = useAutorizacionActual();
-  useAnalyticsTracking(authInfo, location.pathname);
+  // Solo señales administrativas: ya no se registra la navegación por ruta.
+  useAnalyticsTracking(authInfo);
   const { rol } = authInfo;
   const { tipoNegocioActivo } = useEmpresaConfig();
   const { checking: checkingDeviceSession, conflicto, resolverConflicto, salir } =
@@ -37,7 +42,6 @@ export default function MainLayout() {
   const [panelAbierto, setPanelAbierto] = useState(false);
   const [showUpdatesModal, setShowUpdatesModal] = useState(false);
   const [showRecommendationModal, setShowRecommendationModal] = useState(false);
-  const [showDonationModal, setShowDonationModal] = useState(false);
   const audioCtxRef = useRef(null);
   const esAdmin =
     String(rol || "")
@@ -220,7 +224,7 @@ export default function MainLayout() {
   }, [authInfo.uid]);
 
   const enviarRecomendacion = useCallback(async (respuesta) => {
-    await addDoc(collection(db, "recomendaciones"), {
+    await addDoc(getCollectionRef("recomendaciones"), {
       ...respuesta,
       uid: authInfo.uid,
       negocioId: authInfo.cuentaPrincipalUid || authInfo.uid,
@@ -233,52 +237,6 @@ export default function MainLayout() {
     localStorage.setItem(key, JSON.stringify({ ...data, respondida: true, respondidaAt: Date.now() }));
   }, [authInfo]);
 
-  useEffect(() => {
-    if (!esAdmin || !authInfo.uid) return undefined;
-    if (import.meta.env.DEV) {
-      const previewTimer = window.setTimeout(() => setShowDonationModal(true), 1200);
-      return () => window.clearTimeout(previewTimer);
-    }
-    const key = `cajalibre:donacion:${authInfo.uid}`;
-    const data = JSON.parse(localStorage.getItem(key) || "{}");
-    if (Number(data.mostrarDespuesDe || 0) > Date.now()) return undefined;
-
-    const sessionKey = `${key}:sesion`;
-    const visitas = sessionStorage.getItem(sessionKey)
-      ? Number(data.visitas || 0)
-      : Number(data.visitas || 0) + 1;
-    sessionStorage.setItem(sessionKey, "1");
-    const primeraVisita = Number(data.primeraVisita || Date.now());
-    localStorage.setItem(key, JSON.stringify({ ...data, visitas, primeraVisita }));
-
-    const diasUso = (Date.now() - primeraVisita) / 86400000;
-    if (visitas < 5 && diasUso < 7) return undefined;
-    const timer = window.setTimeout(() => {
-      if (!document.querySelector(".recomendacion-overlay")) setShowDonationModal(true);
-    }, 120000);
-    return () => window.clearTimeout(timer);
-  }, [authInfo.uid, esAdmin]);
-
-  const cerrarDonacion = useCallback(() => {
-    const key = `cajalibre:donacion:${authInfo.uid}`;
-    const data = JSON.parse(localStorage.getItem(key) || "{}");
-    localStorage.setItem(key, JSON.stringify({
-      ...data,
-      mostrarDespuesDe: Date.now() + (30 * 86400000),
-    }));
-    setShowDonationModal(false);
-  }, [authInfo.uid]);
-
-  const registrarApoyo = useCallback(() => {
-    const key = `cajalibre:donacion:${authInfo.uid}`;
-    const data = JSON.parse(localStorage.getItem(key) || "{}");
-    localStorage.setItem(key, JSON.stringify({
-      ...data,
-      apoyoSeleccionadoAt: Date.now(),
-      mostrarDespuesDe: Date.now() + (90 * 86400000),
-    }));
-    setShowDonationModal(false);
-  }, [authInfo.uid]);
 
   return (
     <>
@@ -299,7 +257,15 @@ export default function MainLayout() {
 
       {showUpdatesModal ? <UpdateModal onClose={() => setShowUpdatesModal(false)} /> : null}
       <ModalRecomendacion abierto={showRecommendationModal} onCerrar={cerrarRecomendacion} onEnviar={enviarRecomendacion} />
-      <ModalDonacion abierto={showDonationModal} onCerrar={cerrarDonacion} onApoyar={registrarApoyo} />
+      <PremiumPromoModal
+        authInfo={authInfo}
+        bloqueado={
+          showUpdatesModal
+          || showRecommendationModal
+          || Boolean(conflicto)
+          || !RUTAS_PROMO_PLANES.includes(path)
+        }
+      />
 
       {conflicto ? (
         <div className="device-session-overlay">

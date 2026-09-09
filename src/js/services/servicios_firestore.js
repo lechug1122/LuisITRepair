@@ -1,5 +1,5 @@
+import { getCollectionRef, getDocRef } from "./tenant";
 import {
-  collection,
   getDocs,
   getDoc,
   doc,
@@ -104,7 +104,7 @@ export async function cerrarServiciosAbandonados(servicios = []) {
   const batch = writeBatch(db);
 
   pendientesDeCierre.forEach((servicio) => {
-    batch.update(doc(db, "servicios", servicio.id), {
+    batch.update(getDocRef("servicios", servicio.id), {
       status: "abandonado",
       entregado: false,
       fechaCierre: serverTimestamp(),
@@ -288,8 +288,8 @@ async function crearServicioConFolioReservado(payload) {
   if (!folio) throwNice("No se pudo generar folio.");
 
   const folioKey = folioToKey(folio);
-  const folioRef = doc(db, "folios", folioKey);
-  const servicioRef = doc(collection(db, "servicios"));
+  const folioRef = getDocRef("folios", folioKey);
+  const servicioRef = doc(getCollectionRef("servicios"));
 
   await runTransaction(db, async (tx) => {
     const folioSnap = await tx.get(folioRef);
@@ -405,9 +405,9 @@ export async function guardarOActualizarPorFolio(form) {
   if (!folio) throwNice("No se pudo generar folio.");
 
   const folioKey = folioToKey(folio);
-  const folioRef = doc(db, "folios", folioKey);
+  const folioRef = getDocRef("folios", folioKey);
 
-  const nuevoServicioRef = doc(collection(db, "servicios"));
+  const nuevoServicioRef = doc(getCollectionRef("servicios"));
 
   const result = await runTransaction(db, async (tx) => {
     const folioSnap = await tx.get(folioRef);
@@ -426,7 +426,7 @@ export async function guardarOActualizarPorFolio(form) {
     const { servicioId } = folioSnap.data() || {};
     if (!servicioId) throwNice("Indice de folio invalido (sin servicioId).");
 
-    const servRef = doc(db, "servicios", servicioId);
+    const servRef = getDocRef("servicios", servicioId);
     const servSnap = await tx.get(servRef);
     if (servSnap.exists() && !dataBelongsToTenant(servSnap.data())) {
       throwNice("El servicio pertenece a otra cuenta.");
@@ -451,14 +451,14 @@ export async function buscarServicioPorFolio(folio) {
   if (!folioLimpio) return null;
 
   const folioKey = folioToKey(folioLimpio);
-  const folioRef = doc(db, "folios", folioKey);
+  const folioRef = getDocRef("folios", folioKey);
   const folioSnap = await getDoc(folioRef);
 
   if (folioSnap.exists()) {
     const { servicioId } = folioSnap.data() || {};
     if (!servicioId) return null;
 
-    const servRef = doc(db, "servicios", servicioId);
+    const servRef = getDocRef("servicios", servicioId);
     const servSnap = await getDoc(servRef);
     if (!servSnap.exists()) return null;
     if (!dataBelongsToTenant(servSnap.data())) return null;
@@ -508,7 +508,7 @@ export async function listarServiciosHistorial() {
    Actualizar por ID
 ========================= */
 export async function actualizarServicioPorId(id, data) {
-  const ref = doc(db, "servicios", id);
+  const ref = getDocRef("servicios", id);
 
   const before = await getDoc(ref);
   if (!before.exists()) throwNice("Servicio no encontrado.");

@@ -1,17 +1,19 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import { getCollectionRef } from "../js/services/tenant";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { onSnapshot, query, where } from "firebase/firestore";
 import Icon from "../components/Icon";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
-import { auth, db } from "../initializer/firebase";
+import { auth } from "../initializer/firebase";
 import { hasAnalyticsAccess } from "../js/services/analytics_access";
 
 function PanelGeneral() {
   const navigate = useNavigate();
   const { serviciosHabilitados, tipoNegocioActivo } = useEmpresaConfig();
   const esRestaurante = tipoNegocioActivo?.id === "restaurante";
-  const { superAdmin, accesoAnalitica, cuentaPrincipalUid, uid } = useAutorizacionActual();
+  const { superAdmin, accesoAnalitica, cuentaPrincipalUid, uid, premiumState } = useAutorizacionActual();
+  const esUsuarioGratuito = premiumState === "free";
   const analyticsAccess = hasAnalyticsAccess({
     superAdmin,
     accesoAnalitica,
@@ -30,7 +32,7 @@ function PanelGeneral() {
     if (!ownerBase) return undefined;
 
     const unsub = onSnapshot(
-      query(collection(db, "empleados"), where("cuentaPrincipalUid", "==", ownerBase)),
+      query(getCollectionRef("empleados"), where("cuentaPrincipalUid", "==", ownerBase)),
       (snap) => {
         setEmpleadosCount(snap.size || 0);
       },
@@ -69,7 +71,7 @@ function PanelGeneral() {
           highlight: true,
         }]
         : []),
-      { key: "pos", title: "POS y Facturacion", desc: "Tickets, IVA, plantillas", action: "Configurar", path: "pos" },
+      { key: "pos", title: "Punto de venta", desc: "Funciones de venta, IVA, catalogo y ticket", action: "Configurar", path: "pos" },
       ...(esRestaurante
         ? [{
           key: "restaurante",
@@ -108,19 +110,21 @@ function PanelGeneral() {
       { key: "apariencia", title: "Apariencia", desc: "Tema, idioma, formatos", action: "Configurar", path: "apariencia", highlight: true },
       { key: "notificaciones", title: "Notificaciones", desc: "Alertas, email, SMS", action: "Configurar", path: "notificaciones" },
       { key: "impresoras", title: "Impresoras", desc: "Autoimpresion, ticket y flujo de cobro", action: "Configurar", path: "impresoras" },
-      {
-        key: "donacion",
-        title: "Donacion",
-        desc: "PayPal, Mercado Pago y apoyo voluntario al sistema",
-        action: "Abrir",
-        path: "donacion",
-        primary: true,
-      },
+      ...(esUsuarioGratuito
+        ? [{
+          key: "donacion",
+          title: "Donacion",
+          desc: "PayPal, Mercado Pago y apoyo voluntario al sistema",
+          action: "Abrir",
+          path: "donacion",
+          primary: true,
+        }]
+        : []),
       // { key: "respaldo", title: "Respaldos", desc: "Base de datos, nube", action: "Respaldar Ahora", path: "respaldos", primary: true },
       // { key: "seguridad", title: "Seguridad", desc: "Usuarios, sesiones, logs", action: "Configurar", path: "seguridad" },
       // { key: "integraciones", title: "Integraciones", desc: "WhatsApp, Correo, API", action: "Conectar", path: "integraciones" },
     ],
-    [analyticsAccess, empleadosCountVisible, esAdministradorNegocio, esRestaurante, serviciosHabilitados, superAdmin],
+    [analyticsAccess, empleadosCountVisible, esAdministradorNegocio, esRestaurante, esUsuarioGratuito, serviciosHabilitados, superAdmin],
   );
 
   const normalizeText = (value) =>

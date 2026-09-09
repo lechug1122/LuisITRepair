@@ -94,7 +94,7 @@ async function cargarCatalogoBarras() {
   if (!catalogoPromise) {
     catalogoPromise = (async () => {
       try {
-        const XLSX = await import("xlsx");
+        const XLSX = await import("xlsx-js-style");
         const respuestas = await Promise.all(
           CATALOGOS.map(async (catalogoConfig) => {
             const response = await fetch(catalogoConfig.url);

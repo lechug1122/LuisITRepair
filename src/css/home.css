@@ -5,81 +5,6 @@
   min-height: calc(100vh - var(--navbar-height, 64px));
   background: linear-gradient(135deg, #4f8fb8 0%, #8ab9b6 100%);
   color: var(--app-text);
-  transition: padding-left 0.45s ease, padding-right 0.45s ease;
-}
-
-.home-ad-label {
-  display: block;
-  margin-bottom: 5px;
-  color: #64748b;
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  text-align: center;
-  text-transform: uppercase;
-}
-
-.home-ad-rail {
-  display: none;
-}
-
-@media (min-width: 1200px) {
-  .home-page.home-side-ad-left {
-    padding-left: 195px;
-  }
-
-  .home-page.home-side-ad-right {
-    padding-right: 195px;
-  }
-
-  .home-ad-rail {
-    position: absolute;
-    z-index: 8;
-    top: 22px;
-    bottom: 22px;
-    display: block;
-    width: 172px;
-    padding: 7px 6px;
-    overflow: hidden;
-    border: 1px solid transparent;
-    border-radius: 12px;
-    background: transparent;
-    box-shadow: none;
-    opacity: 0;
-    pointer-events: none;
-    transition:
-      transform 0.45s cubic-bezier(0.22, 1, 0.36, 1),
-      opacity 0.3s ease,
-      background 0.3s ease,
-      border-color 0.3s ease,
-      box-shadow 0.3s ease;
-  }
-
-  .home-ad-rail-left {
-    left: 10px;
-    transform: translateX(-115%);
-  }
-
-  .home-ad-rail-right {
-    right: 10px;
-    transform: translateX(115%);
-  }
-
-  .home-ad-rail.is-filled {
-    transform: translateX(0);
-    opacity: 1;
-    pointer-events: auto;
-    border-color: rgba(255, 255, 255, 0.32);
-    background: rgba(255, 255, 255, 0.68);
-    box-shadow: 0 14px 35px rgba(15, 23, 42, 0.12);
-  }
-
-  .home-ad-rail .adsbygoogle {
-    margin: auto;
-  }
-
-  .home-page.calendar-layout-pinned {
-    padding-right: 460px;
-  }
 }
 
 .home-page.role-tecnico {
@@ -91,6 +16,12 @@
 
 .home-page.calendar-layout-pinned {
   padding-right: 460px;
+}
+
+/* El calendario fijado usa el espacio lateral completo; nunca conserva el
+   hueco de un anuncio que ya fue desmontado. */
+.home-page.calendar-layout-pinned.home-side-ad-left {
+  padding-left: 20px;
 }
 
 /* ================= HEADER ================= */
@@ -244,8 +175,37 @@ body.ui-theme-light .home-info-block {
   transform: translateY(-3px);
 }
 
-.kpi-card span {
-  font-size: 28px;
+.kpi-card .kpi-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  font-size: 22px;
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.kpi-card.green .kpi-card-icon {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.kpi-card.blue .kpi-card-icon {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.kpi-card.success .kpi-card-icon {
+  background: #cffafe;
+  color: #0891b2;
+}
+
+.kpi-card.orange .kpi-card-icon {
+  background: #ffedd5;
+  color: #ea580c;
 }
 
 .kpi-card-copy {
@@ -2019,8 +1979,10 @@ body.ui-theme-dark .notifications-header span {
     padding: 12px;
   }
 
-  .kpi-card span {
-    font-size: 24px;
+  .kpi-card .kpi-card-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 19px;
   }
 
   .kpi-card-help-wrap {
@@ -2096,4 +2058,15 @@ body.ui-theme-dark .notifications-header span {
   .home-role-subtitle {
     font-size: 0.96rem;
   }
+}
+
+/* La columna existe mientras hay un anuncio montado (cargando, listo o con
+   el marcador de fallback), para que el espacio sea estable desde el
+   primer render y no salte al resolverse el proveedor. */
+@media (min-width: 1200px) {
+  .home-page.free-layout:has(> .ad-panel--dashboard) { padding-left: 212px; }
+  .home-page > .ad-panel--dashboard { position: absolute; top: 20px; left: 20px; width: 176px; }
+}
+@media (max-width: 1199px) {
+  .home-page > .ad-panel--dashboard { margin: 24px auto 0; width: min(100%, 324px); }
 }

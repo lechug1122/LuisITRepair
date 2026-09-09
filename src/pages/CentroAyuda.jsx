@@ -1,4 +1,4 @@
-import { createElement, useMemo, useState } from "react";
+import { createElement, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   FiArrowLeft,
@@ -16,14 +16,16 @@ import {
   FiShoppingBag,
   FiUsers,
   FiVolume2,
+  FiX,
 } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import AppFooter from "../components/AppFooter";
 import logo from "../assets/logo.png";
+import { getVideoEmbedUrl, subscribeSupportVideos } from "../js/services/support_videos";
 import "../css/centro-ayuda.css";
 
 const WHATSAPP_URL =
-  "https://wa.me/522731430147?text=" +
+  "https://wa.me/522731159520?text=" +
   encodeURIComponent("Hola, necesito ayuda para utilizar CajaLibre.");
 
 const CATEGORIES = [
@@ -168,12 +170,40 @@ const ARTICLES = [
 export default function CentroAyuda() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [search, setSearch] = useState("");
+  const [supportVideos, setSupportVideos] = useState([]);
+  const [guidesModalOpen, setGuidesModalOpen] = useState(false);
+  const [selectedVideo, setSelectedVideo] = useState(null);
+  const [videosLoading, setVideosLoading] = useState(true);
   const categoryId = searchParams.get("categoria") || "";
   const articleId = searchParams.get("articulo") || "";
 
   const selectedCategory = CATEGORIES.find((category) => category.id === categoryId) || null;
   const selectedArticle = ARTICLES.find((article) => article.id === articleId) || null;
   const normalizedSearch = search.trim().toLocaleLowerCase("es");
+
+  useEffect(() => subscribeSupportVideos(
+    (items) => {
+      setSupportVideos(items);
+      setVideosLoading(false);
+    },
+    () => setVideosLoading(false),
+  ), []);
+
+  useEffect(() => {
+    if (!selectedVideo && !guidesModalOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        setSelectedVideo(null);
+        setGuidesModalOpen(false);
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.body.style.overflow = "";
+    };
+  }, [selectedVideo, guidesModalOpen]);
 
   const visibleArticles = useMemo(() => {
     return ARTICLES.filter((article) => {
@@ -328,7 +358,11 @@ export default function CentroAyuda() {
                 <span><strong>Estado del servicio</strong><small>Consulta el avance de una reparación con su folio o código QR.</small></span>
                 <b>Consultar</b>
               </Link>
-              <button type="button" className="help-resource" onClick={() => openCategory("primeros-pasos")}>
+              <button
+                type="button"
+                className="help-resource"
+                onClick={() => setGuidesModalOpen(true)}
+              >
                 <i><FiPlay /></i>
                 <span><strong>Guías paso a paso</strong><small>Aprende las funciones principales.</small></span>
                 <FiArrowRight />
@@ -339,8 +373,97 @@ export default function CentroAyuda() {
                 <FiArrowRight />
               </button>
             </div>
+
+            <section className="help-video-guides" id="guias-video">
+              <div className="help-video-guides-head">
+                <span><FiPlay /> Soporte en video</span>
+                <h2>Guías paso a paso</h2>
+                <p>Selecciona un tema para ver el video sin salir del Centro de ayuda.</p>
+              </div>
+              <div className="help-video-grid">
+                {videosLoading ? (
+                  <div className="help-video-empty">Cargando guías...</div>
+                ) : supportVideos.length === 0 ? (
+                  <div className="help-video-empty">Próximamente encontrarás nuevas guías en video.</div>
+                ) : supportVideos.map((video) => (
+                  <button type="button" className="help-video-card" key={video.id} onClick={() => setSelectedVideo(video)}>
+                    <i><FiPlay /></i>
+                    <span>
+                      <small>Guía en video</small>
+                      <strong>{video.title}</strong>
+                    </span>
+                    <FiArrowRight />
+                  </button>
+                ))}
+              </div>
+            </section>
           </section>
         </main>
+      )}
+
+      {guidesModalOpen && !selectedVideo && (
+        <div
+          className="help-video-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="help-guides-title"
+          onMouseDown={() => setGuidesModalOpen(false)}
+        >
+          <div className="help-video-modal-dialog help-guides-modal-dialog" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span>Centro de ayuda</span>
+                <h2 id="help-guides-title">Guías paso a paso</h2>
+              </div>
+              <button type="button" aria-label="Cerrar guías" onClick={() => setGuidesModalOpen(false)}><FiX /></button>
+            </header>
+            <div className="help-guides-modal-content">
+              <p>Selecciona el video que deseas consultar.</p>
+              <div className="help-guides-modal-list">
+                {videosLoading ? (
+                  <div className="help-guides-modal-empty">Cargando guías...</div>
+                ) : supportVideos.length === 0 ? (
+                  <div className="help-guides-modal-empty">Próximamente encontrarás nuevas guías en video.</div>
+                ) : supportVideos.map((video) => (
+                  <button
+                    type="button"
+                    key={video.id}
+                    onClick={() => {
+                      setGuidesModalOpen(false);
+                      setSelectedVideo(video);
+                    }}
+                  >
+                    <i><FiPlay /></i>
+                    <strong>{video.title}</strong>
+                    <FiArrowRight />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedVideo && (
+        <div className="help-video-modal" role="dialog" aria-modal="true" aria-labelledby="help-video-title" onMouseDown={() => setSelectedVideo(null)}>
+          <div className="help-video-modal-dialog" onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span>Guía paso a paso</span>
+                <h2 id="help-video-title">{selectedVideo.title}</h2>
+              </div>
+              <button type="button" aria-label="Cerrar video" onClick={() => setSelectedVideo(null)}><FiX /></button>
+            </header>
+            <div className="help-video-frame">
+              <iframe
+                src={`${getVideoEmbedUrl(selectedVideo.url)}?autoplay=1`}
+                title={selectedVideo.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       <AppFooter compact />

@@ -24,22 +24,33 @@ export default function ModalPago({
   habilitarPropina = false,
   propinaMonto = 0,
   setPropinaMonto = () => {},
+  clienteData = null,
+  onSolicitarClienteFiado = () => {},
 }) {
   const { formatCurrency } = useMonedaConfig();
   const [mostrarPropina, setMostrarPropina] = useState(false);
 
   useEffect(() => {
+    // El componente permanece montado al ocultarse; reinicia este panel para la próxima venta.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!mostrar) setMostrarPropina(false);
   }, [mostrar]);
 
   const confirmarConValidacion = useCallback(() => {
+    if (tipoPago === "fiado") {
+      const telefono = String(clienteData?.telefono || "").replace(/\D/g, "");
+      if (!clienteData?.id || telefono.length < 10) {
+        onSolicitarClienteFiado();
+        return;
+      }
+    }
     if (tipoPago === "tarjeta" && !referenciaPago.trim()) {
       alert("Ingresa la referencia de pago de tarjeta");
       return;
     }
 
     confirmarVenta();
-  }, [tipoPago, referenciaPago, confirmarVenta]);
+  }, [tipoPago, referenciaPago, confirmarVenta, clienteData, onSolicitarClienteFiado]);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -51,6 +62,8 @@ export default function ModalPago({
 
       if (e.key === "F1") {
         e.preventDefault();
+        e.stopImmediatePropagation();
+        if (e.repeat) return;
         confirmarConValidacion();
       }
     };
@@ -85,13 +98,18 @@ export default function ModalPago({
 
   return (
     <div className="modal-overlay">
-      <div className={`modal-cobro-pro ${tipoPago === "tarjeta" ? "sin-teclado" : ""}`}>
+      <div
+        className={`modal-cobro-pro ${tipoPago !== "efectivo" ? "sin-teclado" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-pago-title"
+      >
         <div className="modal-header">
-          <h2>COBRAR</h2>
-          <button onClick={onClose}>X</button>
+          <h2 id="modal-pago-title">COBRAR</h2>
+          <button type="button" onClick={onClose} aria-label="Cerrar cobro">X</button>
         </div>
 
-        <div className={`contenido-cobro ${tipoPago === "tarjeta" ? "sin-teclado" : ""}`}>
+        <div className={`contenido-cobro ${tipoPago !== "efectivo" ? "sin-teclado" : ""}`}>
           <div className="lado-izquierdo">
             <div className="total-grande-pro">{formatCurrency(totalFinal)}</div>
 
@@ -184,9 +202,19 @@ export default function ModalPago({
               >
                 {"\u{1F4B3}"} Tarjeta
               </button>
+              <button
+                className={tipoPago === "fiado" ? "activo fiado-activo" : ""}
+                onClick={() => {
+                  const telefono = String(clienteData?.telefono || "").replace(/\D/g, "");
+                  if (!clienteData?.id || telefono.length < 10) return onSolicitarClienteFiado();
+                  setTipoPago("fiado");
+                }}
+              >
+                🧾 Fiar
+              </button>
             </div>
 
-            <div className="pago-input">
+            {tipoPago !== "fiado" && <div className="pago-input">
               <label>{tipoPago === "tarjeta" ? "Monto tarjeta:" : "Pago con:"}</label>
               <input
                 type="number"
@@ -202,7 +230,9 @@ export default function ModalPago({
                   setMontoEfectivo(valor);
                 }}
               />
-            </div>
+            </div>}
+
+            {tipoPago === "fiado" && <div className="fiado-cobro-resumen"><strong>Venta a crédito</strong><span>{clienteData?.nombre}</span><small>Teléfono: {clienteData?.telefono}</small><p>El total se agregará automáticamente a su cuenta de Fiado.</p></div>}
 
             {tipoPago === "tarjeta" && (
               <div className="pago-input referencia-input">
@@ -216,15 +246,15 @@ export default function ModalPago({
               </div>
             )}
 
-            <div className={`cambio-pro ${cambio >= 0 ? "ok" : "error"}`}>
+            {tipoPago !== "fiado" && <div className={`cambio-pro ${cambio >= 0 ? "ok" : "error"}`}>
               {cambio >= 0 ? `Su cambio: ${formatCurrency(cambio)}` : "Monto insuficiente"}
-            </div>
+            </div>}
             {errorMensaje ? (
               <div className="modal-pago-error" role="alert">{errorMensaje}</div>
             ) : null}
           </div>
 
-          {tipoPago !== "tarjeta" && (
+          {tipoPago === "efectivo" && (
             <div className="lado-derecho">
               <div className="teclado">
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, "C", 0, "OK"].map((k, idx) => {

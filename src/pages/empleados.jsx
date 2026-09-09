@@ -1,6 +1,6 @@
+import { getCollectionRef, getDocRef } from "../js/services/tenant";
 import { useEffect, useMemo, useState } from "react";
 import {
-  collection,
   deleteDoc,
   doc,
   onSnapshot,
@@ -25,6 +25,9 @@ import {
 } from "../js/services/permisos";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
+import { actualizarConteosNegocio } from "../js/services/negocios";
+
+const LIMITE_USUARIOS_GRATUITO = 3;
 
 const ROLE_OPTIONS = ["Administrador", "Tecnico", "Vendedor", "Cajero", "Mesero", "Cocina", "Caja"];
 
@@ -66,6 +69,8 @@ function Empleados() {
     puede,
     superAdmin: esSuperAdminActual,
     suscripcionControlada: suscripcionControladaActual,
+    negocio,
+    isPremium,
   } = useAutorizacionActual();
   const [empleados, setEmpleados] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -142,7 +147,7 @@ function Empleados() {
     }
 
     const unsub = onSnapshot(
-      query(collection(db, "empleados"), where("cuentaPrincipalUid", "==", ownerBase)),
+      query(getCollectionRef("empleados"), where("cuentaPrincipalUid", "==", ownerBase)),
       (snapshot) => {
         const lista = snapshot.docs.map((row) => ({ id: row.id, ...row.data() }));
         setEmpleados(lista);
@@ -325,7 +330,7 @@ function Empleados() {
         }
 
         const batch = writeBatch(db);
-        batch.update(doc(db, "empleados", editingId), {
+        batch.update(getDocRef("empleados", editingId), {
           nombre: form.nombre,
           telefono: form.telefono,
           correo: form.correo,
@@ -360,7 +365,7 @@ function Empleados() {
           empleados
             .filter((emp) => emp.superAdmin === true && emp.uid !== empleadoEditado.uid)
             .forEach((emp) => {
-              batch.update(doc(db, "empleados", emp.id), { superAdmin: false });
+              batch.update(getDocRef("empleados", emp.id), { superAdmin: false });
               if (emp.uid) batch.update(doc(db, "autorizados", emp.uid), { superAdmin: false });
             });
         }
@@ -373,6 +378,13 @@ function Empleados() {
 
         if (existingEmployee) {
           alert("Ese correo ya pertenece a un empleado registrado en este negocio.");
+          return;
+        }
+
+        if (!isPremium && Number(negocio?.conteos?.usuariosTotal || 0) >= LIMITE_USUARIOS_GRATUITO) {
+          alert(
+            `El plan Gratuito permite hasta ${LIMITE_USUARIOS_GRATUITO} usuarios. Mejora a CajaLibre Premium para agregar usuarios ilimitados.`,
+          );
           return;
         }
 
@@ -398,7 +410,7 @@ function Empleados() {
         }
 
         const batch = writeBatch(db);
-        const empRef = doc(collection(db, "empleados"));
+        const empRef = doc(getCollectionRef("empleados"));
 
         batch.set(empRef, {
           uid,
@@ -437,12 +449,13 @@ function Empleados() {
           empleados
             .filter((emp) => emp.superAdmin === true && emp.uid !== uid)
             .forEach((emp) => {
-              batch.update(doc(db, "empleados", emp.id), { superAdmin: false });
+              batch.update(getDocRef("empleados", emp.id), { superAdmin: false });
               if (emp.uid) batch.update(doc(db, "autorizados", emp.uid), { superAdmin: false });
             });
         }
 
         await batch.commit();
+        actualizarConteosNegocio(cuentaPrincipalUid || currentUid || uid).catch(() => {});
       }
 
       cerrarFormulario();
@@ -474,7 +487,7 @@ function Empleados() {
       return;
     }
 
-    await deleteDoc(doc(db, "empleados", emp.id));
+    await deleteDoc(getDocRef("empleados", emp.id));
     await deleteDoc(doc(db, "autorizados", emp.uid));
   };
 
@@ -489,7 +502,7 @@ function Empleados() {
 
     try {
       await sendPasswordResetEmail(auth, emp.correo);
-      await updateDoc(doc(db, "empleados", emp.id), {
+      await updateDoc(getDocRef("empleados", emp.id), {
         passwordResetRequestedAt: new Date(),
         passwordResetRequestedBy: auth.currentUser?.uid || null,
       });

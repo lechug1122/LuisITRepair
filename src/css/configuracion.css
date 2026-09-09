@@ -140,6 +140,40 @@
   height: calc(100% - 15px);
 }
 
+.cfg-adsterra-slot {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 250px;
+  overflow: hidden;
+}
+
+.cfg-ad-card:has(.cfg-adsterra-slot) {
+  width: min(100%, 260px);
+  min-height: 225px;
+  aspect-ratio: auto;
+  margin-inline: auto;
+}
+
+.cfg-adsterra-slot {
+  height: 210px;
+  min-height: 210px;
+}
+
+.cfg-adsterra-slot iframe {
+  width: 300px;
+  max-width: none;
+  height: 250px;
+  transform: scale(0.82);
+  transform-origin: top center;
+}
+
+.cfg-adsterra-slot iframe {
+  display: block;
+  max-width: 100%;
+  border: 0;
+}
+
 .cfg-version-card h4 {
   margin: 0 0 10px;
 }
@@ -571,6 +605,11 @@
   border-color: #cbd5e1;
 }
 
+.cfg-card-icon.icon-donacion {
+  background: linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%);
+  border-color: #fecaca;
+}
+
 .cfg-card-info h4 {
   margin: 0;
   color: #0f172a;
@@ -791,6 +830,75 @@
   background: #eff6ff;
 }
 
+.cfg-pos-section-head {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid #e8eef8;
+}
+
+.cfg-pos-section-head p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 760px;
+}
+
+.cfg-pos-feature-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.cfg-pos-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border: 1px solid #dbe7f7;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 14px;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.cfg-pos-feature:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
+}
+
+.cfg-pos-feature:has(input:checked) {
+  border-color: #60a5fa;
+  background: linear-gradient(180deg, #f5f9ff 0%, #eff6ff 100%);
+}
+
+.cfg-pos-feature input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+  accent-color: var(--app-accent, #2563eb);
+}
+
+.cfg-pos-feature-text {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cfg-pos-feature-text strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.cfg-pos-feature-text small {
+  color: #64748b;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
 .cfg-pos-status {
   border-radius: 10px;
   padding: 10px 12px;
@@ -946,6 +1054,14 @@
 .cfg-metodos-card {
   max-width: 920px;
 }
+
+.cfg-manual-discount-form { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px;max-width:760px }
+.cfg-manual-discount-form label { display:grid;gap:7px;font-weight:700;color:#334155 }
+.cfg-manual-discount-form input { min-height:44px;border:1px solid #cbd5e1;border-radius:10px;padding:0 12px;font:inherit }
+.cfg-manual-discount-form button { min-height:44px;border:0;border-radius:10px;padding:0 18px;background:#0f766e;color:#fff;font-weight:800;cursor:pointer }
+.cfg-manual-discount-form button:disabled { opacity:.55;cursor:not-allowed }
+.cfg-manual-discount-status,.cfg-manual-discount-form small { grid-column:1/-1 }
+@media (max-width:650px) { .cfg-manual-discount-form { grid-template-columns:1fr } }
 
 .cfg-metodos-recargo-card {
   max-width: 950px;
@@ -1806,11 +1922,136 @@ body.ui-theme-dark .cfg-ticket-preview-status-pill {
 }
 
 .cfg-empresa-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   border: 1px dashed #bfd3ef;
   border-radius: 10px;
   background: #f8fbff;
   color: #0f172a;
   padding: 10px 12px;
+}
+
+.cfg-empresa-preview-logo {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.cfg-logo-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  border: 1px solid #dbe7f7;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.cfg-logo-preview {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 104px;
+  border: 1px dashed #bfd3ef;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.cfg-logo-preview img {
+  max-width: 88px;
+  max-height: 88px;
+  object-fit: contain;
+}
+
+.cfg-logo-empty {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.cfg-logo-info {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.cfg-logo-info strong {
+  color: #0f172a;
+}
+
+.cfg-logo-info p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.cfg-logo-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.cfg-logo-error {
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.cfg-logo-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cfg-logo-premium-tag {
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fef3c7 0%, #fde68a 100%);
+  border: 1px solid #fcd34d;
+  color: #92400e;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+}
+
+.cfg-logo-bloqueado {
+  color: #92400e;
+  font-weight: 700;
+}
+
+.cfg-logo-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: #1d4ed8;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.cfg-logo-block:has(.cfg-logo-bloqueado) .cfg-logo-preview {
+  opacity: 0.65;
+}
+
+.cfg-logo-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(1);
 }
 
 .cfg-company-managed {

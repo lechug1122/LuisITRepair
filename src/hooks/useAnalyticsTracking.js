@@ -1,8 +1,31 @@
 import { useEffect, useRef } from "react";
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { doc, increment, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../initializer/firebase";
 
+/**
+ * Señales administrativas mínimas de uso de CajaLibre.
+ *
+ * Firestore NO se usa como Google Analytics. Antes se escribía un documento
+ * por cada clic, cada cambio de página, cada salida y cada carga: cientos de
+ * escrituras por sesión. Ahora solo se registran dos cosas:
+ *
+ *   1. Que hubo una sesión (una escritura por sesión y día).
+ *   2. Errores de JavaScript, deduplicados por sesión, para salud del sistema.
+ *
+ * Nunca se registra qué pantalla abrió el usuario, qué botón presionó ni
+ * cuánto tiempo estuvo en cada vista: eso es comportamiento privado del
+ * negocio y no le corresponde al panel de superadmin.
+ *
+ * Todo se acumula en UN documento por negocio y día
+ * (`negocios/{id}/analitica_eventos/{YYYY-MM-DD}`), nunca uno por evento.
+ */
+
 const SESSION_KEY = "cajalibre_analytics_session";
+const VERSION_SISTEMA = "2.2";
+
+// Tope de errores distintos reportados por sesión. Evita que una página que
+// falla en bucle dispare escrituras sin control.
+const MAX_ERRORES_POR_SESION = 5;
 
 function getSessionId() {
   try {
@@ -20,127 +43,133 @@ function cleanText(value, maxLength = 100) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
-function eventBase(authInfo) {
-  const userAgent = String(navigator.userAgent || "");
-  const device = /Mobi|Android|iPhone|iPad/i.test(userAgent) ? "movil" : "escritorio";
-  return {
-    uid: authInfo.uid,
-    negocioId: authInfo.cuentaPrincipalUid || authInfo.uid,
-    cuentaPrincipalUid: authInfo.cuentaPrincipalUid || authInfo.uid,
-    rol: cleanText(authInfo.rol, 40),
-    sessionId: getSessionId(),
-    dispositivo: device,
-    navegador: cleanText(navigator.userAgentData?.brands?.[0]?.brand || navigator.vendor || "Navegador", 60),
-    plataforma: cleanText(navigator.userAgentData?.platform || navigator.platform || "Desconocida", 60),
-    versionSistema: "1.9",
-    clientAt: new Date().toISOString(),
-    createdAt: serverTimestamp(),
-  };
+function hashText(value = "") {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
 }
 
-function saveEvent(authInfo, data) {
-  if (!authInfo?.uid) return;
-  addDoc(collection(db, "analitica_eventos"), {
-    ...eventBase(authInfo),
-    ...data,
-  }).catch(() => {
+/** Marca algo como ya reportado en esta sesión; devuelve false si se repite. */
+function consumirUnaVez(clave) {
+  try {
+    if (sessionStorage.getItem(clave)) return false;
+    sessionStorage.setItem(clave, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function negocioDe(authInfo) {
+  return String(authInfo?.cuentaPrincipalUid || authInfo?.uid || "").trim();
+}
+
+function escribirResumen(negocioId, payload) {
+  const fecha = new Date().toISOString().slice(0, 10);
+  setDoc(
+    doc(db, "negocios", negocioId, "analitica_eventos", fecha),
+    {
+      negocioId,
+      cuentaPrincipalUid: negocioId,
+      formato: "resumen_diario_v1",
+      fecha,
+      versionSistema: VERSION_SISTEMA,
+      actualizadoEn: serverTimestamp(),
+      ...payload,
+    },
+    { merge: true },
+  ).catch(() => {
     // La analitica nunca debe interrumpir el trabajo del usuario.
   });
 }
 
-export default function useAnalyticsTracking(authInfo, pathname) {
+/** Una sola escritura por sesión y día: "este negocio usó CajaLibre hoy". */
+function registrarSesion(authInfo) {
+  const negocioId = negocioDe(authInfo);
+  if (!negocioId) return;
+
+  const sessionId = getSessionId();
+  const fecha = new Date().toISOString().slice(0, 10);
+  if (!consumirUnaVez(`${SESSION_KEY}_sesion_${fecha}_${sessionId}`)) return;
+
+  const dispositivo = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent || "")
+    ? "movil"
+    : "escritorio";
+
+  escribirResumen(negocioId, {
+    totales: { sesiones: increment(1) },
+    dispositivos: { [dispositivo]: increment(1) },
+    sesiones: {
+      [hashText(sessionId)]: { sessionId, uid: authInfo.uid },
+    },
+    usuarios: {
+      [hashText(authInfo.uid)]: { uid: authInfo.uid, rol: cleanText(authInfo.rol, 40) },
+    },
+  });
+}
+
+function registrarError(authInfo, datos, contador) {
+  const negocioId = negocioDe(authInfo);
+  if (!negocioId || contador.current >= MAX_ERRORES_POR_SESION) return;
+
+  const mensaje = cleanText(datos.mensaje, 300);
+  const dimensionId = hashText(`${mensaje}|${cleanText(datos.archivo, 160)}`);
+  if (!consumirUnaVez(`${SESSION_KEY}_error_${dimensionId}`)) return;
+  contador.current += 1;
+
+  escribirResumen(negocioId, {
+    totales: { errores: increment(1) },
+    errores: {
+      [dimensionId]: {
+        mensaje,
+        archivo: cleanText(datos.archivo, 200),
+        linea: Number(datos.linea) || 0,
+        total: increment(1),
+        clientAt: new Date().toISOString(),
+      },
+    },
+  });
+}
+
+export default function useAnalyticsTracking(authInfo) {
   const authRef = useRef(authInfo);
+  const erroresEnSesion = useRef(0);
 
   useEffect(() => {
     authRef.current = authInfo;
   }, [authInfo]);
 
   useEffect(() => {
-    if (!authInfo?.uid || !pathname) return undefined;
-    const startedAt = Date.now();
-
-    saveEvent(authInfo, {
-      tipo: "vista_pagina",
-      ruta: cleanText(pathname, 160),
-      titulo: cleanText(document.title, 120),
-    });
-
-    return () => {
-      saveEvent(authInfo, {
-        tipo: "tiempo_pagina",
-        ruta: cleanText(pathname, 160),
-        duracionMs: Math.max(0, Date.now() - startedAt),
-      });
-    };
-  }, [authInfo, pathname]);
+    if (!authInfo?.uid) return;
+    registrarSesion(authInfo);
+  }, [authInfo]);
 
   useEffect(() => {
-    const onClick = (event) => {
-      const target = event.target?.closest?.("button, a, [role='button']");
-      if (!target || !authRef.current?.uid) return;
-      saveEvent(authRef.current, {
-        tipo: "click",
-        ruta: cleanText(window.location.pathname, 160),
-        elemento: cleanText(
-          target.getAttribute("aria-label") ||
-            target.getAttribute("title") ||
-            target.textContent ||
-            target.tagName,
-          100,
-        ),
-        etiqueta: cleanText(target.tagName, 20),
-      });
-    };
-
     const onError = (event) => {
       if (!authRef.current?.uid) return;
-      saveEvent(authRef.current, {
-        tipo: "error",
-        ruta: cleanText(window.location.pathname, 160),
-        mensaje: cleanText(event.message || "Error de JavaScript", 300),
-        archivo: cleanText(event.filename, 200),
-        linea: Number(event.lineno) || 0,
-      });
+      registrarError(authRef.current, {
+        mensaje: event.message || "Error de JavaScript",
+        archivo: event.filename,
+        linea: event.lineno,
+      }, erroresEnSesion);
     };
 
     const onRejection = (event) => {
       if (!authRef.current?.uid) return;
       const reason = event.reason;
-      saveEvent(authRef.current, {
-        tipo: "error",
-        ruta: cleanText(window.location.pathname, 160),
-        mensaje: cleanText(reason?.message || reason || "Promesa rechazada", 300),
-      });
+      registrarError(authRef.current, {
+        mensaje: reason?.message || reason || "Promesa rechazada",
+      }, erroresEnSesion);
     };
 
-    document.addEventListener("click", onClick, true);
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onRejection);
     return () => {
-      document.removeEventListener("click", onClick, true);
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onRejection);
     };
   }, []);
-
-  useEffect(() => {
-    if (!authInfo?.uid) return undefined;
-    const reportNavigation = () => {
-      const navigation = performance.getEntriesByType("navigation")[0];
-      if (!navigation) return;
-      saveEvent(authInfo, {
-        tipo: "rendimiento",
-        ruta: cleanText(window.location.pathname, 160),
-        metrica: "carga_pagina",
-        duracionMs: Math.round(navigation.loadEventEnd || navigation.duration || 0),
-      });
-    };
-
-    if (document.readyState === "complete") {
-      window.setTimeout(reportNavigation, 0);
-      return undefined;
-    }
-    window.addEventListener("load", reportNavigation, { once: true });
-    return () => window.removeEventListener("load", reportNavigation);
-  }, [authInfo]);
 }

@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Nuevo menú de Acciones rápidas de CajaLibre</title>
+  <desc id="desc">El menú reúne las acciones del Punto de Venta y muestra los atajos F1 a F7.</desc>
+  <defs>
+    <linearGradient id="topbar" x1="0" x2="1">
+      <stop offset="0" stop-color="#183b86"/>
+      <stop offset="1" stop-color="#0f3474"/>
+    </linearGradient>
+    <linearGradient id="modalHead" x1="0" x2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#fff5d8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#0f172a" flood-opacity=".28"/>
+    </filter>
+    <filter id="softBlur">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="#edf3f9"/>
+  <g filter="url(#softBlur)" opacity=".82">
+    <rect width="1200" height="64" fill="url(#topbar)"/>
+    <rect y="64" width="210" height="566" fill="#071a39"/>
+    <rect x="238" y="92" width="600" height="104" rx="18" fill="#ffffff"/>
+    <rect x="862" y="92" width="310" height="455" rx="18" fill="#ffffff"/>
+    <rect x="238" y="218" width="600" height="329" rx="18" fill="#ffffff"/>
+    <rect x="270" y="122" width="230" height="26" rx="8" fill="#dbeafe"/>
+    <rect x="270" y="238" width="530" height="58" rx="12" fill="#edf2f7"/>
+    <rect x="890" y="420" width="250" height="76" rx="12" fill="#dcfce7"/>
+  </g>
+  <rect width="1200" height="630" fill="#0f172a" opacity=".54"/>
+
+  <g filter="url(#shadow)">
+    <rect x="235" y="48" width="820" height="534" rx="24" fill="#ffffff"/>
+    <path d="M259 48h772a24 24 0 0 1 24 24v105H235V72a24 24 0 0 1 24-24z" fill="url(#modalHead)"/>
+    <line x1="235" y1="177" x2="1055" y2="177" stroke="#d8e1ec"/>
+  </g>
+
+  <rect x="267" y="78" width="58" height="58" rx="17" fill="#f08a00"/>
+  <path d="M299 87l-18 28h14l-4 18 20-28h-14z" fill="none" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
+  <text x="345" y="92" fill="#b45309" font-family="Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="1.5">PUNTO DE VENTA</text>
+  <text x="345" y="122" fill="#172033" font-family="Arial, sans-serif" font-size="27" font-weight="700">Acciones rápidas</text>
+  <text x="345" y="149" fill="#64748b" font-family="Arial, sans-serif" font-size="15">Elige una opción o usa directamente F1–F7.</text>
+  <rect x="997" y="76" width="38" height="38" rx="11" fill="#ffffff"/>
+  <path d="M1009 88l14 14m0-14l-14 14" stroke="#64748b" stroke-width="2.4" stroke-linecap="round"/>
+
+  <g font-family="Arial, sans-serif">
+    <g transform="translate(263 201)">
+      <rect width="370" height="82" rx="15" fill="#ffffff" stroke="#d7e1ed"/>
+      <rect x="16" y="14" width="54" height="54" rx="13" fill="#dbeafe"/>
+      <path d="M31 29h5l4 21h18l4-15H38m5 21h1m12 0h1" fill="none" stroke="#2563eb" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="85" y="35" fill="#172033" font-size="16" font-weight="700">Venta extra</text>
+      <text x="85" y="57" fill="#64748b" font-size="12">Agrega un cobro manual</text>
+      <rect x="326" y="25" width="29" height="30" rx="7" fill="#f8fafc" stroke="#cbd8e6"/>
+      <text x="340.5" y="45" text-anchor="middle" fill="#334155" font-size="12" font-weight="700">F1</text>
+    </g>
+
+    <g transform="translate(647 201)">
+      <rect width="380" height="82" rx="15" fill="#ffffff" stroke="#d7e1ed"/>
+      <rect x="16" y="14" width="54" height="54" rx="13" fill="#ede9fe"/>
+      <text x="43" y="49" text-anchor="middle" fill="#7c3aed" font-size="25" font-weight="700">%</text>
+      <text x="85" y="35" fill="#172033" font-size="16" font-weight="700">Promociones</text>
+      <text x="85" y="57" fill="#64748b" font-size="12">Consulta ofertas activas</text>
+      <rect x="336" y="25" width="29" height="30" rx="7" fill="#f8fafc" stroke="#cbd8e6"/>
+      <text x="350.5" y="45" text-anchor="middle" fill="#334155" font-size="12" font-weight="700">F2</text>
+    </g>
+
+    <g transform="translate(263 296)">
+      <rect width="370" height="82" rx="15" fill="#ffffff" stroke="#d7e1ed"/>
+      <rect x="16" y="14" width="54" height="54" rx="13" fill="#fef3c7"/>
+      <path d="M34 26h14l7 7v25H34zm14 0v8h7M39 41h11m-11 6h11m-11 6h8" fill="none" stroke="#d97706" stroke-width="2" stroke-linejoin="round"/>
+      <text x="85" y="35" fill="#172033" font-size="16" font-weight="700">Pagar servicio</text>
+      <text x="85" y="57" fill="#64748b" font-size="12">Cobra un servicio terminado</text>
+      <rect x="326" y="25" width="29" height="30" rx="7" fill="#f8fafc" stroke="#cbd8e6"/>
+      <text x="340.5" y="45" text-anchor="middle" fill="#334155" font-size="12" font-weight="700">F3</text>
+    </g>
+
+    <g transform="translate(647 296)">
+      <rect width="380" height="82" rx="15" fill="#ffffff" stroke="#d7e1ed"/>
+      <rect x="16" y="14" width="54" height="54" rx="13" fill="#dcfce7"/>
+      <rect x="31" y="30" width="24" height="17" rx="2" fill="none" stroke="#159447" stroke-width="2.2"/>
+      <path d="M31 36h24" stroke="#159447" stroke-width="2.2"/>
+      <text x="85" y="35" fill="#172033" font-size="16" font-weight="700">Pagar fiado</text>
+      <text x="85" y="57" fill="#64748b" font-size="12">Registra un abono pendiente</text>
+      <rect x="336" y="25" width="29" height="30" rx="7" fill="#f8fafc" stroke="#cbd8e6"/>
+      <text x="350.5" y="45" text-anchor="middle" fill="#334155" font-size="12" font-weight="700">F4</text>
+    </g>
+
+    <g transform="translate(263 391)">
+      <rect width="370" height="82" rx="15" fill="#ffffff" stroke="#d7e1ed"/>
+      <rect x="16" y="14" width="54" height="54" rx="13" fill="#cffafe"/>
+      <path d="M33 52l8-8m-2-4a9 9 0 0 1 12-11l-6 6 5 5 6-6a9 9 0 0 1-11 12l-8 8z" fill="none" stroke="#0891b2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="85" y="35" fill="#172033" font-size="16" font-weight="700">Abonar servicio</text>
+      <text x="85" y="57" fill="#64748b" font-size="12">Agrega un abono al cobro</text>
+      <rect x="326" y="25" width="29" height="30" rx="7" fill="#f8fafc" stroke="#cbd8e6"/>
+      <text x="340.5" y="45" text-anchor="middle" fill="#334155" font-size="12" font-weight="700">F5</text>
+    </g>
+
+    <g transform="translate(647 391)">
+      <rect width="380" height="82" rx="15" fill="#ffffff" stroke="#d7e1ed"/>
+      <rect x="16" y="14" width="54" height="54" rx="13" fill="#e2e8f0"/>
+      <path d="M32 29h14l10 10-15 15-10-10zm6 7h1" fill="none" stroke="#52647d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="85" y="35" fill="#172033" font-size="16" font-weight="700">Descuento manual</text>
+      <text x="85" y="57" fill="#64748b" font-size="12">Requiere autorización</text>
+      <rect x="336" y="25" width="29" height="30" rx="7" fill="#f8fafc" stroke="#cbd8e6"/>
+      <text x="350.5" y="45" text-anchor="middle" fill="#334155" font-size="12" font-weight="700">F6</text>
+    </g>
+
+    <g transform="translate(263 486)">
+      <rect width="764" height="72" rx="15" fill="#eef2ff" stroke="#aebeff"/>
+      <rect x="16" y="10" width="54" height="52" rx="13" fill="#dfe7ff"/>
+      <circle cx="41" cy="31" r="7" fill="none" stroke="#4f46e5" stroke-width="2"/>
+      <path d="M29 51c1-9 23-9 24 0m8-17v13m-6-6h12" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round"/>
+      <text x="85" y="31" fill="#172033" font-size="16" font-weight="700">Agregar cliente</text>
+      <text x="85" y="52" fill="#64748b" font-size="12">Registra uno para esta venta</text>
+      <rect x="718" y="20" width="30" height="30" rx="7" fill="#ffffff" stroke="#cbd8e6"/>
+      <text x="733" y="40" text-anchor="middle" fill="#334155" font-size="12" font-weight="700">F7</text>
+    </g>
+  </g>
+</svg>

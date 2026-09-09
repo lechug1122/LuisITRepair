@@ -88,6 +88,36 @@
 .help-article li { padding-left: 8px; line-height: 1.6; }
 .help-primary-link { min-height: 48px; padding: 0 19px; }
 
+.help-video-guides { margin-top: 55px; padding: 34px; border-radius: 18px; background: linear-gradient(135deg,#071b3f,#0b3887); color: #fff; scroll-margin-top: 95px; }
+.help-video-guides-head > span { display: flex; align-items: center; gap: 7px; color: #93c5fd; font-size: .75rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.help-video-guides-head h2 { margin: 8px 0 5px; font-size: 1.8rem; }
+.help-video-guides-head p { margin: 0 0 22px; color: #c9dcfa; }
+.help-video-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.help-video-card { display: flex; align-items: center; gap: 14px; min-height: 82px; padding: 14px 17px; border: 1px solid rgba(255,255,255,.15); border-radius: 12px; background: rgba(255,255,255,.09); color: #fff; text-align: left; cursor: pointer; transition: transform .18s,background .18s; }
+.help-video-card:hover { transform: translateY(-2px); background: rgba(255,255,255,.15); }
+.help-video-card > i { display: grid; flex: 0 0 43px; height: 43px; place-items: center; border-radius: 50%; background: #fff; color: #1265e8; font-size: 1.15rem; }
+.help-video-card span { display: grid; gap: 3px; flex: 1; }
+.help-video-card small { color: #a9c9f9; font-size: .68rem; font-weight: 800; text-transform: uppercase; }
+.help-video-card strong { line-height: 1.35; }
+.help-video-empty { grid-column: 1/-1; padding: 28px; border: 1px dashed rgba(255,255,255,.22); border-radius: 12px; color: #c9dcfa; text-align: center; }
+.help-video-modal { position: fixed; inset: 0; z-index: 1000; display: grid; padding: 24px; place-items: center; background: rgba(2,10,27,.82); backdrop-filter: blur(7px); }
+.help-video-modal-dialog { overflow: hidden; width: min(920px,100%); border: 1px solid rgba(255,255,255,.18); border-radius: 16px; background: #08162f; color: #fff; box-shadow: 0 28px 80px rgba(0,0,0,.45); }
+.help-video-modal-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 17px 20px; }
+.help-video-modal-dialog header span { color: #86b8ff; font-size: .7rem; font-weight: 900; text-transform: uppercase; letter-spacing: .08em; }
+.help-video-modal-dialog h2 { margin: 4px 0 0; font-size: clamp(1.05rem,2vw,1.4rem); }
+.help-video-modal-dialog header button { display: grid; flex: 0 0 39px; height: 39px; place-items: center; border: 0; border-radius: 50%; background: rgba(255,255,255,.1); color: #fff; font-size: 1.3rem; cursor: pointer; }
+.help-video-frame { position: relative; width: 100%; aspect-ratio: 16/9; background: #000; }
+.help-video-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.help-guides-modal-dialog { width: min(680px,100%); }
+.help-guides-modal-content { padding: 0 20px 22px; }
+.help-guides-modal-content > p { margin: 0 0 15px; color: #b9c9e5; }
+.help-guides-modal-list { display: grid; gap: 9px; max-height: min(55vh,470px); overflow-y: auto; }
+.help-guides-modal-list button { display: flex; align-items: center; gap: 13px; width: 100%; min-height: 62px; padding: 11px 14px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; background: rgba(255,255,255,.07); color: #fff; text-align: left; cursor: pointer; }
+.help-guides-modal-list button:hover { background: rgba(255,255,255,.13); }
+.help-guides-modal-list button i { display: grid; flex: 0 0 38px; height: 38px; place-items: center; border-radius: 50%; background: #fff; color: #1265e8; }
+.help-guides-modal-list button strong { flex: 1; line-height: 1.35; }
+.help-guides-modal-empty { padding: 28px 15px; border: 1px dashed rgba(255,255,255,.2); border-radius: 10px; color: #b9c9e5; text-align: center; }
+
 @media (max-width: 960px) {
   .help-nav nav { display: none; }
   .help-hero-grid { grid-template-columns: 1fr; padding: 55px 0; }
@@ -95,6 +125,7 @@
   .help-categories { grid-template-columns: repeat(3,1fr); }
   .help-main-grid { grid-template-columns: 1fr; gap: 38px; }
   .help-resource-grid { grid-template-columns: 1fr; }
+  .help-video-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -109,4 +140,6 @@
   .help-category p { min-height: 0; }
   .help-contact > div { flex-direction: column; }
   .help-article { padding: 25px 20px; }
+  .help-video-guides { padding: 25px 18px; }
+  .help-video-modal { padding: 12px; }
 }

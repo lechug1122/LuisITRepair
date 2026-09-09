@@ -29,6 +29,7 @@ export default function useEmpresaConfig() {
   return {
     empresa,
     nombreEmpresa: String(empresa?.nombre || "").trim(),
+    logoEmpresa: String(empresa?.logo || "").trim(),
     tipoNegocioActivo: getTipoNegocioActivo(empresa),
     serviciosHabilitados: empresaTieneServicios(empresa),
     loading,

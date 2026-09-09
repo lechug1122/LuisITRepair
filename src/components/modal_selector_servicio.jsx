@@ -6,10 +6,18 @@ export default function ModalSelectorServicio({
   mostrar,
   cargando = false,
   servicios = [],
+  titulo = "Pagar servicio",
+  subtitulo = "Selecciona un servicio con estado listo para cobrar.",
+  mensajeVacio = "No hay servicios listos para cobrar.",
+  mostrarCosto = true,
   onClose,
   onSeleccionar,
 }) {
   const { formatCurrency } = useMonedaConfig();
+  const obtenerSaldo = (servicio) => Math.max(
+    0,
+    Number(String(servicio?.costo || "").replace(/[^\d.-]/g, "")) - Number(servicio?.totalAbonado || 0),
+  );
 
   useEffect(() => {
     if (!mostrar) return undefined;
@@ -28,20 +36,20 @@ export default function ModalSelectorServicio({
     <div className="selector-servicio-overlay" onClick={onClose}>
       <div className="selector-servicio-modal" onClick={(e) => e.stopPropagation()}>
         <div className="selector-servicio-header">
-          <h3>Pagar servicio</h3>
+          <h3>{titulo}</h3>
           <button type="button" onClick={onClose}>
             X
           </button>
         </div>
 
         <p className="selector-servicio-subtitle">
-          Selecciona un servicio con estado listo para cobrar.
+          {subtitulo}
         </p>
 
         {cargando && <p className="selector-servicio-empty">Cargando servicios...</p>}
 
         {!cargando && servicios.length === 0 && (
-          <p className="selector-servicio-empty">No hay servicios listos para cobrar.</p>
+          <p className="selector-servicio-empty">{mensajeVacio}</p>
         )}
 
         {!cargando && servicios.length > 0 && (
@@ -55,7 +63,7 @@ export default function ModalSelectorServicio({
               >
                 <div className="selector-servicio-row">
                   <span className="selector-servicio-folio">{servicio.folio || "-"}</span>
-                  <span className="selector-servicio-costo">{formatCurrency(servicio.costo)}</span>
+                  <span className="selector-servicio-costo">{mostrarCosto && obtenerSaldo(servicio) > 0 ? `Saldo: ${formatCurrency(obtenerSaldo(servicio))}` : "Precio por definir"}</span>
                 </div>
                 <div className="selector-servicio-row selector-servicio-meta">
                   <span>{servicio.nombre || "Cliente sin nombre"}</span>

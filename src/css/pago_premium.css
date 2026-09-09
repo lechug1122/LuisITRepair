@@ -1,0 +1,35 @@
+.premium-payment-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.premium-payment-grid > .cfg-pos-card { min-width: 0; margin: 0; padding: 28px; }
+.premium-payment-plan { border-top: 4px solid #6366f1; }
+.premium-payment h2 { font-size: 22px; margin: 16px 0 10px; }
+.premium-payment p { line-height: 1.6; }
+.premium-payment-badge { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 20px; background: #eef2ff; color: #4338ca; font-weight: 700; }
+.premium-payment-price { margin: 24px 0 8px; font-size: 44px; font-weight: 800; }
+.premium-payment-price span { font-size: 16px; font-weight: 500; }
+.premium-payment-benefits { display: grid; gap: 16px; padding: 0; margin: 28px 0 0; list-style: none; }
+.premium-payment-benefits li { display: flex; align-items: center; gap: 12px; }
+.premium-payment-benefits svg { color: #15803d; flex-shrink: 0; }
+.premium-payment-summary dl { margin: 24px 0; }
+.premium-payment-summary dl > div { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; }
+.premium-payment-summary dt { font-weight: 500; }
+.premium-payment-summary dd { margin: 0; text-align: right; font-weight: 700; }
+.premium-payment-total { border-top: 1px solid #cbd5e1; margin-top: 12px; font-size: 18px; }
+.premium-payment-provider { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.premium-payment-notice { padding: 14px; border-radius: 10px; background: #f1f5f9; color: #334155; font-size: 14px; }
+.premium-payment-button { width: 100%; padding: 14px; border: 0; border-radius: 10px; background: #e2e8f0; color: #475569; font: inherit; font-weight: 700; cursor: not-allowed; }
+.premium-payment-options { display: grid; gap: 12px; }
+.premium-payment-email { display: grid; gap: 8px; margin-bottom: 18px; font-size: 14px; }
+.premium-payment-email input { width: 100%; min-width: 0; box-sizing: border-box; padding: 12px; border: 1px solid #94a3b8; border-radius: 8px; font: inherit; }
+.premium-payment-button:not(:disabled) { background: #007eb5; color: white; cursor: pointer; }
+.premium-payment-button:focus-visible { outline: 2px solid #007eb5; outline-offset: 3px; }
+.premium-payment-back { display: block; width: fit-content; margin: 20px auto 0; color: #4f46e5; }
+.premium-payment-back:focus-visible { outline: 2px solid #4f46e5; outline-offset: 4px; }
+@media (max-width: 900px) {
+  .premium-payment-grid { grid-template-columns: 1fr; }
+  .premium-payment-grid > .cfg-pos-card { padding: 20px; }
+}

@@ -1,60 +1,27 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import { auth, db } from "../initializer/firebase";
+import Advertising from "../components/Advertising";
 import UpdateModal from "../components/UpdateModal";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import "../css/configuracion.css";
 import { hasAnalyticsAccess } from "../js/services/analytics_access";
 
-const SYSTEM_VERSION = "1.9";
-const SUPPORT_PHONE = "2731430147";
+const SYSTEM_VERSION = "2.1";
+const SUPPORT_PHONE = "2731159520";
 const SUPPORT_EMAIL = "cajalibre.puntodeventa@gmail.com";
 const SUPPORT_WHATSAPP_URL = `https://wa.me/52${SUPPORT_PHONE}?text=${encodeURIComponent(
   "Hola, necesito ayuda con el sistema.",
 )}`;
-const DONATION_WHATSAPP_URL = `https://wa.me/52${SUPPORT_PHONE}?text=${encodeURIComponent(
-  "Hola, quiero apoyar CajaLibre con una donacion.",
-)}`;
 const SUPPORT_MAILTO_URL = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
   "Soporte del sistema",
 )}&body=${encodeURIComponent("Hola, necesito ayuda con el sistema.")}`;
-
-function AnuncioConfiguracion() {
-  const anuncioRef = useRef(null);
-
-  useEffect(() => {
-    const anuncio = anuncioRef.current;
-    if (!anuncio || anuncio.getAttribute("data-ad-status")) return;
-
-    try {
-      (window.adsbygoogle = window.adsbygoogle || []).push({});
-    } catch (error) {
-      if (String(error?.message || "").includes("already have ads")) return;
-      console.warn(
-        "[configuracion] No se pudo cargar el anuncio:",
-        error?.message || error,
-      );
-    }
-  }, []);
-
-  return (
-    <div className="cfg-ad-card">
-      <span className="cfg-ad-label">Anuncio</span>
-      <ins
-        ref={anuncioRef}
-        className="adsbygoogle"
-        style={{ display: "block" }}
-        data-ad-client="ca-pub-6040311717869766"
-        data-ad-slot="9256116445"
-        data-ad-format="auto"
-        data-full-width-responsive="true"
-      />
-    </div>
-  );
-}
+const DONATION_WHATSAPP_URL = `https://wa.me/52${SUPPORT_PHONE}?text=${encodeURIComponent(
+  "Hola, quiero apoyar CajaLibre con una donacion.",
+)}`;
 
 export default function Configuracion() {
   const navigate = useNavigate();
@@ -64,9 +31,11 @@ export default function Configuracion() {
     location.pathname === "/configuracion/suscripciones" ||
     location.pathname === "/configuracion/analitica" ||
     location.pathname === "/configuracion/mi-suscripcion" ||
+    location.pathname === "/configuracion/pago-premium" ||
     location.pathname === "/configuracion/donacion";
   const { serviciosHabilitados, tipoNegocioActivo } = useEmpresaConfig();
-  const { superAdmin, accesoAnalitica, cuentaPrincipalUid, uid } = useAutorizacionActual();
+  const { superAdmin, accesoAnalitica, cuentaPrincipalUid, uid, premiumState } = useAutorizacionActual();
+  const esUsuarioGratuito = premiumState === "free";
   const analyticsAccess = hasAnalyticsAccess({
     superAdmin,
     accesoAnalitica,
@@ -90,7 +59,10 @@ export default function Configuracion() {
       ? [{ name: "Administracion", path: "/configuracion/suscripciones" }]
       : []),
     ...(esAdministradorNegocio
-      ? [{ name: "Mi Plan", path: "/configuracion/mi-suscripcion" }]
+      ? [
+        { name: "Mi Plan", path: "/configuracion/mi-suscripcion" },
+        { name: "Pago Premium", path: "/configuracion/pago-premium" },
+      ]
       : []),
     { name: "POS", path: "/configuracion/pos" },
     ...(tipoNegocioActivo?.id === "restaurante"
@@ -105,7 +77,9 @@ export default function Configuracion() {
     { name: "Apariencia", path: "/configuracion/apariencia" },
     { name: "Notificaciones", path: "/configuracion/notificaciones" },
     { name: "Impresoras", path: "/configuracion/impresoras" },
-    { name: "Donacion", path: "/configuracion/donacion" },
+    ...(esUsuarioGratuito
+      ? [{ name: "Donacion", path: "/configuracion/donacion" }]
+      : []),
     // { name: "Respaldos", path: "/configuracion/respaldos" },
     // { name: "Seguridad", path: "/configuracion/seguridad" },
     // { name: "Integraciones", path: "/configuracion/integraciones" },
@@ -218,7 +192,7 @@ export default function Configuracion() {
 
         {!ocultarPanelLateral && (
           <aside className="cfg-right">
-            <AnuncioConfiguracion />
+            {esUsuarioGratuito && <Advertising placement="settings" />}
 
             <div className="cfg-version-card">
               <h4>Version del sistema</h4>
@@ -273,14 +247,16 @@ export default function Configuracion() {
                   Enviar correo
                 </a>
 
-                <a
-                  className="cfg-help-btn cfg-help-btn-donation"
-                  href={DONATION_WHATSAPP_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Donacion
-                </a>
+                {esUsuarioGratuito && (
+                  <a
+                    className="cfg-help-btn cfg-help-btn-donation"
+                    href={DONATION_WHATSAPP_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Donacion
+                  </a>
+                )}
               </div>
             </div>
 

@@ -64,6 +64,8 @@ export default function HojaServicio() {
     politicaRetardo,
   } = useServiciosConfig();
   const [form, setForm] = useState(() => buildInitialForm(tipoNegocioActivo));
+  const [pasoRegistro, setPasoRegistro] = useState(1);
+  const formRegistroRef = useRef(null);
 
   const [marcasModelos, setMarcasModelos] = useState({});
   const [modelosData, setModelosData] = useState({});
@@ -299,6 +301,25 @@ export default function HojaServicio() {
     }));
   }
 
+  function avanzarPasoRegistro() {
+    const contenedor = formRegistroRef.current;
+    if (!contenedor) return;
+    const campos = [...contenedor.querySelectorAll(`.hoja-step-${pasoRegistro} input, .hoja-step-${pasoRegistro} select, .hoja-step-${pasoRegistro} textarea`)];
+    const invalido = campos.find((campo) => !campo.disabled && !campo.checkValidity());
+    if (invalido) {
+      invalido.reportValidity();
+      invalido.focus();
+      return;
+    }
+    setPasoRegistro((actual) => Math.min(3, actual + 1));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function regresarPasoRegistro() {
+    setPasoRegistro((actual) => Math.max(1, actual - 1));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function seleccionarCliente(cli) {
     setSelectedCliente(cli);
     setForm((prev) => ({
@@ -355,6 +376,20 @@ export default function HojaServicio() {
     let hojaPrintWindow = null;
 
     try {
+      const trabajoLimpio = String(form.trabajo || "").trim();
+      if (trabajoLimpio.length < 5) {
+        setPasoRegistro(3);
+        alert("Describe el trabajo o la falla reportada antes de guardar el servicio.");
+        return;
+      }
+
+      const costoCapturado = Number(form.costo);
+      if (!form.precioDespues && (!Number.isFinite(costoCapturado) || costoCapturado <= 0)) {
+        setPasoRegistro(3);
+        alert("Captura un costo mayor que cero o marca Precio después del diagnóstico.");
+        return;
+      }
+
       if (!form.omitirNumeroSerie && !String(form.numeroSerie || "").trim()) {
         alert("Captura el numero de serie o activa la opcion para omitirlo.");
         return;
@@ -489,6 +524,7 @@ export default function HojaServicio() {
       });
 
       setForm(buildInitialForm(tipoNegocioActivo));
+      setPasoRegistro(1);
       setSelectedCliente(null);
       setSugerencias([]);
       setShowSug(false);
@@ -586,16 +622,35 @@ export default function HojaServicio() {
 
   return (
     <div className="hoja-page">
+      <div className="hoja-service-bubbles" aria-hidden="true">
+        <span /><span /><span /><span /><span /><span />
+      </div>
       <div className="hoja-form-shell">
         <div className="card shadow-lg border-0">
           <div className="card-body">
-            <h2 className="text-center mb-4">
-              {tipoNegocioActivo?.tituloHoja || "Registro de servicio"}
-            </h2>
+            <header className="hoja-form-header">
+              <div className="hoja-form-header-icon" aria-hidden="true">＋</div>
+              <div>
+                <span className="hoja-form-eyebrow">Nuevo ingreso</span>
+                <h2>{tipoNegocioActivo?.tituloHoja || "Registro de servicio"}</h2>
+                <p>Captura los datos del cliente y del equipo para generar la orden de servicio.</p>
+              </div>
+              <span className="hoja-form-required"><b>*</b> Datos obligatorios</span>
+            </header>
 
-            <form id="formRegistro" onSubmit={handleSubmit}>
-              <div ref={nombreWrapRef} style={{ position: "relative" }}>
-                <label>Nombre del cliente:</label>
+            <nav className="hoja-form-steps" aria-label="Secciones del registro">
+              <span className={pasoRegistro === 1 ? "active" : pasoRegistro > 1 ? "complete" : ""}><b>1</b> Cliente</span>
+              <span className={pasoRegistro === 2 ? "active" : pasoRegistro > 2 ? "complete" : ""}><b>2</b> Equipo</span>
+              <span className={pasoRegistro === 3 ? "active" : ""}><b>3</b> Servicio</span>
+            </nav>
+
+            <form id="formRegistro" ref={formRegistroRef} data-step={pasoRegistro} onSubmit={handleSubmit}>
+              <div className="full hoja-section-heading hoja-step-1">
+                <span className="hoja-section-icon" aria-hidden="true">👤</span>
+                <div><small>Paso 1</small><h3>Datos del cliente</h3><p>Busca un cliente existente o registra uno nuevo.</p></div>
+              </div>
+              <div className={`hoja-step-1 cliente-name-field${showSug ? " suggestions-open" : ""}`} ref={nombreWrapRef}>
+                <label>Nombre del cliente <b className="required-mark">*</b></label>
                 <input
                   type="text"
                   name="nombre"
@@ -659,7 +714,7 @@ export default function HojaServicio() {
                 )}
               </div>
 
-              <div>
+              <div className="hoja-step-1">
                 <label>Direccion:</label>
                 <input
                   type="text"
@@ -669,8 +724,8 @@ export default function HojaServicio() {
                 />
               </div>
 
-              <div>
-                <label>Telefono:</label>
+              <div className="hoja-step-1">
+                <label>Teléfono:</label>
                 <input
                   type="tel"
                   name="telefono"
@@ -689,8 +744,13 @@ export default function HojaServicio() {
                 />
               </div>
 
-              <div className="full">
-                <label>{tipoNegocioActivo?.etiquetaTipoDispositivo || "Tipo de dispositivo"}:</label>
+              <div className="full hoja-section-heading hoja-step-2">
+                <span className="hoja-section-icon equipment" aria-hidden="true">▣</span>
+                <div><small>Paso 2</small><h3>Datos del equipo</h3><p>Identifica el equipo y sus características principales.</p></div>
+              </div>
+
+              <div className="full hoja-step-2">
+                <label>{tipoNegocioActivo?.etiquetaTipoDispositivo || "Tipo de dispositivo"} <b className="required-mark">*</b></label>
                 <select
                   name="tipoDispositivo"
                   value={form.tipoDispositivo}
@@ -706,7 +766,7 @@ export default function HojaServicio() {
                 </select>
               </div>
 
-              <div>
+              <div className="hoja-step-2">
                 <label>{tipoNegocioActivo?.etiquetaMarca || "Marca"}:</label>
                 <input
                   list={usaCatalogoComputo ? "listaMarcas" : undefined}
@@ -724,7 +784,7 @@ export default function HojaServicio() {
                 )}
               </div>
 
-              <div>
+              <div className="hoja-step-2">
                 <label>{tipoNegocioActivo?.etiquetaModelo || "Modelo"}:</label>
                 <input
                   list={usaCatalogoComputo ? "listaModelos" : undefined}
@@ -742,8 +802,8 @@ export default function HojaServicio() {
                 )}
               </div>
 
-              <div className="full">
-                <label>{tipoNegocioActivo?.etiquetaSerie || "Numero de serie"}:</label>
+              <div className="full hoja-step-2">
+                <label>{tipoNegocioActivo?.etiquetaSerie || "Número de serie"} {!form.omitirNumeroSerie && <b className="required-mark">*</b>}</label>
                 <input
                   type="text"
                   name="numeroSerie"
@@ -770,7 +830,7 @@ export default function HojaServicio() {
               </div>
 
               {camposVisibles.length > 0 && (
-                <div className="full hoja-custom-block">
+                <div className="full hoja-custom-block hoja-step-2">
                   <fieldset className="fieldset-equipo">
                     <legend>Campos del servicio</legend>
                     <div className="hoja-custom-grid">
@@ -780,7 +840,7 @@ export default function HojaServicio() {
                 </div>
               )}
 
-              <div className="full form-check ms-2">
+              <div className="full form-check ms-2 hoja-step-2">
                 <input
                   className="form-check-input"
                   type="checkbox"
@@ -795,17 +855,24 @@ export default function HojaServicio() {
                 </label>
               </div>
 
-              <div className="full">
-                <label>{tipoNegocioActivo?.etiquetaTrabajo || "Trabajo a realizar"}:</label>
+              <div className="full hoja-section-heading hoja-step-3">
+                <span className="hoja-section-icon service" aria-hidden="true">✓</span>
+                <div><small>Paso 3</small><h3>Servicio y presupuesto</h3><p>Describe el trabajo solicitado y define el costo inicial.</p></div>
+              </div>
+
+              <div className="full hoja-step-3">
+                <label>{tipoNegocioActivo?.etiquetaTrabajo || "Trabajo a realizar"} <b className="required-mark">*</b></label>
                 <textarea
                   name="trabajo"
                   value={form.trabajo}
                   placeholder={tipoNegocioActivo?.placeholderTrabajo || ""}
                   onChange={handleTextareaChange}
+                  required
+                  minLength={5}
                 />
               </div>
 
-              <div className="full costo-row">
+              <div className="full costo-row hoja-step-3">
                 <label htmlFor="costo" className="me-3">
                   {tipoNegocioActivo?.etiquetaCosto || "Costo estimado"}:
                 </label>
@@ -814,13 +881,14 @@ export default function HojaServicio() {
                   type="number"
                   name="costo"
                   id="costo"
-                  min="0"
+                  min="0.01"
                   step="0.01"
                   value={form.costo}
                   onChange={handleChange}
                   className="me-3"
                   style={{ width: 140 }}
                   disabled={form.precioDespues}
+                  required={!form.precioDespues}
                 />
 
                 <div className="form-check ms-2">
@@ -838,11 +906,19 @@ export default function HojaServicio() {
                 </div>
               </div>
 
-              <button type="submit">
-                {hojaServicioHabilitada
-                  ? "Guardar registro y generar PDF"
-                  : "Guardar registro sin PDF"}
-              </button>
+              <div className="full hoja-submit-area hoja-wizard-actions">
+                <div><strong>Paso {pasoRegistro} de 3</strong><span>{pasoRegistro === 1 ? "Ingresa los datos principales del cliente." : pasoRegistro === 2 ? "Identifica el equipo que recibes." : "Revisa el servicio y guarda la orden."}</span></div>
+                <div className="hoja-wizard-buttons">
+                  {pasoRegistro > 1 && <button type="button" className="hoja-back-button" onClick={regresarPasoRegistro}>Anterior</button>}
+                  {pasoRegistro < 3 ? (
+                    <button type="button" className="hoja-next-button" onClick={avanzarPasoRegistro}>Siguiente</button>
+                  ) : (
+                    <button type="submit">
+                      {hojaServicioHabilitada ? "Guardar y generar orden" : "Guardar registro"}
+                    </button>
+                  )}
+                </div>
+              </div>
             </form>
           </div>
         </div>

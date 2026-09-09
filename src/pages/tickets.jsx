@@ -63,11 +63,10 @@ function clearDynamicTicketPrintStyle() {
   document.getElementById(DYNAMIC_TICKET_PRINT_STYLE_ID)?.remove();
 }
 
-function syncDynamicTicketPrintStyle(isMobile) {
+function syncDynamicTicketPrintStyle(ticketWidth, isMobile) {
   clearDynamicTicketPrintStyle();
-  if (!isMobile || typeof document === "undefined") return;
+  if (typeof document === "undefined") return;
 
-  const ticketWidth = getTicketPrintWidth(true);
   const style = document.createElement("style");
   style.id = DYNAMIC_TICKET_PRINT_STYLE_ID;
   style.media = "print";
@@ -77,7 +76,7 @@ function syncDynamicTicketPrintStyle(isMobile) {
     body {
       width: ${ticketWidth} !important;
     }
-    .ticket-paper.ticket-paper-mobile {
+    .ticket-paper {
       width: ${ticketWidth} !important;
       max-width: ${ticketWidth} !important;
       padding: 4mm 10mm 4mm 4mm !important;
@@ -108,12 +107,13 @@ export default function Ticket() {
   const { folio: folioParam } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { nombreEmpresa } = useEmpresaConfig();
+  const { nombreEmpresa, logoEmpresa } = useEmpresaConfig();
   const {
     imprimirAlIniciarServicio,
     modoImpresion,
     nombreImpresoraTicket,
     salidaTicketMovil,
+    tamanoTicket,
   } = useImpresorasConfig();
   const { formatCurrency } = useMonedaConfig();
   const [ticketCfg] = useState(() => buildTicketConfig(readTicketConfigStorage()));
@@ -150,9 +150,9 @@ export default function Ticket() {
   }, []);
 
   useEffect(() => {
-    syncDynamicTicketPrintStyle(esVistaMovil);
+    syncDynamicTicketPrintStyle(tamanoTicket, esVistaMovil);
     return () => clearDynamicTicketPrintStyle();
-  }, [esVistaMovil]);
+  }, [esVistaMovil, tamanoTicket]);
 
   useEffect(() => {
     autoPrintDoneRef.current = false;
@@ -219,7 +219,7 @@ export default function Ticket() {
         await printImageSilently({
           printerName: nombreImpresoraTicket || "",
           imageDataUrl,
-          paperSize: getTicketPrintWidth(esVistaMovil),
+          paperSize: tamanoTicket || getTicketPrintWidth(esVistaMovil),
           jobName:
             `Servicio ${servicio?.folio || folio || ""}`.trim() || "Hoja de servicio",
         });
@@ -243,6 +243,7 @@ export default function Ticket() {
     esVistaMovil,
     folio,
     modoImpresion,
+    tamanoTicket,
     nombreImpresoraTicket,
     salidaTicketMovil,
     servicio,
@@ -359,7 +360,7 @@ export default function Ticket() {
           {/* ✅ Logo */}
           {ticketCfg.showLogo && (
             <div className="ticket-logo">
-              <img src={logoUrl} alt="Logo" />
+              <img src={logoEmpresa || logoUrl} alt="Logo" />
             </div>
           )}
 
