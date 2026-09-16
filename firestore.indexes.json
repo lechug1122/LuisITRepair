@@ -48,6 +48,54 @@
   // ]
   "indexes": [
     {
+        "collectionGroup": "servicios_publicos",
+        "queryScope": "COLLECTION_GROUP",
+        "fields": [
+            { "fieldPath": "folio", "order": "ASCENDING" },
+            { "fieldPath": "trackingEnabled", "order": "ASCENDING" }
+        ]
+    },
+    {
+        "collectionGroup": "notificaciones_globales",
+        "queryScope": "COLLECTION",
+        "fields": [
+            { "fieldPath": "audiencia", "arrayConfig": "CONTAINS" },
+            { "fieldPath": "activo", "order": "ASCENDING" }
+        ]
+    },
+    {
+        "collectionGroup": "notificaciones_globales",
+        "queryScope": "COLLECTION",
+        "fields": [
+            { "fieldPath": "audiencia", "arrayConfig": "CONTAINS" },
+            { "fieldPath": "createdAt", "order": "DESCENDING" }
+        ]
+    },
+    {
+        "collectionGroup": "soporte_tickets",
+        "queryScope": "COLLECTION",
+        "fields": [
+            { "fieldPath": "negocioId", "order": "ASCENDING" },
+            { "fieldPath": "ultimoMensajeAt", "order": "DESCENDING" }
+        ]
+    },
+    {
+        "collectionGroup": "soporte_tickets",
+        "queryScope": "COLLECTION",
+        "fields": [
+            { "fieldPath": "negocioId", "order": "ASCENDING" },
+            { "fieldPath": "sinLeerCliente", "order": "ASCENDING" }
+        ]
+    },
+    {
+        "collectionGroup": "mensajes",
+        "queryScope": "COLLECTION",
+        "fields": [
+            { "fieldPath": "interna", "order": "ASCENDING" },
+            { "fieldPath": "createdAt", "order": "ASCENDING" }
+        ]
+    },
+    {
         "collectionGroup": "negocios",
         "queryScope": "COLLECTION",
         "fields": [
@@ -133,6 +181,24 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "empleados",
+      "fieldPath": "uid",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
     {
       "collectionGroup": "servicios",
       "fieldPath": "folio",

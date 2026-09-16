@@ -13,6 +13,8 @@ import * as logger from "firebase-functions/logger";
 import * as admin from "firebase-admin";
 export {crearSuscripcionMercadoPago, consultarSuscripcionMercadoPago, cancelarSuscripcionMercadoPago, mercadoPagoWebhook} from "./premium";
 export {adminEstablecerPremium} from "./admin";
+export {listarNotificacionesNegocio} from "./notifications";
+export {consultarServicioPublico} from "./service_tracking";
 
 // Start writing functions
 // https://firebase.google.com/docs/functions/typescript
@@ -447,6 +449,5 @@ export const googleImageSearch = onRequest({region: "southamerica-east1", invoke
     });
   }
 });
-
 
 

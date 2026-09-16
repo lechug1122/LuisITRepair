@@ -5,8 +5,9 @@ import UpdateModal from "../components/UpdateModal";
 import RestaurantePromoModal from "../components/RestaurantePromoModal";
 import ModalRecomendacion from "../components/ModalRecomendacion";
 import PremiumPromoModal from "../components/PremiumPromoModal";
-import { Outlet, useLocation } from "react-router-dom";
-import { useCallback, useEffect, useRef, useState } from "react";
+import DeviceLimitModal from "../components/DeviceLimitModal";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addDoc, serverTimestamp } from "firebase/firestore";
 import { suscribirNotificacionesGlobales } from "../js/services/realtime_notifications";
 import { autoCerrarCortesPendientes } from "../js/services/corte_caja_firestore";
@@ -20,6 +21,11 @@ import usePresenciaEmpleado from "../hooks/usePresenciaEmpleado";
 import useSesionDispositivo from "../hooks/useSesionDispositivo";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useAnalyticsTracking from "../hooks/useAnalyticsTracking";
+import useNotificacionesGlobales from "../hooks/useNotificacionesGlobales";
+import { etiquetaTipoNotificacion } from "../js/services/notificaciones_globales";
+import { escucharRespuestasSinLeer } from "../js/services/soporte_tickets";
+import { esTitularDelNegocio } from "../js/services/premium_promo_schedule";
+import { PREMIUM_SITE_URL } from "../js/services/premium_config";
 import "../css/notificaciones_globales.css";
 import "../css/sesion_dispositivo.css";
 
@@ -27,16 +33,42 @@ import "../css/sesion_dispositivo.css";
 // venta en el POS ni una hoja de servicio a medias.
 const RUTAS_PROMO_PLANES = ["/", "/home"];
 
+// Pantallas donde ya se explica Premium. El aviso de cuenta en uso se retira
+// mientras se consultan, para que se puedan leer completas; vuelve a aparecer
+// en cuanto se navega a cualquier otra parte del sistema.
+const RUTAS_PREMIUM = ["/configuracion/mi-suscripcion", "/configuracion/pago-premium"];
+
 export default function MainLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const authInfo = useAutorizacionActual();
   // Solo señales administrativas: ya no se registra la navegación por ruta.
   useAnalyticsTracking(authInfo);
   const { rol } = authInfo;
   const { tipoNegocioActivo } = useEmpresaConfig();
-  const { checking: checkingDeviceSession, conflicto, resolverConflicto, salir } =
-    useSesionDispositivo(authInfo);
+  const {
+    verificando: verificandoEquipo,
+    conflicto: conflictoEquipo,
+    continuarEnEsteEquipo,
+    cancelar: cancelarEquipo,
+  } = useSesionDispositivo(authInfo);
   usePresenciaEmpleado();
+  // Avisos que CajaLibre envia al negocio. Se mezclan con las alertas
+  // operativas en la misma campana, en lugar de abrir una segunda.
+  const {
+    avisos,
+    sinLeer: avisosSinLeer,
+    avisoImportante,
+    refrescar: refrescarAvisos,
+    marcarLeida: marcarAvisoLeido,
+    marcarTodasLeidas: marcarAvisosLeidos,
+    descartarAvisoImportante,
+  } = useNotificacionesGlobales({
+    negocioId: authInfo.negocioId || authInfo.cuentaPrincipalUid,
+    uid: authInfo.uid,
+    premiumState: authInfo.premiumState,
+  });
+  const [respuestasSoporte, setRespuestasSoporte] = useState([]);
   const [notificaciones, setNotificaciones] = useState([]);
   const [toasts, setToasts] = useState([]);
   const [panelAbierto, setPanelAbierto] = useState(false);
@@ -138,28 +170,87 @@ export default function MainLayout() {
     return () => window.cancelAnimationFrame(frameId);
   }, [esAdmin]);
 
+  const negocioActual = authInfo.negocioId || authInfo.cuentaPrincipalUid;
+
+  useEffect(() => {
+    if (!negocioActual || !authInfo.uid) return undefined;
+    const detener = escucharRespuestasSinLeer(
+      negocioActual,
+      setRespuestasSoporte,
+      (error) => console.warn("[soporte] No se pudieron leer las respuestas:", error?.code || error),
+    );
+    return () => detener?.();
+  }, [negocioActual, authInfo.uid]);
+
   const cerrarNotificacion = useCallback((id) => {
     const safeId = String(id || "");
+    // Un aviso de CajaLibre no se borra: se marca como leido y sigue en la
+    // lista, porque lo envio alguien mas y puede querer consultarse despues.
+    marcarAvisoLeido(safeId);
     setNotificaciones((prev) => prev.filter((item) => String(item.id || "") !== safeId));
     setToasts((prev) => prev.filter((item) => String(item.id || "") !== safeId));
-  }, []);
+  }, [marcarAvisoLeido]);
 
   function togglePanelNotificaciones() {
-    if (!esAdmin) return;
     setPanelAbierto((prev) => {
       const nuevo = !prev;
       if (!prev) {
         setNotificaciones((list) => list.map((n) => ({ ...n, leida: true })));
+        // Abrir el panel es la senal de que alguien quiere ver lo ultimo: es el
+        // unico momento en que vale la pena saltarse la copia reciente.
+        refrescarAvisos();
       }
       return nuevo;
     });
   }
 
   const noLeidas = notificaciones.filter((n) => !n.leida).length;
-  const panelNotificacionesVisible = esAdmin ? panelAbierto : false;
-  const notificacionesVisibles = esAdmin ? notificaciones : [];
-  const noLeidasVisibles = esAdmin ? noLeidas : 0;
+  const panelNotificacionesVisible = panelAbierto;
+
+  const avisosComoNotificacion = useMemo(() => avisos.map((aviso) => ({
+    id: aviso.id,
+    titulo: aviso.titulo,
+    detalle: aviso.mensaje,
+    etiqueta: etiquetaTipoNotificacion(aviso.tipo),
+    nivel: aviso.prioridad === "importante" ? "alta" : "baja",
+    fecha: aviso.publicarAt || aviso.createdAt,
+    leida: aviso.leida,
+    accionTexto: aviso.enlaceUrl ? (aviso.enlaceTexto || "Mas informacion") : "",
+    onAccion: aviso.enlaceUrl
+      ? () => {
+        marcarAvisoLeido(aviso.id);
+        if (aviso.enlaceUrl.startsWith("/")) navigate(aviso.enlaceUrl);
+        else window.open(aviso.enlaceUrl, "_blank", "noopener,noreferrer");
+      }
+      : null,
+  })), [avisos, marcarAvisoLeido, navigate]);
+
+  // Una respuesta de soporte no se guarda como aviso aparte: el propio ticket
+  // ya dice que hay algo nuevo, y de ahi sale esta tarjeta.
+  const respuestasComoNotificacion = useMemo(() => respuestasSoporte.map((ticket) => ({
+    id: `soporte-${ticket.id}`,
+    titulo: "Tenemos una nueva respuesta en tu solicitud de soporte.",
+    detalle: ticket.asunto,
+    etiqueta: "Soporte",
+    nivel: "media",
+    fecha: ticket.ultimoMensajeAt,
+    leida: false,
+    accionTexto: "Ver respuesta",
+    onAccion: () => navigate(`/soporte?ticket=${ticket.id}`),
+  })), [navigate, respuestasSoporte]);
+
+  // La campana ya no es solo del administrador: cualquier persona del negocio
+  // debe poder recibir un aviso de CajaLibre.
+  const notificacionesVisibles = [
+    ...respuestasComoNotificacion,
+    ...avisosComoNotificacion,
+    ...(esAdmin ? notificaciones : []),
+  ];
+  const noLeidasVisibles = respuestasComoNotificacion.length
+    + avisosSinLeer
+    + (esAdmin ? noLeidas : 0);
   const path = String(location.pathname || "").toLowerCase();
+  const mostrarAvisoEquipo = Boolean(conflictoEquipo) && !RUTAS_PREMIUM.includes(path);
   // Platillos puede tener tantas filas como elementos existan. No debe usar el
   // shell de altura fija porque recorta las tarjetas antes de llegar al footer.
   const usarShellWorkspace = path === "/reportes";
@@ -223,6 +314,17 @@ export default function MainLayout() {
     setShowRecommendationModal(false);
   }, [authInfo.uid]);
 
+  // "Conocer Premium" reutiliza lo que ya existe: el titular entra a su pagina
+  // de suscripcion, y quien no puede contratar abre el sitio publico donde se
+  // explican los planes. No se crea ningun otro flujo de compra.
+  const conocerPremium = useCallback(() => {
+    if (esTitularDelNegocio(authInfo)) {
+      navigate("/configuracion/mi-suscripcion");
+      return;
+    }
+    window.open(PREMIUM_SITE_URL, "_blank", "noopener,noreferrer");
+  }, [authInfo, navigate]);
+
   const enviarRecomendacion = useCallback(async (respuesta) => {
     await addDoc(getCollectionRef("recomendaciones"), {
       ...respuesta,
@@ -245,8 +347,9 @@ export default function MainLayout() {
         togglePanelNotificaciones={togglePanelNotificaciones}
         notificaciones={notificacionesVisibles}
         noLeidas={noLeidasVisibles}
-        mostrarNotificaciones={esAdmin}
+        mostrarNotificaciones
         onDismissNotification={cerrarNotificacion}
+        onMarcarTodasLeidas={marcarAvisosLeidos}
       />
       <main className={shellClassName}>
         <Outlet />
@@ -262,54 +365,68 @@ export default function MainLayout() {
         bloqueado={
           showUpdatesModal
           || showRecommendationModal
-          || Boolean(conflicto)
+          || Boolean(conflictoEquipo)
           || !RUTAS_PROMO_PLANES.includes(path)
         }
       />
 
-      {conflicto ? (
-        <div className="device-session-overlay">
-          <div className="device-session-card">
-            <span className="device-session-kicker">Limite de equipos</span>
-            <h2>Hay mas equipos abiertos de los permitidos</h2>
-            <p>
-              {conflicto.mensaje ||
-                "Esta cuenta principal ya tiene mas sesiones abiertas de las que permite su plan."}
-            </p>
+      {mostrarAvisoEquipo ? (
+        <DeviceLimitModal
+          equipo={conflictoEquipo.otroDispositivo}
+          procesando={verificandoEquipo}
+          onContinuar={() => continuarEnEsteEquipo().catch(() => {})}
+          onPremium={conocerPremium}
+          onCancelar={() => cancelarEquipo().catch(() => {})}
+        />
+      ) : null}
 
-            {Array.isArray(conflicto.otrasSesionesActivas) && conflicto.otrasSesionesActivas.length > 0 ? (
-              <div className="device-session-list">
-                {conflicto.otrasSesionesActivas.map((item) => (
-                  <div key={item.id} className="device-session-item">
-                    <strong>{item.deviceLabel || "Equipo abierto"}</strong>
-                    <span>
-                      Ultima actividad:{" "}
-                      {(item.lastSeen || item.updatedAt || item.createdAt)?.toLocaleString("es-MX") || "Reciente"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            <div className="device-session-actions">
-              <button
-                type="button"
-                className="emp-btn emp-btn-primary"
-                onClick={() => resolverConflicto().catch(() => {})}
-                disabled={checkingDeviceSession}
-              >
-                {checkingDeviceSession ? "Cerrando sesiones..." : "Cerrar otras sesiones"}
-              </button>
-              <button
-                type="button"
-                className="emp-btn emp-btn-soft"
-                onClick={() => salir().catch(() => {})}
-                disabled={checkingDeviceSession}
-              >
-                Salir
-              </button>
-            </div>
+      {avisoImportante && !mostrarAvisoEquipo ? (
+        <div className={`aviso-global-banner nivel-${avisoImportante.tipo}`} role="status">
+          <div className="aviso-global-copy">
+            <strong>{avisoImportante.titulo}</strong>
+            <p>{avisoImportante.mensaje}</p>
           </div>
+          <div className="aviso-global-acciones">
+            {avisoImportante.enlaceUrl ? (
+              <button
+                type="button"
+                className="aviso-global-btn"
+                onClick={() => {
+                  marcarAvisoLeido(avisoImportante.id);
+                  descartarAvisoImportante();
+                  if (avisoImportante.enlaceUrl.startsWith("/")) navigate(avisoImportante.enlaceUrl);
+                  else window.open(avisoImportante.enlaceUrl, "_blank", "noopener,noreferrer");
+                }}
+              >
+                {avisoImportante.enlaceTexto || "Mas informacion"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="aviso-global-cerrar"
+              aria-label="Cerrar aviso"
+              onClick={() => {
+                marcarAvisoLeido(avisoImportante.id);
+                descartarAvisoImportante();
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {conflictoEquipo && !mostrarAvisoEquipo ? (
+        <div className="device-session-banner no-print" role="status">
+          <p>Tu cuenta sigue abierta en otro dispositivo. Puedes revisar Premium con calma.</p>
+          <button
+            type="button"
+            className="emp-btn emp-btn-primary"
+            onClick={() => continuarEnEsteEquipo().catch(() => {})}
+            disabled={verificandoEquipo}
+          >
+            {verificandoEquipo ? "Un momento..." : "Continuar en este dispositivo"}
+          </button>
         </div>
       ) : null}
 
