@@ -73,7 +73,7 @@ function LandingFooter({ onNavigateSection }) {
       <div className="landing-container footer-grid">
         <div className="footer-about">
           <LandingBrand />
-          <p>Sistema web gratuito de punto de venta y administración para pequeños negocios.</p>
+          <p>Sistema web de punto de venta y administración para pequeños negocios. Empieza gratis y crece con Premium.</p>
           <div className="socials">
             <a href="https://www.facebook.com/profile.php?id=61592592921476" target="_blank" rel="noreferrer" aria-label="Facebook"><FaFacebookF /></a>
             <a href="https://www.instagram.com/cajalibre.puntodeventa?utm_source=qr&igsh=MTY5aXh2MXEyZHl3Zg==" target="_blank" rel="noreferrer" aria-label="Instagram"><FiInstagram /></a>
@@ -86,6 +86,7 @@ function LandingFooter({ onNavigateSection }) {
           <button type="button" onClick={() => navigateSection("inicio")}>Inicio</button>
           <button type="button" onClick={() => navigateSection("funciones")}>Funciones</button>
           <button type="button" onClick={() => navigateSection("negocios")}>Negocios</button>
+          <button type="button" onClick={() => navigateSection("planes")}>Planes</button>
           <button type="button" onClick={() => navigateSection("preguntas")}>Preguntas frecuentes</button>
         </div>
         <div>

@@ -1,15 +1,26 @@
 import { createElement, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword } from "firebase/auth";
+import { sendPasswordResetEmail, signInWithEmailAndPassword } from "firebase/auth";
 import {
   FiArrowRight, FiBarChart2, FiBox, FiBriefcase, FiCheck, FiChevronDown,
   FiClipboard, FiCoffee, FiCreditCard, FiDollarSign, FiEye, FiEyeOff, FiFileText,
   FiHeart, FiLock, FiMail, FiMenu, FiMonitor,
   FiPackage, FiPrinter, FiScissors, FiShoppingBag, FiShoppingCart, FiSmartphone,
-  FiTool, FiTrendingUp, FiUser, FiUsers, FiX, FiZap
+  FiStar, FiTool, FiTrendingUp, FiUser, FiUsers, FiX, FiZap
 } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 import { auth } from "../initializer/firebase";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import {
+  LIMITE_USUARIOS_GRATUITO,
+  PLAN_FREE_RESUMEN,
+  PLAN_PREMIUM_RESUMEN,
+} from "../js/services/plan_features";
+import {
+  RUTA_LOGIN,
+  registrarRedireccion,
+  resolverRutaSesion,
+} from "../js/services/ruta_sesion";
 import AppFooter from "../components/AppFooter";
 import logo from "../assets/logo.png";
 import "../css/landing.css";
@@ -46,8 +57,46 @@ const businesses = [
   [FiBriefcase, "Negocios de servicios", "Cotiza, cobra y conserva el historial de cada cliente y servicio realizado."]
 ];
 
+// El detalle fino de cada plan vive en plan_features.js; aqui solo va el
+// resumen comercial, con el precio tomado de ese mismo modulo para que la
+// portada nunca anuncie una cantidad distinta a la de la pantalla de pago.
+const planes = [
+  {
+    nombre: "Free",
+    precio: PLAN_FREE_RESUMEN.precio,
+    periodo: "MXN · para siempre",
+    resumen: "Para comenzar y administrar las operaciones esenciales de tu negocio.",
+    incluye: [
+      "Punto de venta, cobros e impresión de tickets",
+      "Inventario, productos y catálogo precargado",
+      "Clientes, fiados y servicios",
+      "Reportes y cierre de caja",
+      `Hasta ${LIMITE_USUARIOS_GRATUITO} usuarios`,
+      "Centro de ayuda y soporte por ticket"
+    ],
+    cta: "Comenzar gratis"
+  },
+  {
+    nombre: "Premium",
+    destacado: true,
+    precio: PLAN_PREMIUM_RESUMEN.precio,
+    periodo: "MXN / mes por negocio",
+    resumen: "Para negocios que necesitan más usuarios, personalización y control.",
+    incluye: [
+      "Todo lo del plan gratuito",
+      "Usuarios ilimitados y logo de tu negocio",
+      "Tickets personalizables y sin publicidad",
+      "Arqueo de caja e historial completo de cortes",
+      "Restaurante sin límites de pisos y mesas, con reservaciones",
+      "Rastreo de servicios por código QR y soporte preferente"
+    ],
+    cta: "Conocer Premium"
+  }
+];
+
 const faqs = [
-  ["¿CajaLibre realmente es gratuito?", "Sí. Puedes utilizar las funciones del sistema sin pagar mensualidades. Nuestro objetivo es hacer accesible la administración digital para pequeños negocios."],
+  ["¿Puedo usar CajaLibre gratis?", `Sí. El plan Free no tiene mensualidad ni límite de tiempo e incluye punto de venta, inventario, clientes, servicios, reportes y cierre de caja para hasta ${LIMITE_USUARIOS_GRATUITO} usuarios. Premium cuesta ${PLAN_PREMIUM_RESUMEN.precio} MXN al mes por negocio y agrega usuarios ilimitados, personalización y herramientas avanzadas.`],
+  ["¿Qué pasa si no pago Premium?", "Nada se detiene. Tu negocio sigue operando con el plan gratuito y conservas tu información; solo quedan fuera las funciones exclusivas de Premium hasta que decidas activarlo."],
   ["¿CajaLibre funciona para restaurantes?", "Sí. Incluye operación por mesas, comandas para cocina, cuentas abiertas, cobros, historial, cortes de caja y reportes. También puedes asignar accesos para meseros, cocina y caja."],
   ["¿Necesito instalar un programa?", "No. CajaLibre funciona desde el navegador en computadora, tablet y celular. Solo necesitas una conexión a internet."],
   ["¿Mis datos están seguros?", "Aplicamos controles de acceso y cada negocio administra sus propios usuarios. También recomendamos contraseñas únicas y mantener tus dispositivos protegidos."],
@@ -145,13 +194,22 @@ export default function Landing() {
   const [menu, setMenu] = useState(false);
   const [login, setLogin] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
+  const { loading, uid, accesoPermitido, motivoAcceso } = useAutorizacionActual();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) navigate("/home", { replace: true });
-    });
-    return unsubscribe;
-  }, [navigate]);
+    // La portada no decide por su cuenta: pregunta el destino de la sesion.
+    // Antes mandaba a /home a cualquier usuario autenticado, aunque la guardia
+    // de ruta lo regresara enseguida.
+    if (loading || !uid) return;
+
+    const destino = resolverRutaSesion({ loading, uid, accesoPermitido, motivoAcceso });
+    // Sin destino (cargando, error) o con destino al propio login, la portada
+    // publica se queda como esta.
+    if (!destino.ruta || destino.ruta === RUTA_LOGIN) return;
+
+    registrarRedireccion("Landing", "/", destino.ruta, destino.motivo);
+    navigate(destino.ruta, { replace: true });
+  }, [accesoPermitido, loading, motivoAcceso, navigate, uid]);
 
   const scroll = (id) => { setMenu(false); document.getElementById(id)?.scrollIntoView({ behavior: "smooth" }); };
   const register = <Link className="primary-btn" to="/login" state={{ register: true }}>Crear cuenta gratis <FiArrowRight /></Link>;
@@ -163,6 +221,7 @@ export default function Landing() {
         <nav className={menu ? "open" : ""} aria-label="Navegación principal">
           <button onClick={() => scroll("inicio")}>Inicio</button><button onClick={() => scroll("funciones")}>Funciones</button>
           <button onClick={() => scroll("negocios")}>Negocios</button><button onClick={() => scroll("como-funciona")}>Cómo funciona</button>
+          <button onClick={() => scroll("planes")}>Planes</button>
           <button onClick={() => scroll("preguntas")}>Preguntas frecuentes</button>
           <div className="mobile-actions"><button className="outline-btn" onClick={() => { setLogin(true); setMenu(false); }}>Iniciar sesión</button>{register}</div>
         </nav>
@@ -176,11 +235,12 @@ export default function Landing() {
         <div className="landing-container hero-grid">
           <div className="hero-copy">
             <div className="eyebrow"><FiTrendingUp /> Crece con orden y claridad</div>
-            <h1>El punto de venta <span>gratuito</span> para tiendas, servicios y restaurantes</h1>
+            <h1>El <span>punto de venta</span> para tiendas, servicios y restaurantes</h1>
             <p>Administra ventas, inventario, clientes y empleados; o controla mesas, comandas, cocina, cuentas y caja desde un solo lugar.</p>
+            <p className="hero-plan-note">Empieza gratis con las funciones esenciales y cambia a Premium cuando tu negocio necesite más.</p>
             <div className="catalog-callout"><FiPackage /><span><b>Más de 6,000 productos mexicanos precargados</b><small>para comenzar a vender más rápido.</small></span></div>
-            <div className="hero-actions">{register}<button className="secondary-btn" onClick={() => setLogin(true)}>Iniciar sesión</button></div>
-            <div className="trust-row"><span><FiCheck /> Sin mensualidades</span><span><FiCheck /> Fácil de usar</span><span><FiCheck /> Acceso multidispositivo</span></div>
+            <div className="hero-actions">{register}<button className="secondary-btn" onClick={() => scroll("planes")}>Ver planes</button></div>
+            <div className="trust-row"><span><FiCheck /> Plan gratis sin mensualidad</span><span><FiCheck /> Fácil de usar</span><span><FiCheck /> Acceso multidispositivo</span></div>
           </div>
           <DashboardMockup />
         </div>
@@ -215,6 +275,19 @@ export default function Landing() {
         <div className="section-heading"><span className="section-kicker">Comienza hoy</span><h2>Tu negocio bajo control en tres pasos</h2><p>No necesitas experiencia previa ni procesos complicados.</p></div>
         <div className="steps-grid"><article><b>01</b><span><FiUser /></span><h3>Crea tu cuenta</h3><p>Regístrate gratuitamente con los datos básicos de tu negocio.</p></article><article><b>02</b><span><FiTool /></span><h3>Configura tu negocio</h3><p>Agrega usuarios, productos, impresoras y la información de tus tickets.</p></article><article><b>03</b><span><FiShoppingCart /></span><h3>Comienza a vender</h3><p>Registra ventas, controla inventario y consulta el rendimiento en tiempo real.</p></article></div>
         <div className="steps-cta">{register}</div>
+      </div></section>
+
+      <section id="planes" className="section pricing-section"><div className="landing-container">
+        <div className="section-heading"><span className="section-kicker">Precios claros</span><h2>Un plan para cada etapa de tu negocio</h2><p>Comienza sin costo y activa Premium solo cuando tu operación lo pida.</p></div>
+        <div className="pricing-grid">{planes.map((plan) => <article className={`pricing-card${plan.destacado ? " featured" : ""}`} key={plan.nombre}>
+          {plan.destacado && <span className="pricing-badge"><FiStar /> Recomendado</span>}
+          <h3>{plan.nombre}</h3>
+          <p className="pricing-summary">{plan.resumen}</p>
+          <div className="pricing-price"><b>{plan.precio}</b><small>{plan.periodo}</small></div>
+          <ul>{plan.incluye.map((item) => <li key={item}><FiCheck /> {item}</li>)}</ul>
+          <Link className={plan.destacado ? "primary-btn" : "secondary-btn"} to="/login" state={{ register: true }}>{plan.cta} <FiArrowRight /></Link>
+        </article>)}</div>
+        <p className="pricing-note">Premium se activa desde tu cuenta cuando lo necesites. Puedes seguir usando el plan gratuito el tiempo que quieras.</p>
       </div></section>
 
       <section id="preguntas" className="section faq-section"><div className="landing-container faq-layout">

@@ -55,3 +55,137 @@
 .landing-page .restaurant-business-card span {
   color: #fdba74;
 }
+
+.landing-page .hero-plan-note {
+  margin-top: 12px;
+  max-width: 640px;
+  color: #1f6b41;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pricing-section {
+  background: linear-gradient(180deg, #f6faff, #fff);
+  border-top: 1px solid #edf2f7;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: stretch;
+  max-width: 880px;
+  margin: 0 auto;
+}
+
+.pricing-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 28px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(16, 35, 62, .05);
+}
+
+.pricing-card.featured {
+  border-color: #29bd60;
+  box-shadow: 0 16px 38px rgba(32, 174, 82, .16);
+}
+
+.pricing-badge {
+  position: absolute;
+  top: -13px;
+  left: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 30px;
+  background: linear-gradient(135deg, #20ae52, #36c968);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.pricing-card h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 22px;
+  letter-spacing: -.02em;
+}
+
+.pricing-summary {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  min-height: 42px;
+}
+
+.pricing-price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 18px 0;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pricing-price b {
+  color: var(--ink);
+  font-size: 40px;
+  letter-spacing: -.04em;
+}
+
+.pricing-price small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pricing-card ul {
+  flex: 1;
+  display: grid;
+  gap: 10px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.pricing-card li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: #3d5169;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.pricing-card li svg {
+  flex: none;
+  margin-top: 2px;
+  color: #24ae56;
+}
+
+.pricing-card .primary-btn,
+.pricing-card .secondary-btn {
+  width: 100%;
+}
+
+.pricing-note {
+  margin: 26px auto 0;
+  max-width: 640px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .pricing-grid {
+    grid-template-columns: 1fr;
+    gap: 30px;
+  }
+}
