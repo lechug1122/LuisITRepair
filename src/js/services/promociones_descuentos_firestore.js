@@ -1,3 +1,4 @@
+import { readPOSFeatureConfig } from "./pos_feature_config.js";
 import {
   addDoc,
   deleteDoc,
@@ -68,6 +69,7 @@ export function escucharPromocionesDescuentos(onData, onError = () => {}) {
 }
 
 export async function guardarPromocionDescuento(data = {}, id = "") {
+  if (!readPOSFeatureConfig().promocionesDescuentos) throw new Error("Los descuentos y promociones requieren Premium y estar activados.");
   const payload = normalizar(data);
   if (!payload.nombre) throw new Error("Escribe un nombre.");
   if (!payload.fechaInicio || !payload.fechaFin) throw new Error("Selecciona las fechas de inicio y finalización.");
@@ -93,9 +95,11 @@ export async function guardarPromocionDescuento(data = {}, id = "") {
 }
 
 export async function cambiarEstadoPromocionDescuento(id, activo) {
+  if (!readPOSFeatureConfig().promocionesDescuentos) throw new Error("Los descuentos y promociones requieren Premium y estar activados.");
   await updateDoc(getDocRef(COLLECTION, id), { activo: activo === true, actualizadoEn: serverTimestamp() });
 }
 
 export async function eliminarPromocionDescuento(id) {
+  if (!readPOSFeatureConfig().promocionesDescuentos) throw new Error("Los descuentos y promociones requieren Premium y estar activados.");
   await deleteDoc(getDocRef(COLLECTION, id));
 }

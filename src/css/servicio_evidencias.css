@@ -1,0 +1,457 @@
+/* Evidencias fotograficas del servicio.
+   Movil primero: la cuadricula nace en 2 columnas y crece; los botones nunca
+   bajan de 44 px de alto para poder tocarse con el pulgar. */
+
+.sv-evidencias{ display: flex; flex-direction: column; gap: 18px; }
+
+/* ---------------------------------------------------------------------------
+   Botones del modulo
+--------------------------------------------------------------------------- */
+
+.sv-btn{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 17px;
+  border: 1px solid var(--sv-linea-fuerte);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--sv-tinta);
+  font-family: inherit;
+  font-size: .88rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .16s ease-out, border-color .16s ease-out,
+              color .16s ease-out, transform .16s ease-out;
+}
+
+.sv-btn:disabled{ opacity: .5; cursor: not-allowed; }
+.sv-btn:not(:disabled):active{ transform: translateY(1px); }
+.sv-btn:focus-visible{ outline: 2px solid var(--sv-azul); outline-offset: 2px; }
+
+.sv-btn--suave:not(:disabled):hover{
+  border-color: var(--sv-azul);
+  background: var(--tono-info-fondo);
+  color: var(--sv-azul);
+}
+
+.sv-btn--principal{
+  border-color: var(--sv-verde-fuerte);
+  background: var(--sv-verde);
+  color: #fff;
+}
+
+.sv-btn--principal:not(:disabled):hover{ background: var(--sv-verde-fuerte); }
+
+.sv-btn--premium{
+  border-color: #c98a13;
+  background: linear-gradient(135deg, #f5b73c, #e29408);
+  color: #3b2606;
+}
+
+.sv-btn--premium:not(:disabled):hover{ filter: brightness(1.05); }
+
+.sv-btn--chico{ min-height: 38px; padding: 0 13px; font-size: .82rem; }
+
+.sv-chip{
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--sv-tinta-suave);
+  font-family: inherit;
+  font-size: .83rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color .15s ease-out, background .15s ease-out, color .15s ease-out;
+}
+
+.sv-chip:not(:disabled):hover{ border-color: var(--sv-linea-fuerte); }
+.sv-chip:focus-visible{ outline: 2px solid var(--sv-azul); outline-offset: 2px; }
+.sv-chip:disabled{ opacity: .55; cursor: not-allowed; }
+
+.sv-chip.es-activo{
+  border-color: var(--sv-azul-tinta);
+  background: var(--sv-azul-tinta);
+  color: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Panel bloqueado (plan gratuito, sin evidencias)
+
+   Bloque de alto impacto, no una tarjeta gris con un candado: describe lo que
+   la funcion hace por el negocio y deja una sola accion.
+--------------------------------------------------------------------------- */
+
+.sv-evidencias--bloqueada{
+  align-items: flex-start;
+  gap: 10px;
+  padding: clamp(22px, 4vw, 34px);
+  border: 1px solid #f0dcae;
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 140% at 8% 0%, #fffaf0 0%, #fdfbf6 46%, #fbfcfe 100%);
+}
+
+.sv-evidencias--bloqueada h3{ margin: 0; font-size: 1.16rem; }
+
+.sv-evidencias--bloqueada p{
+  margin: 0;
+  max-width: 58ch;
+  color: var(--sv-tinta-suave);
+  font-size: .9rem;
+  line-height: 1.6;
+}
+
+.sv-evidencias-candado{
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #f0dcae;
+  border-radius: 12px;
+  background: #fff;
+  color: #b07708;
+  font-size: 19px;
+}
+
+.sv-evidencias-incluido{
+  margin: 2px 0 6px !important;
+  color: #8a5d04 !important;
+  font-size: .84rem !important;
+  font-weight: 750;
+  letter-spacing: .01em;
+}
+
+/* ---------------------------------------------------------------------------
+   Zona de carga
+--------------------------------------------------------------------------- */
+
+.sv-evidencias-carga{
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 16px;
+  border: 1px dashed var(--sv-linea-fuerte);
+  border-radius: 14px;
+  background: var(--sv-lienzo-suave);
+}
+
+.sv-evidencias-tipos,
+.sv-evidencias-acciones{ display: flex; flex-wrap: wrap; gap: 8px; }
+
+.sv-evidencias-estado{
+  margin: 0;
+  color: var(--sv-tenue);
+  font-size: .84rem;
+}
+
+.sv-evidencias-estado--tope{ color: var(--tono-espera-tinta); font-weight: 650; }
+
+.sv-evidencias-cola{ display: flex; flex-direction: column; gap: 12px; }
+
+.sv-evidencias-previas{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 11px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sv-evidencias-previas li{ display: flex; flex-direction: column; gap: 6px; }
+
+.sv-previa-imagen{
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--sv-linea);
+  border-radius: 11px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.sv-previa-imagen img{ width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.sv-previa-quitar{
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, .72);
+  color: #fff;
+  cursor: pointer;
+  transition: background .15s ease-out;
+}
+
+.sv-previa-quitar:hover{ background: rgba(185, 28, 28, .9); }
+.sv-previa-quitar:focus-visible{ outline: 2px solid #fff; outline-offset: 1px; }
+
+.sv-previa-error{
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 5px 7px;
+  background: rgba(185, 28, 28, .92);
+  color: #fff;
+  font-size: .68rem;
+  line-height: 1.3;
+}
+
+.sv-previa-texto{
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 9px;
+  background: #fff;
+  font-family: inherit;
+  font-size: .82rem;
+  color: var(--sv-tinta);
+}
+
+.sv-previa-texto:focus-visible{ outline: 2px solid var(--sv-azul); outline-offset: 0; border-color: var(--sv-azul); }
+
+.sv-evidencias-previas small{ color: var(--sv-tenue); font-size: .72rem; }
+
+.sv-evidencias-progreso{ display: flex; flex-direction: column; gap: 6px; }
+
+.sv-progreso-barra{
+  height: 7px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.sv-progreso-barra span{
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--sv-azul), var(--sv-verde));
+  transition: width .2s ease-out;
+}
+
+.sv-evidencias-progreso small{ color: var(--sv-tinta-suave); font-size: .8rem; font-weight: 600; }
+
+/* ---------------------------------------------------------------------------
+   Galeria
+--------------------------------------------------------------------------- */
+
+.sv-evidencias-grupos{ display: flex; flex-direction: column; gap: 20px; }
+
+.sv-evidencias-grupo > header{
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 11px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--sv-linea);
+}
+
+.sv-evidencias-grupo h4{
+  margin: 0;
+  font-family: var(--sv-display);
+  font-size: .82rem;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--sv-tinta-suave);
+}
+
+.sv-evidencias-grupo > header span{
+  display: grid;
+  place-items: center;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--sv-azul-tinta);
+  color: #fff;
+  font-size: .7rem;
+  font-weight: 750;
+}
+
+.sv-evidencias-galeria{
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 13px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sv-evidencias-galeria li{ position: relative; display: flex; flex-direction: column; gap: 7px; }
+
+.sv-evidencia-miniatura{
+  position: relative;
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  border: 1px solid var(--sv-linea);
+  border-radius: 12px;
+  background: var(--sv-lienzo-suave);
+  overflow: hidden;
+  cursor: zoom-in;
+  transition: border-color .16s ease-out, transform .16s ease-out;
+}
+
+.sv-evidencia-miniatura img{ width: 100%; height: 100%; object-fit: cover; display: block; }
+.sv-evidencia-miniatura:hover{ border-color: var(--sv-azul); transform: translateY(-2px); }
+.sv-evidencia-miniatura:focus-visible{ outline: 2px solid var(--sv-azul); outline-offset: 2px; }
+
+.sv-evidencia-lupa{
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, .62);
+  color: #fff;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity .16s ease-out;
+}
+
+.sv-evidencia-miniatura:hover .sv-evidencia-lupa,
+.sv-evidencia-miniatura:focus-visible .sv-evidencia-lupa{ opacity: 1; }
+
+.sv-evidencia-pie p{
+  margin: 0;
+  color: var(--sv-tinta);
+  font-size: .81rem;
+  line-height: 1.4;
+}
+
+.sv-evidencia-pie small{
+  display: block;
+  margin-top: 2px;
+  color: var(--sv-tenue);
+  font-size: .72rem;
+}
+
+.sv-evidencia-borrar{
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, .35);
+  border-radius: 9px;
+  background: rgba(15, 23, 42, .68);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .15s ease-out;
+}
+
+.sv-evidencia-borrar:hover{ background: rgba(185, 28, 28, .92); }
+.sv-evidencia-borrar:focus-visible{ outline: 2px solid #fff; outline-offset: 1px; }
+.sv-evidencia-borrar:disabled{ opacity: .6; cursor: wait; }
+
+.sv-evidencias-vacio{
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 12px;
+  background: var(--sv-lienzo-suave);
+  color: var(--sv-tenue);
+  font-size: .87rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Visor ampliado
+--------------------------------------------------------------------------- */
+
+.sv-visor{
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 4vw, 36px);
+  padding-top: calc(clamp(12px, 4vw, 36px) + env(safe-area-inset-top, 0px));
+  background: rgba(8, 17, 32, .88);
+  animation: sv-visor-entra .18s ease-out;
+}
+
+.sv-visor figure{
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  max-width: min(1000px, 100%);
+  max-height: 100%;
+}
+
+.sv-visor img{
+  max-width: 100%;
+  max-height: 68vh;
+  border-radius: 12px;
+  object-fit: contain;
+  background: #0b1526;
+}
+
+.sv-visor figcaption{ color: #e7eef8; }
+.sv-visor figcaption strong{ font-family: var(--sv-display, inherit); font-size: .95rem; }
+.sv-visor figcaption p{ margin: 4px 0 0; font-size: .88rem; line-height: 1.5; }
+.sv-visor figcaption small{ display: block; margin-top: 4px; color: #93a4bd; font-size: .78rem; }
+
+.sv-visor-cerrar{
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  font-size: 17px;
+  cursor: pointer;
+  transition: background .15s ease-out;
+}
+
+.sv-visor-cerrar:hover{ background: rgba(255, 255, 255, .2); }
+.sv-visor-cerrar:focus-visible{ outline: 2px solid #fff; outline-offset: 2px; }
+
+@keyframes sv-visor-entra{
+  from{ opacity: 0; }
+  to  { opacity: 1; }
+}
+
+@media (max-width: 520px){
+  .sv-evidencias-galeria,
+  .sv-evidencias-previas{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sv-evidencias-acciones .sv-btn{ flex: 1; }
+}
+
+/* Barra indeterminada: se usa cuando el avance real no se conoce, en vez de
+   animar un porcentaje que no significa nada. */
+.sv-progreso-barra--indeterminada span{
+  width: 40%;
+  animation: sv-progreso-vaiven 1.1s ease-in-out infinite;
+}
+
+@keyframes sv-progreso-vaiven{
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .sv-progreso-barra--indeterminada span{ animation: none; width: 100%; opacity: .6; }
+}

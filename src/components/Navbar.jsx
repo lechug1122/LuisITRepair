@@ -7,6 +7,7 @@ import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import { auth, db } from "../initializer/firebase";
 import { hasAnalyticsAccess } from "../js/services/analytics_access";
+import { liberarSesionDelDispositivo } from "../js/services/device_sessions";
 
 function formatoHora(fechaMs) {
   if (!fechaMs) return "";
@@ -36,6 +37,7 @@ export default function Navbar({
   notificaciones = [],
   noLeidas = 0,
   mostrarNotificaciones = true,
+  onMarcarTodasLeidas = null,
   onDismissNotification = () => {},
 }) {
   const location = useLocation();
@@ -216,6 +218,12 @@ export default function Navbar({
     const user = auth.currentUser;
 
     if (user?.uid) {
+      // Libera la sesion de ESTE equipo. Las de los demas dispositivos siguen
+      // abiertas: en Premium es normal tener varias a la vez.
+      await liberarSesionDelDispositivo(user.uid).catch((e) => {
+        console.warn("No se pudo liberar la sesion del equipo:", e?.code || e);
+      });
+
       try {
         // Intenta marcar presencia offline, pero no bloquea la salida.
         await updateDoc(doc(db, "autorizados", user.uid), {
@@ -311,6 +319,15 @@ export default function Navbar({
                         <div className="notification-panel-header-actions">
                           <strong>Notificaciones</strong>
                           <span>{notificaciones.length}</span>
+                          {onMarcarTodasLeidas && noLeidas > 0 && (
+                            <button
+                              type="button"
+                              className="notification-panel-readall"
+                              onClick={onMarcarTodasLeidas}
+                            >
+                              Marcar todas como leidas
+                            </button>
+                          )}
                         </div>
                       <button
                         type="button"
@@ -327,9 +344,15 @@ export default function Navbar({
                     )}
 
                     {notificaciones.slice(0, 12).map((n) => (
-                      <div key={n.id} className={`notification-panel-item ${n.nivel || "baja"}`}>
+                      <div
+                        key={n.id}
+                        className={`notification-panel-item ${n.nivel || "baja"}${n.leida === false ? " sin-leer" : ""}`}
+                      >
                         <div className="notification-panel-item-head">
-                          <p className="notification-panel-title">{n.titulo}</p>
+                          <p className="notification-panel-title">
+                            {n.etiqueta && <span className="notification-tag">{n.etiqueta}</span>}
+                            {n.titulo}
+                          </p>
                           <button
                             type="button"
                             className="notification-panel-close"
@@ -340,7 +363,18 @@ export default function Navbar({
                           </button>
                         </div>
                         <p className="notification-panel-detail">{n.detalle}</p>
-                        <span className="notification-panel-time">{formatoHora(n.fecha)}</span>
+                        <div className="notification-panel-foot">
+                          <span className="notification-panel-time">{formatoHora(n.fecha)}</span>
+                          {n.accionTexto && n.onAccion && (
+                            <button
+                              type="button"
+                              className="notification-panel-action"
+                              onClick={() => n.onAccion()}
+                            >
+                              {n.accionTexto}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

@@ -3,6 +3,11 @@ import logoUrl from "../../assets/logo.png";
 import { getPdfFontFamily } from "./apariencia_config";
 import { obtenerEmpresa, readEmpresaConfigCache } from "./configure_empresa";
 import { obtenerEfectivoNetoVenta } from "./efectivo_venta";
+import {
+  canUseAutomaticPaymentPdf,
+  canUseRestaurantActivityPayments,
+} from "./plan_features.js";
+import { getTicketPlan } from "./ticket_plan.js";
 
 const money = (value) =>
   new Intl.NumberFormat("es-MX", {
@@ -217,6 +222,9 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   const now = new Date();
   const corte = options?.corte || null;
   const esRestaurante = Boolean(options?.restaurante);
+  // La hoja de arqueo es una capacidad distinta del corte basico. Solo se
+  // agrega cuando el llamador ya verifico el acceso Premium del negocio.
+  const incluirArqueo = options?.incluirArqueo === true;
   const titleFill = esRestaurante ? [234, 88, 12] : [8, 56, 134];
   const negocioNombre =
     options?.negocioNombre || empresaCfg?.nombre || empresaCache.nombre;
@@ -582,8 +590,9 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   drawKeyValueRow(doc, 74, y, 38, 24, 6, "Neto", money(resumen.total - totalCargos));
   drawKeyValueRow(doc, 136, y, 38, 24, 6, "Total final", money(resumen.total));
 
-  doc.addPage();
-  drawPageFrame(doc);
+  if (incluirArqueo) {
+    doc.addPage();
+    drawPageFrame(doc);
 
   let y2 = 12;
   drawTitleBar(doc, 12, y2, 186, 8, "FORMATO DE ARQUEO DE CAJA DIARIO", titleFill);
@@ -811,7 +820,8 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
   doc.setFontSize(8);
   const notas = String(corte?.notasCorte || "Sin observaciones.");
   const notasLines = doc.splitTextToSize(notas, 84);
-  doc.text(notasLines, 112, y2 + 5);
+    doc.text(notasLines, 112, y2 + 5);
+  }
 
   const cuentasPorCobrar = (Array.isArray(options?.cuentasPorCobrar) ? options.cuentasPorCobrar : [])
     .filter((cuenta) => Number(cuenta?.saldo || 0) > 0)
@@ -858,7 +868,11 @@ export async function generarPdfCorteCajaDia(ventas = [], options = {}) {
 
   if (options?.restaurante) {
     const pagoConfig = options?.restaurante?.config || {};
-    const pagosActivos = pagoConfig.pagosPersonalActivos === true;
+    // El resumen operativo del restaurante permanece en el PDF Free, pero los
+    // importes de pago/comisión son Premium y se validan dentro del generador.
+    const pagosActivos = pagoConfig.pagosPersonalActivos === true
+      && canUseAutomaticPaymentPdf({ premiumState: getTicketPlan() })
+      && canUseRestaurantActivityPayments({ premiumState: getTicketPlan() });
     const porcentajeMesero = Number(pagoConfig.porcentajeMesero || 0);
     const porcentajeCocinero = Number(pagoConfig.porcentajeCocinero || 0);
     const meseros = {};

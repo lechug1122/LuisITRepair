@@ -1,11 +1,17 @@
 ﻿import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { FiArrowRight, FiSearch, FiStar } from "react-icons/fi";
 import { imprimirTicketVenta } from "../components/print_ticket_venta";
 import logoUrl from "../assets/logo.png";
 import {
   readTicketConfigStorage,
+  resolveTicketConfig,
   saveTicketConfigStorage,
   splitTicketLines,
 } from "../js/services/ticket_config";
+import { TICKET_EDITOR_LEGACY_UNTIL_LABEL } from "../js/services/plan_features";
+import PremiumFeatureModal from "../components/PremiumFeatureModal";
+import { resolvePremiumDestination } from "../js/services/premium_config";
 import {
   createDefaultFacturacionConfig,
   readFacturacionConfigStorage,
@@ -17,7 +23,7 @@ import {
 } from "../js/services/inventario_config";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useMonedaConfig from "../hooks/useMonedaConfig";
-import { readPOSFeatureConfig, savePOSFeatureConfig } from "../js/services/pos_feature_config";
+import { readPOSFeaturePreferences, savePOSFeatureConfig } from "../js/services/pos_feature_config";
 import {
   calcularIVA,
   guardarIVAConfig,
@@ -54,19 +60,43 @@ function formatFacturaFolio(serie, folio) {
 }
 
 export default function ConfiguracionPOS() {
-  const { nombreEmpresa, logoEmpresa, serviciosHabilitados } = useEmpresaConfig();
+  const { empresa, nombreEmpresa, logoEmpresa, serviciosHabilitados } = useEmpresaConfig();
   const { formatCurrency } = useMonedaConfig();
   const [aplicarIVA, setAplicarIVA] = useState(() => readIVAConfigStorage().aplicarIVA);
   const [preciosIncluyenImpuestos, setPreciosIncluyenImpuestos] = useState(
     () => readIVAConfigStorage().preciosIncluyenImpuestos,
   );
-  const [ticketCfg, setTicketCfg] = useState(readTicketConfigStorage);
+  const [ticketDraft, setTicketCfg] = useState(readTicketConfigStorage);
   const [factCfg, setFactCfg] = useState(readFacturacionConfigStorage);
   const [inventarioCfg, setInventarioCfg] = useState(readInventarioConfigStorage);
-  const [funcionesPOS, setFuncionesPOS] = useState(readPOSFeatureConfig);
+  const [funcionesPOS, setFuncionesPOS] = useState(readPOSFeaturePreferences);
   const [guardado, setGuardado] = useState(false);
   const [ivaHidratado, setIvaHidratado] = useState(false);
-  const { rol, superAdmin } = useAutorizacionActual();
+  const navigate = useNavigate();
+  // Plan, antiguedad del negocio y fecha de migracion ya vienen resueltos: esta
+  // pantalla no vuelve a interpretarlos por su cuenta.
+  const {
+    rol,
+    superAdmin,
+    premiumState,
+    uid,
+    cuentaPrincipalUid,
+    negocioLegacy,
+    puedeEditarTicket,
+    mostrarAvisoMigracionTicket,
+  } = useAutorizacionActual();
+  const ticketCfg = useMemo(
+    () => resolveTicketConfig(ticketDraft, premiumState, empresa, Date.now(), negocioLegacy),
+    [ticketDraft, premiumState, empresa, negocioLegacy],
+  );
+  // Free sin derecho al periodo de transicion: es el unico caso en que se
+  // ofrece el aviso Premium al intentar editar. Con el plan aun cargando no se
+  // afirma nada.
+  const edicionBloqueadaPorPremium = premiumState === "free" && !puedeEditarTicket;
+  const [avisoTicketPremium, setAvisoTicketPremium] = useState(false);
+  const [avisoVentasPremium, setAvisoVentasPremium] = useState(false);
+  const [avisoConsultaPremium, setAvisoConsultaPremium] = useState(false);
+  const ventasPremium = premiumState === "premium";
   const esJefeSistema = superAdmin || String(rol || "").trim().toLowerCase() === "administrador";
   const [passwordDescuento, setPasswordDescuento] = useState("");
   const [passwordDescuentoConfirmar, setPasswordDescuentoConfirmar] = useState("");
@@ -100,6 +130,10 @@ export default function ConfiguracionPOS() {
   const guardarAccesoDescuento = async (event) => {
     event.preventDefault();
     setMensajePasswordDescuento("");
+    if (!ventasPremium || !funcionesPOS.descuentoAutorizado) {
+      setMensajePasswordDescuento("Activa el descuento autorizado con CajaLibre Premium.");
+      return;
+    }
     if (!esJefeSistema) {
       setMensajePasswordDescuento("Solo el administrador de la tienda o jefe del sistema puede cambiar esta contraseña.");
       return;
@@ -128,10 +162,10 @@ export default function ConfiguracionPOS() {
         throw new Error("No se pudo guardar la configuracion de IVA");
       }
       const ok =
-        saveTicketConfigStorage(ticketCfg) &&
+        (!puedeEditarTicket || saveTicketConfigStorage(ticketDraft, Date.now(), negocioLegacy)) &&
         saveFacturacionConfigStorage(factCfg) &&
         saveInventarioConfigStorage(inventarioCfg) &&
-        savePOSFeatureConfig(funcionesPOS);
+        (!ventasPremium || savePOSFeatureConfig(funcionesPOS));
       if (!ok) throw new Error("No se pudo guardar ticket config");
       setGuardado(true);
       const t = setTimeout(() => setGuardado(false), 1200);
@@ -140,7 +174,7 @@ export default function ConfiguracionPOS() {
       setGuardado(false);
       return undefined;
     }
-  }, [aplicarIVA, preciosIncluyenImpuestos, factCfg, funcionesPOS, inventarioCfg, ticketCfg]);
+  }, [aplicarIVA, preciosIncluyenImpuestos, factCfg, funcionesPOS, inventarioCfg, ticketDraft, puedeEditarTicket, negocioLegacy, ventasPremium]);
 
   useEffect(() => {
     if (!ivaHidratado) return;
@@ -150,6 +184,10 @@ export default function ConfiguracionPOS() {
   }, [aplicarIVA, ivaHidratado, preciosIncluyenImpuestos]);
 
   const actualizarTicket = (key, value) => {
+    if (!puedeEditarTicket) {
+      if (edicionBloqueadaPorPremium) setAvisoTicketPremium(true);
+      return;
+    }
     setTicketCfg((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -266,29 +304,74 @@ export default function ConfiguracionPOS() {
       <div className="cfg-pos-card cfg-pos-overview-card">
         <div className="cfg-collapse-body">
           <div className="cfg-pos-section-head">
+            <h3>Consulta de precios · Premium</h3>
+            <p>Abre una pantalla para que tus clientes escaneen productos y consulten precios, disponibilidad y promociones de este negocio.</p>
+          </div>
+          {premiumState === "free" ? (
+            <button type="button" className="cfg-premium-inline cfg-premium-sales" onClick={() => setAvisoConsultaPremium(true)}>
+              <span className="cfg-premium-inline-badge"><FiStar aria-hidden="true" /> Premium</span>
+              <span className="cfg-premium-inline-text">Consulta precios con un lector de código de barras</span>
+              <span className="cfg-premium-inline-cta">Conocer Premium <FiArrowRight aria-hidden="true" /></span>
+            </button>
+          ) : (
+            <>
+              <label className="cfg-pos-feature">
+                <input
+                  type="checkbox"
+                  checked={ventasPremium && funcionesPOS.consultaPrecios}
+                  disabled={!ventasPremium}
+                  onChange={(e) => setFuncionesPOS((v) => ({ ...v, consultaPrecios: e.target.checked }))}
+                />
+                <span className="cfg-pos-feature-text">
+                  <strong>Habilitar búsqueda de precios de productos</strong>
+                  <small>Al apagarla, la pantalla deja de estar disponible y desaparece del menú lateral.</small>
+                </span>
+              </label>
+              <button type="button" className="cfg-ticket-test-btn"
+                disabled={!ventasPremium || !funcionesPOS.consultaPrecios}
+                onClick={() => navigate("/consulta-precios")}>
+                <FiSearch aria-hidden="true" /> Abrir consulta de precios
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="cfg-pos-card cfg-pos-overview-card">
+        <div className="cfg-collapse-body">
+          <div className="cfg-pos-section-head">
             <h3>Funciones de venta y ticket</h3>
             <p>Activa únicamente las herramientas que utiliza tu negocio.</p>
           </div>
+          {!ventasPremium && (
+            <button type="button" className="cfg-premium-inline cfg-premium-sales" onClick={() => setAvisoVentasPremium(true)}>
+              <span className="cfg-premium-inline-badge"><FiStar aria-hidden="true" /> Premium</span>
+              <span className="cfg-premium-inline-text">Desbloquea más funciones para tu negocio</span>
+              <span className="cfg-premium-inline-cta">Conocer Premium <FiArrowRight aria-hidden="true" /></span>
+            </button>
+          )}
           <div className="cfg-pos-feature-list">
             <label className="cfg-pos-feature">
               <input
                 type="checkbox"
-                checked={funcionesPOS.promocionesDescuentos}
+                checked={ventasPremium && funcionesPOS.promocionesDescuentos}
+                disabled={!ventasPremium}
                 onChange={(e) => setFuncionesPOS((v) => ({ ...v, promocionesDescuentos: e.target.checked }))}
               />
               <span className="cfg-pos-feature-text">
-                <strong>Descuentos y promociones</strong>
+                <strong>Descuentos y promociones · Premium</strong>
                 <small>Permite aplicar promociones y descuentos durante la venta.</small>
               </span>
             </label>
             <label className="cfg-pos-feature">
               <input
                 type="checkbox"
-                checked={funcionesPOS.fiado}
+                checked={ventasPremium && funcionesPOS.fiado}
+                disabled={!ventasPremium}
                 onChange={(e) => setFuncionesPOS((v) => ({ ...v, fiado: e.target.checked }))}
               />
               <span className="cfg-pos-feature-text">
-                <strong>Ventas fiadas</strong>
+                <strong>Ventas fiadas · Premium</strong>
                 <small>Habilita cuentas por cobrar y registro de abonos del cliente.</small>
               </span>
             </label>
@@ -302,19 +385,32 @@ export default function ConfiguracionPOS() {
             <h3>Descuento manual autorizado</h3>
             <p>El cajero elige el porcentaje de descuento en el POS y debe validarlo con esta contraseña. La contraseña se guarda protegida y nunca se muestra.</p>
           </div>
+          <label className="cfg-pos-feature">
+            <input type="checkbox" checked={ventasPremium && funcionesPOS.descuentoAutorizado}
+              disabled={!ventasPremium || !esJefeSistema}
+              onChange={(event) => setFuncionesPOS((value) => ({ ...value, descuentoAutorizado: event.target.checked }))} />
+            <span className="cfg-pos-feature-text"><strong>Descuento autorizado con contraseña · Premium</strong><small>Activa o desactiva los descuentos manuales autorizados.</small></span>
+          </label>
+          {!ventasPremium && (
+            <button type="button" className="cfg-premium-inline cfg-premium-sales" onClick={() => setAvisoVentasPremium(true)}>
+              <span className="cfg-premium-inline-badge"><FiStar aria-hidden="true" /> Premium</span>
+              <span className="cfg-premium-inline-text">Autoriza descuentos con tu contraseña</span>
+              <span className="cfg-premium-inline-cta">Conocer Premium <FiArrowRight aria-hidden="true" /></span>
+            </button>
+          )}
           <form className="cfg-manual-discount-form" onSubmit={guardarAccesoDescuento}>
             <div className="cfg-manual-discount-status">
               Estado: <strong>{descuentoConfigurado ? "Configurado" : "Sin configurar"}</strong>
             </div>
             <label>
               <span>{descuentoConfigurado ? "Nueva contraseña" : "Contraseña"}</span>
-              <input type="password" minLength="4" autoComplete="new-password" value={passwordDescuento} onChange={(event) => setPasswordDescuento(event.target.value)} disabled={!esJefeSistema || guardandoPasswordDescuento} required />
+              <input type="password" minLength="4" autoComplete="new-password" value={passwordDescuento} onChange={(event) => setPasswordDescuento(event.target.value)} disabled={!ventasPremium || !funcionesPOS.descuentoAutorizado || !esJefeSistema || guardandoPasswordDescuento} required />
             </label>
             <label>
               <span>Confirmar contraseña</span>
-              <input type="password" minLength="4" autoComplete="new-password" value={passwordDescuentoConfirmar} onChange={(event) => setPasswordDescuentoConfirmar(event.target.value)} disabled={!esJefeSistema || guardandoPasswordDescuento} required />
+              <input type="password" minLength="4" autoComplete="new-password" value={passwordDescuentoConfirmar} onChange={(event) => setPasswordDescuentoConfirmar(event.target.value)} disabled={!ventasPremium || !funcionesPOS.descuentoAutorizado || !esJefeSistema || guardandoPasswordDescuento} required />
             </label>
-            <button type="submit" disabled={!esJefeSistema || guardandoPasswordDescuento}>{guardandoPasswordDescuento ? "Guardando..." : descuentoConfigurado ? "Cambiar contraseña" : "Asignar contraseña"}</button>
+            <button type="submit" disabled={!ventasPremium || !funcionesPOS.descuentoAutorizado || !esJefeSistema || guardandoPasswordDescuento}>{guardandoPasswordDescuento ? "Guardando..." : descuentoConfigurado ? "Cambiar contraseña" : "Asignar contraseña"}</button>
             {!esJefeSistema && <small>Solo el administrador de la tienda o jefe del sistema puede configurar este acceso.</small>}
             {mensajePasswordDescuento && <small role="status">{mensajePasswordDescuento}</small>}
           </form>
@@ -762,15 +858,51 @@ export default function ConfiguracionPOS() {
             </p>
           </div>
           <div className="cfg-collapse-meta">
-            <span className="cfg-billing-pill on">Ticket listo</span>
+            <span className="cfg-billing-pill on">
+              {mostrarAvisoMigracionTicket ? "Premium proximamente" : "Premium"}
+            </span>
             <span className={`cfg-collapse-arrow ${panelesAbiertos.ticket ? "open" : ""}`}>v</span>
           </div>
         </button>
 
         {panelesAbiertos.ticket && <div className="cfg-collapse-body">
+        {mostrarAvisoMigracionTicket && (
+          <div className="ticket-migration-notice">
+            <div className="ticket-migration-notice-copy">
+              <strong>Proximamente esta funcion sera Premium</strong>
+              <p>
+                La edicion y personalizacion de tickets estara disponible para tu
+                negocio hasta el {TICKET_EDITOR_LEGACY_UNTIL_LABEL}. A partir del 21 de
+                septiembre formara parte de CajaLibre Premium.
+              </p>
+              <p>
+                Este cambio nos ayuda a seguir manteniendo CajaLibre y conservar una
+                version gratuita para nuestros usuarios.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="ticket-migration-notice-btn"
+              onClick={() => navigate(resolvePremiumDestination({ uid, cuentaPrincipalUid }))}
+            >
+              Conocer Premium
+            </button>
+          </div>
+        )}
+
+        {!puedeEditarTicket && !mostrarAvisoMigracionTicket && (
+          <div className="cfg-ticket-premium-notice" id="ticket-premium-notice">
+            <div>
+              <strong>Si quieres cambiar el diseño de tu ticket, cambia a Premium.</strong>
+              <p>En Free se usa el diseño predeterminado con publicidad. Tu diseño personalizado se conserva y se recupera cuando vuelves a activar Premium.</p>
+              {premiumState === "loading" && <small>Estamos verificando tu plan.</small>}
+            </div>
+            <a className="cfg-ticket-premium-btn" href="/configuracion/pago-premium">Cambiar a Premium</a>
+          </div>
+        )}
         <div className="cfg-ticket-head">
           <h4>Vista previa y controles</h4>
-          <button type="button" className="cfg-ticket-test-btn" onClick={probarImpresion}>
+          <button type="button" className="cfg-ticket-test-btn" onClick={probarImpresion} disabled={premiumState === "loading"}>
             Probar impresion
           </button>
         </div>
@@ -911,11 +1043,30 @@ export default function ConfiguracionPOS() {
                 {ticketCfg.footerText?.trim() && (
                   <div className="cfg-ticket-preview-footer">{ticketCfg.footerText.trim()}</div>
                 )}
+                {ticketCfg.advertisingText && <div className="cfg-ticket-preview-footer">{ticketCfg.advertisingText}</div>}
               </div>
             </div>
           </div>
 
-          <div className="cfg-ticket-controls">
+          <div
+            className="cfg-ticket-controls-wrap"
+            onClick={edicionBloqueadaPorPremium ? () => setAvisoTicketPremium(true) : undefined}
+            role={edicionBloqueadaPorPremium ? "button" : undefined}
+            tabIndex={edicionBloqueadaPorPremium ? 0 : undefined}
+            onKeyDown={edicionBloqueadaPorPremium
+              ? (event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                setAvisoTicketPremium(true);
+              }
+              : undefined}
+          >
+          <fieldset
+            className={`cfg-ticket-controls${puedeEditarTicket ? "" : " cfg-ticket-controls-locked"}`}
+            disabled={!puedeEditarTicket}
+            aria-label="Personalización del ticket"
+            aria-describedby={!puedeEditarTicket ? "ticket-premium-notice" : undefined}
+          >
             <div className="cfg-ticket-grid">
               <div className="cfg-ticket-block">
             <h4>Encabezado</h4>
@@ -1025,14 +1176,14 @@ export default function ConfiguracionPOS() {
               />
               Mostrar seccion pago
             </label>
-            <label className="cfg-check-row">
+            {empresa.tipoNegocioId !== "tienda-abarrotes" && <label className="cfg-check-row">
               <input
                 type="checkbox"
                 checked={ticketCfg.showStatusSection}
                 onChange={(e) => actualizarTicket("showStatusSection", e.target.checked)}
               />
               Mostrar estado actual
-            </label>
+            </label>}
           </div>
 
               <div className="cfg-ticket-block cfg-ticket-block-wide">
@@ -1079,16 +1230,32 @@ export default function ConfiguracionPOS() {
             />
               </div>
             </div>
+          </fieldset>
           </div>
         </div>
 
-          <small className="cfg-pos-help">
+          {puedeEditarTicket && <small className="cfg-pos-help">
             Se guarda automaticamente y aplica al ticket que se imprime desde POS.
-          </small>
+          </small>}
 
-          {guardado && <small className="cfg-pos-saved">Guardado automaticamente.</small>}
+          {puedeEditarTicket && guardado && <small className="cfg-pos-saved">Guardado automaticamente.</small>}
         </div>}
       </div>
+
+      <PremiumFeatureModal
+        abierto={avisoTicketPremium}
+        titulo="Personalizacion de tickets"
+        mensaje="La edicion y personalizacion de tickets forma parte de CajaLibre Premium. Actualiza a Premium para personalizar la informacion y el diseño de tus tickets."
+        textoPrincipal="Conocer Premium"
+        textoSecundario="Ahora no"
+        onCerrar={() => setAvisoTicketPremium(false)}
+      />
+      <PremiumFeatureModal abierto={avisoVentasPremium} titulo="Funciones de venta Premium"
+        mensaje="Activa descuentos, promociones, ventas fiadas y descuentos autorizados con contraseña con CajaLibre Premium."
+        onCerrar={() => setAvisoVentasPremium(false)} />
+      <PremiumFeatureModal abierto={avisoConsultaPremium} titulo="Consulta de precios"
+        mensaje="Ofrece una pantalla de consulta con lector de código de barras, precios, disponibilidad y promociones del inventario de tu negocio con CajaLibre Premium."
+        onCerrar={() => setAvisoConsultaPremium(false)} />
     </section>
   );
 }

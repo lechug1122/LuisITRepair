@@ -1,29 +1,74 @@
 import { signOut } from "firebase/auth";
-import {
-  getDocs,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  where,
-  writeBatch,
-} from "firebase/firestore";
-import { auth, db } from "../../initializer/firebase";
-import { toDate } from "./suscripciones";
-import { getCollectionRef, getDocRef, readTenantContext } from "./tenant";
+import { onSnapshot, runTransaction, serverTimestamp, setDoc } from "firebase/firestore";
+import { auth, db } from "../../initializer/firebase.js";
+import { toDate } from "./suscripciones.js";
+import { getDocRef, readTenantContext } from "./tenant.js";
+
+// ---------------------------------------------------------------------------
+// Control de sesiones por dispositivo.
+//
+// El plan Gratuito permite que cada persona use su cuenta en UN equipo a la
+// vez; Premium no tiene limite. La regla es por usuario, nunca por negocio: un
+// negocio gratuito con tres empleados puede tener tres equipos encendidos.
+//
+// Toda la coleccion vive dentro del negocio, donde ya vivian las sesiones:
+//
+//   negocios/{negocioId}/sesiones_dispositivo/{uid}              -> sesion unica (Gratuito)
+//   negocios/{negocioId}/sesiones_dispositivo/{uid}__{deviceId}  -> sesion por equipo (Premium)
+//
+// El documento con el uid a secas es la pieza clave: al ser UNO solo por
+// persona, reclamarlo dentro de una transaccion convierte "quien se queda con
+// la sesion" en una operacion atomica. Dos equipos que entran en el mismo
+// instante no pueden quedar autorizados los dos.
+// ---------------------------------------------------------------------------
 
 const DEVICE_SESSION_COLLECTION = "sesiones_dispositivo";
-const DEVICE_ID_STORAGE_KEY = "current_device_session_id_v1";
-const DEVICE_CONFLICT_MESSAGE_KEY = "device_session_conflict_message_v1";
-const DEVICE_SESSION_TTL_MS = 10 * 60 * 1000;
-const DEVICE_HEARTBEAT_MS = 45 * 1000;
+const DEVICE_ID_STORAGE_KEY = "cajalibre_device_id";
+// Clave que usaban las versiones anteriores. Se hereda para que un navegador
+// que ya trabajaba con CajaLibre conserve su identidad: si se le generara un
+// id nuevo, su propia recarga pareceria un segundo dispositivo.
+const LEGACY_DEVICE_ID_STORAGE_KEY = "current_device_session_id_v1";
+const SESSION_NOTICE_KEY = "device_session_notice_v1";
 
-function randomSegment() {
-  return Math.random().toString(36).slice(2, 10);
-}
+// Una sesion abandonada (navegador cerrado de golpe, equipo apagado, sin
+// internet) deja de contar a los 12 minutos. Mientras tanto el usuario nunca
+// queda atrapado: siempre puede reemplazarla desde el modal.
+export const SESSION_TTL_MS = 12 * 60 * 1000;
+// Un latido cada 4 minutos son 3 avisos dentro de la ventana de vigencia, y
+// unas 15 escrituras por hora y equipo. Nada se escribe por movimiento del
+// mouse ni con la pestana en segundo plano.
+export const SESSION_HEARTBEAT_MS = 4 * 60 * 1000;
+const LATIDO_MINIMO_MS = 60 * 1000;
+
+export const MOTIVO_CIERRE_REMOTO = "closed_from_another_device";
+export const MOTIVO_CIERRE_MANUAL = "manual_logout";
+
+export const AVISO_SESION_REEMPLAZADA = {
+  titulo: "Sesion cerrada",
+  mensaje:
+    "Tu cuenta fue iniciada en otro dispositivo. El plan gratuito permite utilizar cada cuenta en un solo dispositivo a la vez.",
+  mostrarPremium: true,
+};
 
 function normalizeId(value) {
   return String(value || "").trim();
+}
+
+function randomId() {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // Algunos navegadores bloquean crypto en contextos no seguros.
+  }
+  const bloque = () => Math.random().toString(36).slice(2, 10);
+  return `${Date.now().toString(36)}-${bloque()}-${bloque()}`;
+}
+
+function toMillis(value) {
+  const parsed = toDate(value);
+  return parsed ? parsed.getTime() : 0;
 }
 
 function detectBrowserName() {
@@ -42,280 +87,338 @@ function detectOsName() {
   const ua = String(navigator.userAgent || "");
   const platform = String(navigator.platform || "");
 
-  if (/Windows/i.test(platform) || /Windows/i.test(ua)) return "Windows";
-  if (/Mac/i.test(platform) || /Mac OS/i.test(ua)) return "macOS";
   if (/Android/i.test(ua)) return "Android";
-  if (/iPhone|iPad|iPod/i.test(ua)) return "iPhone";
+  if (/iPad/i.test(ua)) return "iPad";
+  if (/iPhone|iPod/i.test(ua)) return "iPhone";
+  if (/Windows/i.test(platform) || /Windows/i.test(ua)) return "Windows";
+  if (/Mac/i.test(platform) || /Mac OS/i.test(ua)) return "Mac";
   if (/Linux/i.test(platform) || /Linux/i.test(ua)) return "Linux";
   return "equipo";
 }
 
+function leerUserAgent() {
+  if (typeof navigator === "undefined") return "";
+  return String(navigator.userAgent || "").slice(0, 300);
+}
+
+let deviceIdEnMemoria = "";
+
+/**
+ * Identificador estable del navegador. Se crea una sola vez y sobrevive al
+ * cierre de sesion, al cierre del navegador y a cualquier recarga: de eso
+ * depende que volver a entrar desde el mismo equipo no se lea como un segundo
+ * dispositivo.
+ */
 export function getCurrentDeviceId() {
-  if (typeof window === "undefined") return `server-${randomSegment()}`;
+  if (deviceIdEnMemoria) return deviceIdEnMemoria;
+
+  if (typeof window === "undefined") {
+    deviceIdEnMemoria = `srv-${randomId()}`;
+    return deviceIdEnMemoria;
+  }
 
   try {
-    const existing = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY);
-    if (existing) return existing;
+    const almacen = window.localStorage;
+    const actual = normalizeId(almacen.getItem(DEVICE_ID_STORAGE_KEY));
+    if (actual) {
+      deviceIdEnMemoria = actual;
+      return actual;
+    }
 
-    const created = `dev-${Date.now()}-${randomSegment()}`;
-    window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, created);
-    return created;
+    const heredado = normalizeId(almacen.getItem(LEGACY_DEVICE_ID_STORAGE_KEY));
+    const definitivo = heredado || `dev-${randomId()}`;
+    almacen.setItem(DEVICE_ID_STORAGE_KEY, definitivo);
+    deviceIdEnMemoria = definitivo;
+    return definitivo;
   } catch {
-    return `fallback-${Date.now()}-${randomSegment()}`;
+    // Sin almacenamiento el identificador vive en memoria: la pestana se
+    // comporta como un equipo estable mientras siga abierta.
+    deviceIdEnMemoria = `tmp-${randomId()}`;
+    return deviceIdEnMemoria;
   }
 }
 
+/** Nombre legible del equipo. Nunca se le muestra un identificador al usuario. */
 export function getCurrentDeviceLabel() {
   return `${detectBrowserName()} en ${detectOsName()}`;
 }
 
-function getCurrentSessionDocId(uid, deviceId = getCurrentDeviceId()) {
-  return `${normalizeId(uid)}__${normalizeId(deviceId)}`;
+function claimRef(uid, negocioId) {
+  return getDocRef(DEVICE_SESSION_COLLECTION, normalizeId(uid), normalizeId(negocioId));
 }
 
-function getCurrentSessionDocRef(uid, deviceId = getCurrentDeviceId()) {
-  return getDocRef(DEVICE_SESSION_COLLECTION, getCurrentSessionDocId(uid, deviceId));
-}
-
-function isMainAccountLimited(autorizado = {}) {
-  const uid = normalizeId(autorizado?.uid);
-  const cuentaPrincipalUid = normalizeId(autorizado?.cuentaPrincipalUid);
-  return (
-    autorizado?.superAdmin !== true &&
-    autorizado?.suscripcionControlada === true &&
-    cuentaPrincipalUid &&
-    uid &&
-    cuentaPrincipalUid === uid
+function deviceRef(uid, negocioId, deviceId = getCurrentDeviceId()) {
+  return getDocRef(
+    DEVICE_SESSION_COLLECTION,
+    `${normalizeId(uid)}__${normalizeId(deviceId)}`,
+    normalizeId(negocioId),
   );
 }
 
-export function getOwnerDeviceLimit(suscripcion = null) {
-  const parsed = Number(suscripcion?.dispositivosTitularPermitidos);
-  if (!Number.isFinite(parsed)) return 1;
-  return Math.max(1, Math.trunc(parsed));
-}
-
-function toMillis(value) {
-  const parsed = toDate(value);
-  return parsed ? parsed.getTime() : 0;
-}
-
-function isSessionRecentlyActive(session = {}, nowMs = Date.now()) {
-  if (session?.activa !== true) return false;
-  const lastSeenMs = toMillis(session?.lastSeen || session?.updatedAt || session?.createdAt);
-  if (!lastSeenMs) return true;
-  return nowMs - lastSeenMs <= DEVICE_SESSION_TTL_MS;
-}
-
-export function normalizeDeviceSession(raw = {}, id = "") {
+function datosBase(uid, negocioId, deviceId) {
   return {
-    id: normalizeId(id || raw?.id),
-    uid: normalizeId(raw?.uid),
-    cuentaPrincipalUid: normalizeId(raw?.cuentaPrincipalUid),
-    negocioId: normalizeId(raw?.negocioId || raw?.cuentaPrincipalUid),
-    deviceId: normalizeId(raw?.deviceId),
-    deviceLabel: String(raw?.deviceLabel || "").trim() || "Equipo",
-    activa: raw?.activa === true,
-    createdAt: toDate(raw?.createdAt),
-    updatedAt: toDate(raw?.updatedAt),
-    lastSeen: toDate(raw?.lastSeen),
-    closedAt: toDate(raw?.closedAt),
-    closedReason: String(raw?.closedReason || "").trim(),
-    esCuentaPrincipal: raw?.esCuentaPrincipal === true,
-  };
-}
-
-async function fetchUserDeviceSessions(uid) {
-  const safeUid = normalizeId(uid);
-  if (!safeUid) return [];
-
-  const snapshot = await getDocs(
-    query(getCollectionRef(DEVICE_SESSION_COLLECTION), where("uid", "==", safeUid)),
-  );
-
-  return snapshot.docs
-    .map((item) => normalizeDeviceSession(item.data(), item.id))
-    .sort((a, b) => toMillis(b.lastSeen || b.updatedAt || b.createdAt) - toMillis(a.lastSeen || a.updatedAt || a.createdAt));
-}
-
-function buildCurrentSessionPayload(uid, autorizado = {}) {
-  const safeUid = normalizeId(uid);
-  const cuentaPrincipalUid = normalizeId(autorizado?.cuentaPrincipalUid || safeUid);
-  const negocioId = normalizeId(autorizado?.negocioId || cuentaPrincipalUid);
-
-  return {
-    uid: safeUid,
-    cuentaPrincipalUid,
-    negocioId,
-    deviceId: getCurrentDeviceId(),
+    uid: normalizeId(uid),
+    negocioId: normalizeId(negocioId),
+    cuentaPrincipalUid: normalizeId(negocioId),
+    deviceId: normalizeId(deviceId),
     deviceLabel: getCurrentDeviceLabel(),
-    activa: true,
-    esCuentaPrincipal: true,
-    updatedAt: serverTimestamp(),
-    lastSeen: serverTimestamp(),
-    closedAt: null,
-    closedReason: null,
+    userAgent: leerUserAgent(),
   };
 }
 
-export async function ensureCurrentDeviceSessionAccess({
-  uid = "",
-  autorizado = {},
-  suscripcion = null,
-} = {}) {
-  const safeUid = normalizeId(uid);
-  const safeAutorizado = { ...autorizado, uid: safeUid };
-
-  if (!isMainAccountLimited(safeAutorizado)) {
-    return {
-      permitido: true,
-      aplicaLimite: false,
-      sesionesActivas: [],
-      otrasSesionesActivas: [],
-      limite: null,
-    };
-  }
-
-  const limite = getOwnerDeviceLimit(suscripcion);
-  const currentDeviceId = getCurrentDeviceId();
-  const sessions = await fetchUserDeviceSessions(safeUid);
-  const sesionesActivas = sessions.filter((item) => isSessionRecentlyActive(item));
-  const currentSession = sesionesActivas.find((item) => item.deviceId === currentDeviceId) || null;
-  const otrasSesionesActivas = sesionesActivas.filter((item) => item.deviceId !== currentDeviceId);
-  const totalActivoConActual = currentSession ? sesionesActivas.length : sesionesActivas.length + 1;
-
-  if (totalActivoConActual > limite) {
-    return {
-      permitido: false,
-      aplicaLimite: true,
-      requiereCerrarSesiones: true,
-      limite,
-      sesionesActivas,
-      otrasSesionesActivas,
-      mensaje:
-        limite === 1
-          ? "Hay mas de un equipo abierto con esta cuenta principal. Cierra las otras sesiones o sal del sistema."
-          : `Ya superaste el limite de ${limite} equipos simultaneos para esta cuenta principal.`,
-    };
-  }
-
-  await setDoc(
-    getCurrentSessionDocRef(safeUid, currentDeviceId),
-    {
-      ...buildCurrentSessionPayload(safeUid, safeAutorizado),
-      createdAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
-
-  return {
-    permitido: true,
-    aplicaLimite: true,
-    requiereCerrarSesiones: false,
-    limite,
-    sesionesActivas,
-    otrasSesionesActivas,
-    mensaje: "",
-  };
+/**
+ * Una sesion cuenta como ocupada solo si sigue marcada activa y dio senales de
+ * vida dentro de la ventana de vigencia. Sin esta regla, un equipo apagado
+ * dejaria bloqueada la cuenta para siempre.
+ */
+export function sesionVigente(data, ahoraMs = Date.now()) {
+  if (!data || data.activa !== true) return false;
+  const ultima = toMillis(data.lastActivity || data.updatedAt || data.createdAt);
+  if (!ultima) return false;
+  return ahoraMs - ultima <= SESSION_TTL_MS;
 }
 
-export async function closeOtherSessionsAndKeepCurrent({
-  uid = "",
-  autorizado = {},
+/**
+ * Decision del plan Gratuito, sin tocar la red.
+ *
+ * - Sin sesion previa, o con una vencida  -> se toma.
+ * - Sesion del mismo equipo               -> se refresca (recargar no abre otra).
+ * - Sesion vigente de otro equipo         -> se rechaza, salvo `forzar`.
+ *
+ * Un registro sin equipo identificado se trata como vencido: nunca debe dejar
+ * la cuenta bloqueada sin que se pueda saber de quien era.
+ */
+export function decidirSesionUnica({
+  previo = null,
+  deviceId = "",
+  forzar = false,
+  ahoraMs = Date.now(),
 } = {}) {
-  const safeUid = normalizeId(uid);
-  const safeAutorizado = { ...autorizado, uid: safeUid };
-  const currentDeviceId = getCurrentDeviceId();
-  const sessions = await fetchUserDeviceSessions(safeUid);
-  const batch = writeBatch(db);
+  const equipo = normalizeId(deviceId);
+  const anterior = previo ? normalizeId(previo.deviceId) : "";
+  const mismoDispositivo = Boolean(anterior) && anterior === equipo;
+  const ocupadaPorOtro = Boolean(anterior)
+    && !mismoDispositivo
+    && sesionVigente(previo, ahoraMs);
 
-  sessions.forEach((item) => {
-    if (!item.id || item.deviceId === currentDeviceId) return;
+  if (ocupadaPorOtro && !forzar) {
+    return { permitido: false, mismoDispositivo: false, reemplaza: false };
+  }
 
-    batch.set(
-      getDocRef(DEVICE_SESSION_COLLECTION, item.id),
-      {
-        activa: false,
-        updatedAt: serverTimestamp(),
-        closedAt: serverTimestamp(),
-        closedReason: "closed_from_another_device",
-      },
-      { merge: true },
-    );
-  });
-
-  batch.set(
-    getCurrentSessionDocRef(safeUid, currentDeviceId),
-    {
-      ...buildCurrentSessionPayload(safeUid, safeAutorizado),
-      createdAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
-
-  await batch.commit();
+  return { permitido: true, mismoDispositivo, reemplaza: ocupadaPorOtro };
 }
 
-export async function heartbeatCurrentDeviceSession(uid) {
+/**
+ * Reclama la unica sesion permitida por el plan Gratuito.
+ *
+ * Todo ocurre dentro de una transaccion sobre un unico documento, que es lo
+ * que vuelve imposible la carrera "dos equipos entran a la vez y los dos
+ * quedan autorizados": el segundo siempre lee lo que escribio el primero.
+ */
+export async function reclamarSesionUnica({ uid = "", negocioId = "", forzar = false } = {}) {
   const safeUid = normalizeId(uid);
-  if (!safeUid) return;
-  const tenant = readTenantContext();
-  const cuentaPrincipalUid = normalizeId(tenant.cuentaPrincipalUid || auth.currentUser?.uid || safeUid);
-  const negocioId = normalizeId(tenant.negocioId || cuentaPrincipalUid);
+  const safeNegocioId = normalizeId(negocioId);
+  const deviceId = getCurrentDeviceId();
 
-  await setDoc(
-    getCurrentSessionDocRef(safeUid),
-    {
-      uid: safeUid,
-      cuentaPrincipalUid,
-      negocioId,
-      deviceId: getCurrentDeviceId(),
-      deviceLabel: getCurrentDeviceLabel(),
+  if (!safeUid || !safeNegocioId) {
+    return { permitido: true, controlado: false, deviceId, sessionId: "" };
+  }
+
+  const referencia = claimRef(safeUid, safeNegocioId);
+
+  return runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(referencia);
+    const previo = snapshot.exists() ? snapshot.data() || {} : null;
+    const decision = decidirSesionUnica({ previo, deviceId, forzar });
+    const mismoDispositivo = decision.mismoDispositivo;
+
+    if (!decision.permitido) {
+      return {
+        permitido: false,
+        controlado: true,
+        deviceId,
+        sessionId: "",
+        otroDispositivo: {
+          etiqueta: String(previo.deviceLabel || "").trim() || "Otro equipo",
+          ultimaActividad: toDate(previo.lastActivity) || toDate(previo.updatedAt) || null,
+        },
+      };
+    }
+
+    // El mismo equipo conserva su sessionId: si cambiara en cada recarga, su
+    // propio listener leeria el cambio como una expulsion.
+    const sessionId = mismoDispositivo && normalizeId(previo.sessionId)
+      ? normalizeId(previo.sessionId)
+      : randomId();
+
+    transaction.set(referencia, {
+      ...datosBase(safeUid, safeNegocioId, deviceId),
+      sessionId,
       activa: true,
+      createdAt: previo?.createdAt || serverTimestamp(),
+      lastActivity: serverTimestamp(),
       updatedAt: serverTimestamp(),
-      lastSeen: serverTimestamp(),
       closedAt: null,
-      closedReason: null,
-    },
-    { merge: true },
-  );
+      closedReason: "",
+    });
+
+    return { permitido: true, controlado: true, deviceId, sessionId };
+  });
 }
 
-export async function closeCurrentDeviceSession(uid, reason = "manual_logout") {
+/**
+ * Registro de la sesion de este equipo cuando el negocio es Premium. Aqui no
+ * se reclama nada ni se invalida a nadie: cada dispositivo tiene su documento
+ * y todos pueden convivir.
+ */
+export async function registrarSesionDeDispositivo({ uid = "", negocioId = "", sessionId = "" } = {}) {
   const safeUid = normalizeId(uid);
-  if (!safeUid) return;
-  const tenant = readTenantContext();
-  const cuentaPrincipalUid = normalizeId(tenant.cuentaPrincipalUid || auth.currentUser?.uid || safeUid);
-  const negocioId = normalizeId(tenant.negocioId || cuentaPrincipalUid);
+  const safeNegocioId = normalizeId(negocioId);
+  const deviceId = getCurrentDeviceId();
+
+  if (!safeUid || !safeNegocioId) {
+    return { permitido: true, controlado: false, deviceId, sessionId: "" };
+  }
+
+  const sesion = normalizeId(sessionId) || randomId();
 
   await setDoc(
-    getCurrentSessionDocRef(safeUid),
+    deviceRef(safeUid, safeNegocioId, deviceId),
     {
-      uid: safeUid,
-      cuentaPrincipalUid,
-      negocioId,
-      deviceId: getCurrentDeviceId(),
-      deviceLabel: getCurrentDeviceLabel(),
-      activa: false,
+      ...datosBase(safeUid, safeNegocioId, deviceId),
+      sessionId: sesion,
+      activa: true,
+      createdAt: serverTimestamp(),
+      lastActivity: serverTimestamp(),
       updatedAt: serverTimestamp(),
-      closedAt: serverTimestamp(),
-      closedReason: String(reason || "manual_logout").trim(),
+      closedAt: null,
+      closedReason: "",
+    },
+    { merge: true },
+  );
+
+  return { permitido: true, controlado: false, deviceId, sessionId: sesion };
+}
+
+async function latirSesionUnica(uid, negocioId, sessionId) {
+  const deviceId = getCurrentDeviceId();
+  const referencia = claimRef(uid, negocioId);
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(referencia);
+    if (!snapshot.exists()) return;
+
+    const data = snapshot.data() || {};
+    // Un latido jamas debe revivir una sesion que ya fue reemplazada desde
+    // otro equipo: solo se refresca si seguimos siendo su titular.
+    if (normalizeId(data.deviceId) !== deviceId) return;
+    if (sessionId && normalizeId(data.sessionId) !== normalizeId(sessionId)) return;
+
+    transaction.update(referencia, {
+      activa: true,
+      lastActivity: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+async function latirSesionDispositivo(uid, negocioId) {
+  await setDoc(
+    deviceRef(uid, negocioId),
+    {
+      ...datosBase(uid, negocioId, getCurrentDeviceId()),
+      activa: true,
+      lastActivity: serverTimestamp(),
+      updatedAt: serverTimestamp(),
     },
     { merge: true },
   );
 }
 
-export function listenToCurrentDeviceSession(uid, onValue, onError) {
+/**
+ * Latido periodico. Se detiene con la pestana en segundo plano y se reanuda al
+ * volver, con un minimo de un minuto entre escrituras.
+ */
+export function iniciarLatidoDeSesion({ uid = "", negocioId = "", sessionId = "", esFree = true } = {}) {
   const safeUid = normalizeId(uid);
-  if (!safeUid) return () => {};
+  const safeNegocioId = normalizeId(negocioId);
+  if (!safeUid || !safeNegocioId || typeof window === "undefined") return () => {};
+
+  // El registro inicial acaba de escribirse: el primer latido toca al cumplirse
+  // el intervalo, no de inmediato.
+  let ultimoLatido = Date.now();
+
+  const latir = () => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    const ahora = Date.now();
+    if (ahora - ultimoLatido < LATIDO_MINIMO_MS) return;
+    ultimoLatido = ahora;
+
+    const tarea = esFree
+      ? latirSesionUnica(safeUid, safeNegocioId, sessionId)
+      : latirSesionDispositivo(safeUid, safeNegocioId);
+
+    tarea.catch((error) => {
+      console.warn("[sesion-dispositivo] No se pudo refrescar la sesion:", error?.code || error);
+    });
+  };
+
+  const intervalo = window.setInterval(latir, SESSION_HEARTBEAT_MS);
+  const alCambiarVisibilidad = () => {
+    if (document.visibilityState === "visible") latir();
+  };
+
+  document.addEventListener("visibilitychange", alCambiarVisibilidad);
+
+  // No se cierra la sesion en `beforeunload` ni en `pagehide`: esos eventos
+  // tambien ocurren al recargar o al cambiar de pestana, y cerrar ahi
+  // convertiria una recarga en una salida. De las sesiones abandonadas se
+  // encarga la vigencia por tiempo.
+  return () => {
+    window.clearInterval(intervalo);
+    document.removeEventListener("visibilitychange", alCambiarVisibilidad);
+  };
+}
+
+/**
+ * Escucha la sesion de este equipo en tiempo real. Si otro dispositivo toma la
+ * cuenta, o si la sesion se cierra desde fuera, avisa para salir del sistema.
+ */
+export function escucharSesionActual({
+  uid = "",
+  negocioId = "",
+  sessionId = "",
+  esFree = true,
+  onInvalida,
+  onError,
+} = {}) {
+  const safeUid = normalizeId(uid);
+  const safeNegocioId = normalizeId(negocioId);
+  if (!safeUid || !safeNegocioId) return () => {};
+
+  const deviceId = getCurrentDeviceId();
+  const referencia = esFree
+    ? claimRef(safeUid, safeNegocioId)
+    : deviceRef(safeUid, safeNegocioId, deviceId);
 
   return onSnapshot(
-    getCurrentSessionDocRef(safeUid),
+    referencia,
     (snapshot) => {
-      const data = snapshot.exists()
-        ? normalizeDeviceSession(snapshot.data(), snapshot.id)
-        : null;
-      onValue?.(data);
+      // Una escritura propia todavia sin confirmar no prueba nada.
+      if (snapshot.metadata?.hasPendingWrites) return;
+      if (!snapshot.exists()) return;
+
+      const data = snapshot.data() || {};
+      const reemplazada = esFree && (
+        normalizeId(data.deviceId) !== deviceId ||
+        (Boolean(sessionId) && normalizeId(data.sessionId) !== normalizeId(sessionId))
+      );
+      // Una sesion cerrada por su propio usuario (salir del sistema) no expulsa
+      // a nadie; solo el cierre pedido desde otro equipo.
+      const cerradaDesdeOtroEquipo = data.activa === false
+        && normalizeId(data.closedReason) === MOTIVO_CIERRE_REMOTO;
+
+      if (reemplazada || cerradaDesdeOtroEquipo) onInvalida?.();
     },
     (error) => {
       onError?.(error);
@@ -323,58 +426,84 @@ export function listenToCurrentDeviceSession(uid, onValue, onError) {
   );
 }
 
-export function applyCurrentDeviceSessionHeartbeat(uid) {
+/**
+ * Cierre de sesion normal: marca como inactiva la sesion de ESTE equipo.
+ * Nunca toca las sesiones de los demas dispositivos, que en Premium siguen
+ * abiertas con total normalidad.
+ */
+export async function liberarSesionDelDispositivo(uid = "", negocioId = "") {
   const safeUid = normalizeId(uid);
-  if (!safeUid) return () => {};
+  const contexto = readTenantContext();
+  const safeNegocioId = normalizeId(negocioId)
+    || normalizeId(contexto.negocioId)
+    || normalizeId(contexto.cuentaPrincipalUid);
 
-  let heartbeatId = null;
+  if (!safeUid || !safeNegocioId) return;
 
-  const ping = () => {
-    heartbeatCurrentDeviceSession(safeUid).catch(() => {});
+  const deviceId = getCurrentDeviceId();
+  const cierre = {
+    activa: false,
+    closedAt: serverTimestamp(),
+    closedReason: MOTIVO_CIERRE_MANUAL,
+    updatedAt: serverTimestamp(),
   };
 
-  ping();
-  heartbeatId = window.setInterval(ping, DEVICE_HEARTBEAT_MS);
-
-  const onPageHide = () => {
-    closeCurrentDeviceSession(safeUid, "page_hide").catch(() => {});
-  };
-
-  window.addEventListener("beforeunload", onPageHide);
-  window.addEventListener("pagehide", onPageHide);
-
-  return () => {
-    if (heartbeatId) {
-      window.clearInterval(heartbeatId);
-      heartbeatId = null;
-    }
-    window.removeEventListener("beforeunload", onPageHide);
-    window.removeEventListener("pagehide", onPageHide);
-    closeCurrentDeviceSession(safeUid, "listener_cleanup").catch(() => {});
-  };
+  // Se liberan las dos formas de sesion sin consultar el plan: salir del
+  // sistema debe funcionar igual aunque el negocio haya cambiado de plan
+  // mientras la pantalla estaba abierta.
+  await Promise.all([
+    runTransaction(db, async (transaction) => {
+      const referencia = claimRef(safeUid, safeNegocioId);
+      const snapshot = await transaction.get(referencia);
+      if (!snapshot.exists()) return;
+      // Si la sesion ya es de otro equipo, no es nuestra para cerrarla.
+      if (normalizeId((snapshot.data() || {}).deviceId) !== deviceId) return;
+      transaction.update(referencia, cierre);
+    }).catch(() => {}),
+    setDoc(
+      deviceRef(safeUid, safeNegocioId, deviceId),
+      { ...datosBase(safeUid, safeNegocioId, deviceId), ...cierre },
+      { merge: true },
+    ).catch(() => {}),
+  ]);
 }
 
-export function stashDeviceConflictMessage(message) {
-  if (typeof window === "undefined") return;
+export function guardarAvisoSesion(aviso) {
+  if (typeof window === "undefined" || !aviso) return;
   try {
-    window.sessionStorage.setItem(DEVICE_CONFLICT_MESSAGE_KEY, String(message || "").trim());
+    window.sessionStorage.setItem(SESSION_NOTICE_KEY, JSON.stringify(aviso));
   } catch {
-    // noop
+    // Sin almacenamiento el aviso se pierde, pero la salida sigue funcionando.
   }
 }
 
+/**
+ * Lee y descarta el aviso pendiente para la pantalla de inicio de sesion.
+ * Devuelve un objeto `{ titulo, mensaje, mostrarPremium }` o null.
+ */
 export function consumeDeviceConflictMessage() {
-  if (typeof window === "undefined") return "";
+  if (typeof window === "undefined") return null;
   try {
-    const message = window.sessionStorage.getItem(DEVICE_CONFLICT_MESSAGE_KEY) || "";
-    window.sessionStorage.removeItem(DEVICE_CONFLICT_MESSAGE_KEY);
-    return String(message || "").trim();
+    const crudo = window.sessionStorage.getItem(SESSION_NOTICE_KEY);
+    window.sessionStorage.removeItem(SESSION_NOTICE_KEY);
+    if (!crudo) return null;
+
+    const aviso = JSON.parse(crudo);
+    const mensaje = String(aviso?.mensaje || "").trim();
+    if (!mensaje) return null;
+
+    return {
+      titulo: String(aviso?.titulo || "Sesion cerrada").trim(),
+      mensaje,
+      mostrarPremium: aviso?.mostrarPremium === true,
+    };
   } catch {
-    return "";
+    return null;
   }
 }
 
-export async function signOutCurrentSessionWithMessage(message = "") {
-  if (message) stashDeviceConflictMessage(message);
+/** Sale de Firebase Auth dejando listo el aviso que vera la pantalla de login. */
+export async function cerrarSesionPorReemplazo(aviso = AVISO_SESION_REEMPLAZADA) {
+  guardarAvisoSesion(aviso);
   await signOut(auth).catch(() => {});
 }

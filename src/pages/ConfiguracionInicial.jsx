@@ -6,6 +6,7 @@ import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import { obtenerEstadoAutorizacion } from "../js/services/autorizacion";
 import { completarConfiguracionInicial } from "../js/services/negocios";
 import { getTiposNegocioPreset } from "../js/services/tipos_negocio";
+import AccesoErrorPanel from "../components/AccesoErrorPanel";
 import AppFooter from "../components/AppFooter";
 import abarrotesPromo from "../assets/abarrotes.png";
 import automotrizPromo from "../assets/automotirz.png";
@@ -109,7 +110,7 @@ async function esperarAccesoConfigurado(uid, intentos = 8) {
 export default function ConfiguracionInicial() {
   const navigate = useNavigate();
   const authInfo = useAutorizacionActual();
-  const { loading, uid, cuentaPrincipalUid, nombre: nombreUsuario } = authInfo;
+  const { loading, uid, cuentaPrincipalUid, esTitular, nombre: nombreUsuario } = authInfo;
   const { empresa } = useEmpresaConfig();
   const tipos = useMemo(() => getTiposNegocioPreset(), []);
   const [step, setStep] = useState(readStoredStep);
@@ -221,6 +222,22 @@ export default function ConfiguracionInicial() {
 
   if (loading) {
     return <><main className="onboarding-page"><section className="onboarding-card"><h1>Configuración inicial</h1><p>Preparando tu espacio de trabajo…</p></section></main><AppFooter /></>;
+  }
+
+  // Solo el titular configura el negocio. El personal ya pertenece a uno, asi
+  // que nunca debe ver este asistente. Se informa sin navegar: una redireccion
+  // automatica desde aqui competia con la guardia de ruta y producia un bucle
+  // entre /home y /configuracion-inicial.
+  if (!esTitular) {
+    return (
+      <AccesoErrorPanel
+        titulo="Este paso le corresponde al titular"
+        mensaje="Tu cuenta ya pertenece a un negocio. La configuracion inicial solo la completa quien registro el negocio."
+        mostrarReintentar={false}
+        mostrarCerrarSesion={false}
+        mostrarInicio
+      />
+    );
   }
 
   if (configurando) {

@@ -144,6 +144,7 @@ export async function estaCajaCerradaHoy() {
 
 export async function cerrarCajaHoy(ventasFuente = null, meta = {}) {
   const fechaKey = getDateKeyLocal();
+  const realizarArqueo = meta?.realizarArqueo === true;
   const yaExiste = await obtenerCorteCajaDia(fechaKey);
   if (yaExiste?.cerrado) {
     return { yaCerrado: true, corte: yaExiste };
@@ -217,10 +218,13 @@ export async function cerrarCajaHoy(ventasFuente = null, meta = {}) {
 
   const contadoRaw = Number(meta?.efectivoContado);
   const contadoMeta = Number.isFinite(contadoRaw) ? Number(contadoRaw.toFixed(2)) : null;
-  const efectivoContado =
-    Number(efectivoDenominaciones || 0) > 0
-      ? Number(efectivoDenominaciones.toFixed(2))
-      : contadoMeta;
+  const efectivoContado = realizarArqueo
+    ? (
+        Number(efectivoDenominaciones || 0) > 0
+          ? Number(efectivoDenominaciones.toFixed(2))
+          : contadoMeta
+      )
+    : null;
   const cajaFinalEsperada = Number(
     (fondoInicialCaja + Number(resumen.efectivo || 0) - totalRetiros).toFixed(2)
   );
@@ -249,17 +253,18 @@ export async function cerrarCajaHoy(ventasFuente = null, meta = {}) {
     resumen,
     fondoInicialCaja,
     cajaFinalEsperada,
-    denominaciones,
+    arqueoRealizado: realizarArqueo,
+    denominaciones: realizarArqueo ? denominaciones : [],
     retiros: salidasCaja,
     egresos,
     totalRetiros,
     conteoEfectivo: {
-      esperado: cajaFinalEsperada,
+      esperado: realizarArqueo ? cajaFinalEsperada : null,
       contado: efectivoContado,
-      diferencia,
+      diferencia: realizarArqueo ? diferencia : null,
     },
-    notasCorte,
-    descuadreReconocido: hayDescuadre && meta?.permitirDescuadre === true,
+    notasCorte: realizarArqueo ? notasCorte : "",
+    descuadreReconocido: realizarArqueo && hayDescuadre && meta?.permitirDescuadre === true,
     ventasIds: ventasDia.map((v) => v.id),
   };
 
@@ -267,11 +272,13 @@ export async function cerrarCajaHoy(ventasFuente = null, meta = {}) {
   return { yaCerrado: false, corte: payload };
 }
 
-export async function listarCortesCaja() {
+export async function listarCortesCaja(maxResultados = null) {
   const snap = await getDocs(getTenantCollectionQuery("cortes_caja"));
-  return filterItemsByTenant(snap.docs
+  const cortes = filterItemsByTenant(snap.docs
     .map((d) => ({ id: d.id, ...d.data() }))
     .sort((a, b) => String(b.fechaKey || "").localeCompare(String(a.fechaKey || ""))));
+  const limite = Number(maxResultados);
+  return Number.isInteger(limite) && limite > 0 ? cortes.slice(0, limite) : cortes;
 }
 
 export async function autoCerrarCortesPendientes() {

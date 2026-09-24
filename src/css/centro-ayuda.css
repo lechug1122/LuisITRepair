@@ -143,3 +143,45 @@
   .help-video-guides { padding: 25px 18px; }
   .help-video-modal { padding: 12px; }
 }
+
+/* Asesoria personalizada: distinta del soporte tecnico, que nunca se cobra. */
+.help-asesoria {
+  display: flex;
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.help-asesoria i {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+}
+
+.help-asesoria section { display: grid; gap: 8px; }
+.help-asesoria strong { font-size: 1rem; }
+.help-asesoria p { margin: 0; line-height: 1.55; font-size: 0.92rem; }
+
+.help-asesoria-costo {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  font-weight: 600;
+}
+
+.help-asesoria a {
+  width: fit-content;
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid currentColor;
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-decoration: none;
+}

@@ -25,6 +25,7 @@ import {
 } from "react-icons/fi";
 import { APARIENCIA_EVENT, readAparienciaConfigStorage } from "../js/services/apariencia_config";
 import { STATUS } from "../js/utils/status_map";
+import { normalizarEstadoServicio } from "../js/services/servicio_estados";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useMonedaConfig from "../hooks/useMonedaConfig";
@@ -63,15 +64,9 @@ function normalizeStatus(raw = "") {
   return String(raw || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9_ ]/g, "").replace(/\s+/g, "_").trim();
 }
 
-function statusValueFromRaw(raw = "") {
-  const normalized = normalizeStatus(raw);
-  if (!normalized) return "pendiente";
-  if (normalized === "en_revision") return "revision";
-  if (normalized === "en_reparacion") return "reparacion";
-  if (normalized === "en_espera_de_refaccion") return "espera_refaccion";
-  if (normalized === "finalizado") return "listo";
-  return normalized;
-}
+// La equivalencia entre nombres de estado vive en `servicio_estados.js`. Antes
+// estaba copiada aqui, y un estado nuevo no llegaba a contarse en el tablero.
+const statusValueFromRaw = normalizarEstadoServicio;
 
 function parseFechaAprox(value) {
   if (!value) return null;
@@ -228,7 +223,7 @@ function ServiceListCard({ title, subtitle = "", services = [], emptyText, onOpe
 
 export default function Home() {
   const navigate = useNavigate();
-  const { rol, nombre, permisos, puede, premiumState } = useAutorizacionActual();
+  const { rol, nombre, permisos, puede, premiumState, puedeUsarArqueoCaja } = useAutorizacionActual();
   const { serviciosHabilitados } = useEmpresaConfig();
   const { formatCurrency } = useMonedaConfig();
   const roleKey = useMemo(
@@ -661,6 +656,7 @@ export default function Home() {
                             await generarPdfCorteCajaDia(resumenCajaHoy.ventasHoy || [], {
                               corte: resumenCajaHoy.corte || null,
                               fechaKey: resumenCajaHoy?.fechaKey,
+                              incluirArqueo: puedeUsarArqueoCaja,
                             });
                           }}>
                             Descargar PDF

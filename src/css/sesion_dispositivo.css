@@ -1,13 +1,22 @@
+/* ---------------------------------------------------------------------------
+   Aviso de cuenta en uso en otro dispositivo.
+
+   Los botones se definen aqui y no se heredan de la pantalla de empleados:
+   este aviso puede aparecer en cualquier ruta del sistema y debe verse igual
+   en computadora, tablet, celular y pantallas tactiles.
+   --------------------------------------------------------------------------- */
+
 .device-session-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1200;
-  background: rgba(15, 23, 42, 0.68);
+  z-index: 2000;
+  background: rgba(15, 23, 42, 0.72);
   backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+  overflow-y: auto;
 }
 
 .device-session-card {
@@ -15,9 +24,10 @@
   background: #ffffff;
   border-radius: 24px;
   padding: 28px;
-  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.28);
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.32);
   display: grid;
   gap: 16px;
+  margin: auto;
 }
 
 .device-session-kicker {
@@ -37,17 +47,18 @@
   margin: 0;
   color: #0f172a;
   font-size: clamp(1.35rem, 2.6vw, 1.8rem);
+  line-height: 1.25;
+}
+
+.device-session-texto {
+  display: grid;
+  gap: 10px;
 }
 
 .device-session-card p {
   margin: 0;
   color: #475569;
   line-height: 1.6;
-}
-
-.device-session-list {
-  display: grid;
-  gap: 12px;
 }
 
 .device-session-item {
@@ -69,13 +80,163 @@
 }
 
 .device-session-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* Botones propios del aviso: no dependen de la hoja de estilos de empleados. */
+.device-session-card .emp-btn,
+.device-session-notice .emp-btn {
+  border: 1px solid transparent;
+  border-radius: 14px;
+  padding: 13px 16px;
+  font-weight: 700;
+  font-size: 0.98rem;
+  line-height: 1.2;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  /* Objetivo tactil comodo en tablet y celular. */
+  min-height: 48px;
+  width: 100%;
+  transition: background 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.device-session-card .emp-btn:disabled,
+.device-session-notice .emp-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.device-session-card .emp-btn-primary,
+.device-session-notice .emp-btn-primary {
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.25);
+}
+
+.device-session-card .emp-btn-primary:hover:not(:disabled),
+.device-session-notice .emp-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+}
+
+.device-session-card .emp-btn-soft,
+.device-session-notice .emp-btn-soft {
+  color: #0f172a;
+  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+  border-color: #d7e0ea;
+}
+
+.device-session-card .emp-btn-soft:hover:not(:disabled),
+.device-session-notice .emp-btn-soft:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ffffff 0%, #dbe4ee 100%);
+}
+
+.device-session-card .emp-btn-ghost,
+.device-session-notice .emp-btn-ghost {
+  color: #475569;
+  background: transparent;
+  border-color: #e2e8f0;
+}
+
+.device-session-card .emp-btn-ghost:hover:not(:disabled),
+.device-session-notice .emp-btn-ghost:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.device-session-card .emp-btn:focus-visible,
+.device-session-notice .emp-btn:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+/* Aviso que se muestra en la pantalla de inicio de sesion al ser reemplazado. */
+.device-session-notice {
+  width: 100%;
+  margin: 0 0 16px;
+  padding: 18px;
+  border-radius: 18px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+
+.device-session-notice h3 {
+  margin: 0;
+  color: #9a3412;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.device-session-notice p {
+  margin: 0;
+  color: #7c2d12;
+  line-height: 1.55;
+  font-size: 0.95rem;
+}
+
+.device-session-notice-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/* Recordatorio discreto mientras se consultan las pantallas de Premium. */
+.device-session-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 1500;
+  width: min(620px, calc(100% - 28px));
+  padding: 14px 18px;
+  border-radius: 18px;
+  background: #0f172a;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.35);
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
 }
 
-.device-session-actions .emp-btn {
-  min-width: 190px;
+.device-session-banner p {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 0.94rem;
+  line-height: 1.45;
+  flex: 1 1 240px;
+}
+
+.device-session-banner .emp-btn {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 11px 16px;
+  min-height: 44px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  cursor: pointer;
+  color: #ffffff;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  flex: 0 1 auto;
+}
+
+.device-session-banner .emp-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+@media (min-width: 641px) {
+  .device-session-actions,
+  .device-session-notice-actions {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -86,10 +247,5 @@
   .device-session-card {
     padding: 22px 18px;
     border-radius: 18px;
-  }
-
-  .device-session-actions .emp-btn {
-    width: 100%;
-    min-width: 0;
   }
 }

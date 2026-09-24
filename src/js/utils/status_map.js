@@ -1,18 +1,52 @@
-export const STATUS = [
-  { value: "pendiente", label: "Pendiente", color: "#f59e0b" },
-  { value: "revision", label: "En revision", color: "#3b82f6" },
-  { value: "reparacion", label: "En reparacion", color: "#f97316" },
-  { value: "espera_refaccion", label: "En espera de refaccion", color: "#a855f7" },
-  { value: "listo", label: "Listo", color: "#22c55e" },
-  { value: "entregado", label: "Entregado", color: "#16a34a" },
-  { value: "cancelado", label: "Cancelado", color: "#ef4444" },
-  { value: "no_reparable", label: "No reparable", color: "#6b7280" },
-  { value: "abandonado", label: "Abandonado", color: "#92400e" },
-];
+// Compatibilidad: esta tabla se declara ahora en `servicio_estados.js`, que es
+// la fuente unica de los estados de un servicio. Aqui solo se le da la forma
+// `{ value, label, color }` que ya esperaban las pantallas, para no obligarlas
+// a cambiar todas de golpe.
+//
+// Quien escriba codigo nuevo deberia importar de `servicio_estados.js`.
+
+import {
+  ESTADOS_SERVICIO,
+  getEstadoServicio,
+  normalizarEstadoServicio,
+} from "../services/servicio_estados.js";
+
+// Un color por TONO, no por estado: asi dos estados que significan lo mismo no
+// pueden terminar con colores distintos por descuido.
+const COLOR_POR_TONO = {
+  neutral: "#64748b",
+  info: "#2563eb",
+  espera: "#b45309",
+  positivo: "#15803d",
+  activo: "#7c3aed",
+  destacado: "#047857",
+  final: "#0f766e",
+  negativo: "#dc2626",
+  apagado: "#6b7280",
+};
+
+export const STATUS = ESTADOS_SERVICIO.map((estado) => ({
+  value: estado.key,
+  label: estado.label,
+  color: COLOR_POR_TONO[estado.tono] || COLOR_POR_TONO.neutral,
+  tono: estado.tono,
+  // Los estados automaticos (abandono) existen para poder mostrarlos, pero
+  // ninguna pantalla debe ofrecerlos en un desplegable.
+  automatico: estado.automatico === true,
+}));
 
 export function statusInfo(value) {
-  return STATUS.find((s) => s.value === value) || { label: value, color: "#6b7280" };
+  const estado = getEstadoServicio(value);
+  return {
+    value: estado.key,
+    label: estado.label,
+    color: COLOR_POR_TONO[estado.tono] || COLOR_POR_TONO.neutral,
+    tono: estado.tono,
+  };
 }
+
+/** Texto libre -> clave guardada. Reexportado por comodidad de las pantallas. */
+export const normalizeStatusValue = normalizarEstadoServicio;
 
 export const STATUS2 = [
   { key: "pendiente", label: "Pendiente", step: 1, color: "#9ca3af" },

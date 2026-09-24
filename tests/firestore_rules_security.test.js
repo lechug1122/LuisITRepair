@@ -44,4 +44,37 @@ describe("reglas de aislamiento de Firestore", () => {
   test("no contiene escrituras incondicionales", () => {
     assert.doesNotMatch(rules, /allow\s+(write|create|update|delete)[^;]*:\s*if\s+true\s*;/);
   });
+
+  test("los servicios completos no tienen lectura pública", () => {
+    assert.doesNotMatch(rules, /match \/\{path=\*\*\}\/servicios\/\{document\}/);
+    assert.match(
+      rules,
+      /match \/_legacy_servicios\/\{document\}\s*\{\s*allow read:\s*if isSignedIn\(\)/,
+    );
+    assert.doesNotMatch(
+      rules,
+      /subcollection == ['"]servicios['"]\s*\|\|/,
+    );
+  });
+
+  test("el rastreador público usa una proyección limitada y exige Premium vigente", () => {
+    assert.match(rules, /match \/negocios\/\{negocioId\}\/servicios_publicos\/\{document\}/);
+    // La busqueda por folio es un collectionGroup: sin el comodin recursivo el
+    // motor ni siquiera evalua la regla anclada al negocio y niega la consulta.
+    assert.match(rules, /match \/\{path=\*\*\}\/servicios_publicos\/\{document\}/);
+    assert.match(
+      rules,
+      /rastreoPublicoDisponible\(resource\.data\.negocioId\)/,
+    );
+    assert.match(rules, /request\.resource\.data\.keys\(\)\.hasOnly/);
+    assert.match(rules, /negocio\.premiumUntil is timestamp && negocio\.premiumUntil > request\.time/);
+    assert.match(rules, /trackingEnabled['"),\s]+false['"),\s]+== true/);
+  });
+
+  test("las reservaciones requieren Premium también en Firestore", () => {
+    assert.match(
+      rules,
+      /subcollection != ['"]restaurante_reservaciones['"] \|\| negocioTienePremiumVigente\(negocioId\)/,
+    );
+  });
 });

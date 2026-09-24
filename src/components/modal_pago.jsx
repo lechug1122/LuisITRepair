@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import "../css/modal_pago.css";
 import useMonedaConfig from "../hooks/useMonedaConfig";
+import usePOSFeatures from "../hooks/usePOSFeatures";
 
 export default function ModalPago({
   mostrar,
@@ -28,6 +29,7 @@ export default function ModalPago({
   onSolicitarClienteFiado = () => {},
 }) {
   const { formatCurrency } = useMonedaConfig();
+  const { fiado: permitirFiado } = usePOSFeatures();
   const [mostrarPropina, setMostrarPropina] = useState(false);
 
   useEffect(() => {
@@ -38,6 +40,7 @@ export default function ModalPago({
 
   const confirmarConValidacion = useCallback(() => {
     if (tipoPago === "fiado") {
+      if (!permitirFiado) { alert("Activa las ventas fiadas con Premium en Configuración > Punto de venta."); return; }
       const telefono = String(clienteData?.telefono || "").replace(/\D/g, "");
       if (!clienteData?.id || telefono.length < 10) {
         onSolicitarClienteFiado();
@@ -50,7 +53,7 @@ export default function ModalPago({
     }
 
     confirmarVenta();
-  }, [tipoPago, referenciaPago, confirmarVenta, clienteData, onSolicitarClienteFiado]);
+  }, [tipoPago, referenciaPago, confirmarVenta, clienteData, onSolicitarClienteFiado, permitirFiado]);
 
   useEffect(() => {
     const handleKey = (e) => {
@@ -202,7 +205,7 @@ export default function ModalPago({
               >
                 {"\u{1F4B3}"} Tarjeta
               </button>
-              <button
+              {permitirFiado && <button
                 className={tipoPago === "fiado" ? "activo fiado-activo" : ""}
                 onClick={() => {
                   const telefono = String(clienteData?.telefono || "").replace(/\D/g, "");
@@ -211,7 +214,7 @@ export default function ModalPago({
                 }}
               >
                 🧾 Fiar
-              </button>
+              </button>}
             </div>
 
             {tipoPago !== "fiado" && <div className="pago-input">

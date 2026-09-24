@@ -1,3 +1,4 @@
+import { readPOSFeatureConfig } from "./pos_feature_config.js";
 import { getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { getTenantConfigDocRef, withTenantData } from "./tenant";
 
@@ -26,6 +27,7 @@ export async function obtenerConfigDescuentoManual() {
 }
 
 export async function guardarPasswordDescuentoManual(password) {
+  if (!readPOSFeatureConfig().descuentoAutorizado) throw new Error("El descuento autorizado requiere Premium y estar activado.");
   const limpia = String(password || "").trim();
   if (limpia.length < 4) throw new Error("La contraseña debe tener al menos 4 caracteres.");
 
@@ -44,6 +46,7 @@ export async function guardarPasswordDescuentoManual(password) {
 }
 
 export async function validarPasswordDescuentoManual(password, config = null) {
+  if (!readPOSFeatureConfig().descuentoAutorizado) return false;
   const actual = config || await obtenerConfigDescuentoManual();
   if (!actual.configurado) return false;
   const candidate = await hashPassword(String(password || "").trim(), actual.passwordSalt);

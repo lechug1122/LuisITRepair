@@ -81,15 +81,26 @@ export function resolveTenantId(explicitTenantId = "") {
   const provided = normalizeId(explicitTenantId);
   if (provided) return provided;
 
-  const cached = readTenantContext();
-  if (cached.negocioId) return cached.negocioId;
-  if (cached.cuentaPrincipalUid) return cached.cuentaPrincipalUid;
-
+  let uidActual = "";
   try {
-    return normalizeId(auth?.currentUser?.uid);
+    uidActual = normalizeId(auth?.currentUser?.uid);
   } catch {
-    return "";
+    uidActual = "";
   }
+
+  const cached = readTenantContext();
+  // El almacenamiento local es SOLO cache. Si quedo guardado por otra cuenta
+  // (mismo navegador, otro usuario) no puede decidir el negocio de la sesion
+  // actual: la fuente de verdad es el perfil de Firestore, que reescribe este
+  // contexto en cuanto llega.
+  const cacheDeEstaSesion = !uidActual || !cached.uid || cached.uid === uidActual;
+
+  if (cacheDeEstaSesion) {
+    if (cached.negocioId) return cached.negocioId;
+    if (cached.cuentaPrincipalUid) return cached.cuentaPrincipalUid;
+  }
+
+  return uidActual;
 }
 
 export function allowLegacyTenantFallback() {

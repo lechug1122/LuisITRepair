@@ -1,0 +1,570 @@
+/* ---------------------------------------------------------------------------
+   Modulo de Servicios: piezas compartidas (insignias de estado, linea de
+   tiempo, bloques de seccion).
+
+   TIPOGRAFIA: CajaLibre ya declara Manrope (portada) e Inter (clientes, legal,
+   centro de ayuda) sin descargar ninguna webfont. Se respeta esa decision: el
+   caracter viene del contraste de pesos y del interletrado, no de una fuente
+   nueva que agregue una peticion de red. El par se define aqui y no en
+   `:root`, para no repintar el resto del sistema.
+
+   COLOR: azul marino y azul CajaLibre como base; verde CajaLibre (portada)
+   como unico acento de accion. Los estados tienen su propia escala, derivada
+   del TONO, nunca colores sueltos por pantalla.
+--------------------------------------------------------------------------- */
+
+.sv-modulo{
+  --sv-display: "Manrope", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --sv-texto: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+
+  --sv-tinta: #0d1c33;
+  --sv-tinta-suave: #475b77;
+  --sv-tenue: #7c8ba3;
+  --sv-linea: #dfe6f0;
+  --sv-linea-fuerte: #c3d0e2;
+  --sv-lienzo: #ffffff;
+  --sv-lienzo-suave: #f5f8fc;
+
+  --sv-azul: #1d4ed8;
+  --sv-azul-tinta: #10213f;
+  --sv-verde: #12924f;
+  --sv-verde-fuerte: #0c7a41;
+
+  /* Tonos de estado: tinta / fondo / borde. Un estado nuevo hereda uno de
+     estos; no se inventa un color por estado. */
+  --tono-neutral-tinta:#475569;  --tono-neutral-fondo:#f1f5f9;  --tono-neutral-borde:#cbd5e1;
+  --tono-info-tinta:#1d4ed8;     --tono-info-fondo:#eff6ff;     --tono-info-borde:#bfdbfe;
+  --tono-espera-tinta:#9a5b04;   --tono-espera-fondo:#fff8eb;   --tono-espera-borde:#fcd9a0;
+  --tono-positivo-tinta:#15803d; --tono-positivo-fondo:#f0fdf4; --tono-positivo-borde:#bbf7d0;
+  --tono-activo-tinta:#6d28d9;   --tono-activo-fondo:#f6f4ff;   --tono-activo-borde:#ddd6fe;
+  --tono-destacado-tinta:#04624a;--tono-destacado-fondo:#e7fbf3;--tono-destacado-borde:#8fe3c4;
+  --tono-final-tinta:#0f4c5c;    --tono-final-fondo:#eef6f8;    --tono-final-borde:#b3d6df;
+  --tono-negativo-tinta:#b91c1c; --tono-negativo-fondo:#fef2f2; --tono-negativo-borde:#fecaca;
+  --tono-apagado-tinta:#52606f;  --tono-apagado-fondo:#f3f5f7;  --tono-apagado-borde:#d3dae2;
+
+  font-family: var(--sv-texto);
+  color: var(--sv-tinta);
+}
+
+.sv-modulo h1,
+.sv-modulo h2,
+.sv-modulo h3,
+.sv-modulo .sv-display{
+  font-family: var(--sv-display);
+  letter-spacing: -.022em;
+  font-weight: 800;
+}
+
+/* ---------------------------------------------------------------------------
+   Insignia de estado
+--------------------------------------------------------------------------- */
+
+.sv-badge{
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px 5px 9px;
+  border: 1px solid var(--sv-badge-borde, var(--tono-neutral-borde));
+  border-radius: 8px;
+  background: var(--sv-badge-fondo, var(--tono-neutral-fondo));
+  color: var(--sv-badge-tinta, var(--tono-neutral-tinta));
+  font-family: var(--sv-texto, inherit);
+  font-size: .78rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: .005em;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.sv-badge--neutral  { --sv-badge-tinta:var(--tono-neutral-tinta);   --sv-badge-fondo:var(--tono-neutral-fondo);   --sv-badge-borde:var(--tono-neutral-borde); }
+.sv-badge--info     { --sv-badge-tinta:var(--tono-info-tinta);      --sv-badge-fondo:var(--tono-info-fondo);      --sv-badge-borde:var(--tono-info-borde); }
+.sv-badge--espera   { --sv-badge-tinta:var(--tono-espera-tinta);    --sv-badge-fondo:var(--tono-espera-fondo);    --sv-badge-borde:var(--tono-espera-borde); }
+.sv-badge--positivo { --sv-badge-tinta:var(--tono-positivo-tinta);  --sv-badge-fondo:var(--tono-positivo-fondo);  --sv-badge-borde:var(--tono-positivo-borde); }
+.sv-badge--activo   { --sv-badge-tinta:var(--tono-activo-tinta);    --sv-badge-fondo:var(--tono-activo-fondo);    --sv-badge-borde:var(--tono-activo-borde); }
+.sv-badge--destacado{ --sv-badge-tinta:var(--tono-destacado-tinta); --sv-badge-fondo:var(--tono-destacado-fondo); --sv-badge-borde:var(--tono-destacado-borde); }
+.sv-badge--final    { --sv-badge-tinta:var(--tono-final-tinta);     --sv-badge-fondo:var(--tono-final-fondo);     --sv-badge-borde:var(--tono-final-borde); }
+.sv-badge--negativo { --sv-badge-tinta:var(--tono-negativo-tinta);  --sv-badge-fondo:var(--tono-negativo-fondo);  --sv-badge-borde:var(--tono-negativo-borde); }
+.sv-badge--apagado  { --sv-badge-tinta:var(--tono-apagado-tinta);   --sv-badge-fondo:var(--tono-apagado-fondo);   --sv-badge-borde:var(--tono-apagado-borde); }
+
+/* La forma del punto distingue el estado sin depender del color. */
+.sv-badge-punto{
+  width: 8px;
+  height: 8px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.sv-badge--espera .sv-badge-punto,
+.sv-badge--info .sv-badge-punto{ background: transparent; }
+
+.sv-badge--destacado .sv-badge-punto{
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+
+.sv-badge--negativo .sv-badge-punto,
+.sv-badge--apagado .sv-badge-punto{
+  height: 3px;
+  width: 10px;
+  border-radius: 2px;
+  border: 0;
+}
+
+.sv-badge--grande{
+  padding: 8px 15px 8px 12px;
+  border-radius: 10px;
+  font-size: .95rem;
+  letter-spacing: -.005em;
+}
+
+.sv-badge--grande .sv-badge-punto{ width: 10px; height: 10px; }
+
+/* ---------------------------------------------------------------------------
+   Linea de tiempo
+--------------------------------------------------------------------------- */
+
+.sv-timeline-wrap{ display:flex; flex-direction:column; gap:10px; }
+
+.sv-timeline{
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sv-timeline-item{
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 12px;
+  padding: 0 0 16px;
+}
+
+/* El hilo se dibuja desde la marca hacia abajo; el ultimo no lo lleva. */
+.sv-timeline-item::before{
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 26px;
+  bottom: 0;
+  width: 1px;
+  background: var(--sv-linea);
+}
+
+.sv-timeline-item:last-child{ padding-bottom: 0; }
+.sv-timeline-item:last-child::before{ display: none; }
+
+.sv-timeline-marca{
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  border: 1px solid var(--sv-marca-borde, var(--tono-neutral-borde));
+  border-radius: 9px;
+  background: var(--sv-marca-fondo, var(--tono-neutral-fondo));
+  color: var(--sv-marca-tinta, var(--tono-neutral-tinta));
+  font-size: 13px;
+}
+
+.sv-timeline-item--neutral  { --sv-marca-tinta:var(--tono-neutral-tinta);   --sv-marca-fondo:var(--tono-neutral-fondo);   --sv-marca-borde:var(--tono-neutral-borde); }
+.sv-timeline-item--info     { --sv-marca-tinta:var(--tono-info-tinta);      --sv-marca-fondo:var(--tono-info-fondo);      --sv-marca-borde:var(--tono-info-borde); }
+.sv-timeline-item--espera   { --sv-marca-tinta:var(--tono-espera-tinta);    --sv-marca-fondo:var(--tono-espera-fondo);    --sv-marca-borde:var(--tono-espera-borde); }
+.sv-timeline-item--positivo { --sv-marca-tinta:var(--tono-positivo-tinta);  --sv-marca-fondo:var(--tono-positivo-fondo);  --sv-marca-borde:var(--tono-positivo-borde); }
+.sv-timeline-item--activo   { --sv-marca-tinta:var(--tono-activo-tinta);    --sv-marca-fondo:var(--tono-activo-fondo);    --sv-marca-borde:var(--tono-activo-borde); }
+.sv-timeline-item--destacado{ --sv-marca-tinta:var(--tono-destacado-tinta); --sv-marca-fondo:var(--tono-destacado-fondo); --sv-marca-borde:var(--tono-destacado-borde); }
+.sv-timeline-item--final    { --sv-marca-tinta:var(--tono-final-tinta);     --sv-marca-fondo:var(--tono-final-fondo);     --sv-marca-borde:var(--tono-final-borde); }
+.sv-timeline-item--negativo { --sv-marca-tinta:var(--tono-negativo-tinta);  --sv-marca-fondo:var(--tono-negativo-fondo);  --sv-marca-borde:var(--tono-negativo-borde); }
+.sv-timeline-item--apagado  { --sv-marca-tinta:var(--tono-apagado-tinta);   --sv-marca-fondo:var(--tono-apagado-fondo);   --sv-marca-borde:var(--tono-apagado-borde); }
+
+/* El movimiento vigente lleva un halo, no un color distinto. */
+.sv-timeline-item.es-actual .sv-timeline-marca{
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--sv-marca-tinta) 12%, transparent);
+}
+
+.sv-timeline-item.es-hecho .sv-timeline-marca{
+  background: #fff;
+  color: var(--sv-tenue);
+  border-color: var(--sv-linea);
+}
+
+.sv-timeline-cuerpo{ min-width: 0; padding-top: 2px; }
+
+.sv-timeline-cuerpo strong{
+  display: block;
+  font-family: var(--sv-display, inherit);
+  font-size: .96rem;
+  font-weight: 750;
+  letter-spacing: -.012em;
+  line-height: 1.3;
+}
+
+.sv-timeline-item.es-actual .sv-timeline-cuerpo strong{ color: var(--sv-marca-tinta); }
+
+.sv-timeline-meta{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--sv-tenue);
+  font-size: .78rem;
+}
+
+.sv-timeline-meta em{ font-style: italic; opacity: .85; }
+
+.sv-timeline-origen{
+  padding: 1px 7px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.sv-timeline-origen--cliente{
+  border-color: var(--tono-positivo-borde);
+  background: var(--tono-positivo-fondo);
+  color: var(--tono-positivo-tinta);
+}
+
+.sv-timeline-origen--sistema{
+  border-color: var(--sv-linea);
+  background: var(--sv-lienzo-suave);
+  color: var(--sv-tenue);
+}
+
+.sv-timeline-nota{
+  display: block;
+  margin-top: 5px;
+  padding-left: 9px;
+  border-left: 2px solid var(--sv-linea);
+  color: var(--sv-tinta-suave);
+  font-size: .82rem;
+  line-height: 1.45;
+}
+
+.sv-timeline-mas{
+  align-self: flex-start;
+  padding: 7px 13px;
+  border: 1px solid var(--sv-linea-fuerte);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--sv-azul);
+  font-family: inherit;
+  font-size: .82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color .15s ease-out, background .15s ease-out, transform .15s ease-out;
+}
+
+.sv-timeline-mas:hover{ border-color: var(--sv-azul); background: var(--tono-info-fondo); }
+.sv-timeline-mas:active{ transform: translateY(1px); }
+.sv-timeline-mas:focus-visible{ outline: 2px solid var(--sv-azul); outline-offset: 2px; }
+
+.sv-timeline-vacio{
+  margin: 0;
+  color: var(--sv-tenue);
+  font-size: .88rem;
+}
+
+@media (prefers-reduced-motion: reduce){
+  .sv-modulo *{ transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* ---------------------------------------------------------------------------
+   Encabezado de bloque
+
+   Un bloque agrupa informacion relacionada; NO se convierte cada dato en una
+   tarjeta. El titulo carga el peso tipografico y la bajada explica en una
+   linea que hace la seccion, para no tener que descubrirlo a base de clics.
+--------------------------------------------------------------------------- */
+
+.sv-bloque-encabezado{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.sv-bloque-encabezado h3{
+  margin: 0;
+  font-size: 1.06rem;
+}
+
+.sv-bloque-sub{
+  margin: 4px 0 0;
+  max-width: 62ch;
+  color: var(--sv-tenue);
+  font-size: .84rem;
+  line-height: 1.5;
+}
+
+.sv-bloque-acciones{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sv-bloque-historial{
+  /* El hilo de la linea de tiempo necesita aire propio: sin esto queda
+     pegado al borde del recuadro heredado de `.box`. */
+  padding-bottom: 20px;
+}
+
+/* ---------------------------------------------------------------------------
+   Area de firma
+
+   `touch-action: none` es funcional, no estetico: sin el, arrastrar el dedo
+   sobre el lienzo desplaza la pagina y la firma sale partida.
+--------------------------------------------------------------------------- */
+
+.sv-firma{ display: flex; flex-direction: column; gap: 8px; }
+
+.sv-firma-encabezado{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sv-firma-titulo{
+  font-family: var(--sv-display, inherit);
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--sv-tinta-suave);
+}
+
+.sv-firma-limpiar{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--sv-tinta-suave);
+  font-family: inherit;
+  font-size: .78rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color .15s ease-out, color .15s ease-out;
+}
+
+.sv-firma-limpiar:not(:disabled):hover{ border-color: var(--tono-negativo-borde); color: var(--tono-negativo-tinta); }
+.sv-firma-limpiar:disabled{ opacity: .45; cursor: not-allowed; }
+.sv-firma-limpiar:focus-visible{ outline: 2px solid var(--sv-azul); outline-offset: 2px; }
+
+.sv-firma-lienzo{
+  position: relative;
+  height: clamp(170px, 30vw, 220px);
+  border: 1px solid var(--sv-linea-fuerte);
+  border-radius: 13px;
+  background:
+    linear-gradient(#fff, #fff) padding-box,
+    repeating-linear-gradient(-45deg, #f3f6fa 0 8px, #fff 8px 16px) border-box;
+  overflow: hidden;
+  transition: border-color .18s ease-out, box-shadow .18s ease-out;
+}
+
+.sv-firma-lienzo:not(.es-vacio){
+  border-color: var(--sv-verde);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sv-verde) 12%, transparent);
+}
+
+.sv-firma-lienzo canvas{
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* Sin esto, firmar en movil desplaza la pagina. */
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.sv-firma-guia{
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #b3c0d2;
+  font-family: var(--sv-display, inherit);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  pointer-events: none;
+}
+
+.sv-firma-linea{
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  bottom: 26%;
+  height: 1px;
+  background: var(--sv-linea-fuerte);
+  pointer-events: none;
+}
+
+.sv-firma-ayuda{
+  margin: 0;
+  color: var(--sv-tenue);
+  font-size: .78rem;
+}
+
+.sv-firma-vista{
+  max-width: 100%;
+  max-height: 40vh;
+  padding: 18px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+/* ---------------------------------------------------------------------------
+   Panel de aceptacion (lado del negocio)
+--------------------------------------------------------------------------- */
+
+.sv-aceptacion{ display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+.sv-aceptacion > *{ width: 100%; }
+.sv-aceptacion > .sv-btn{ width: auto; }
+
+.sv-aceptacion-resultado{
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--sv-res-borde);
+  border-left: 3px solid var(--sv-res-tinta);
+  border-radius: 13px;
+  background: var(--sv-res-fondo);
+}
+
+.sv-aceptacion-resultado--ok{
+  --sv-res-tinta: var(--tono-positivo-tinta);
+  --sv-res-fondo: var(--tono-positivo-fondo);
+  --sv-res-borde: var(--tono-positivo-borde);
+}
+
+.sv-aceptacion-resultado--no{
+  --sv-res-tinta: var(--tono-negativo-tinta);
+  --sv-res-fondo: var(--tono-negativo-fondo);
+  --sv-res-borde: var(--tono-negativo-borde);
+}
+
+.sv-aceptacion-resultado > div{ flex: 1; min-width: 180px; }
+
+.sv-aceptacion-resultado strong{
+  display: block;
+  margin-bottom: 8px;
+  font-family: var(--sv-display, inherit);
+  font-size: 1.02rem;
+  color: var(--sv-res-tinta);
+  letter-spacing: -.015em;
+}
+
+.sv-aceptacion-icono{ color: var(--sv-res-tinta); font-size: 22px; line-height: 1; }
+
+.sv-aceptacion-resultado dl{ display: grid; gap: 5px; margin: 0; }
+.sv-aceptacion-resultado dl > div{ display: flex; flex-wrap: wrap; gap: 6px; }
+.sv-aceptacion-resultado dt{ min-width: 84px; color: var(--sv-tenue); font-size: .8rem; }
+.sv-aceptacion-resultado dd{ margin: 0; font-size: .85rem; font-weight: 650; }
+
+.sv-aceptacion-espera{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 15px 16px;
+  border: 1px solid var(--tono-espera-borde);
+  border-radius: 13px;
+  background: var(--tono-espera-fondo);
+}
+
+.sv-aceptacion-espera p{ margin: 0; color: var(--sv-tinta-suave); font-size: .85rem; }
+
+.sv-aceptacion-vacia{
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 13px;
+  background: var(--sv-lienzo-suave);
+}
+
+.sv-aceptacion-vacia > span{ color: var(--sv-tenue); font-size: 20px; line-height: 1; }
+.sv-aceptacion-vacia strong{ display: block; margin-bottom: 4px; font-family: var(--sv-display, inherit); }
+.sv-aceptacion-vacia p{ margin: 0; max-width: 62ch; color: var(--sv-tinta-suave); font-size: .85rem; line-height: 1.55; }
+
+.sv-aceptacion-nota{
+  margin: 0;
+  max-width: 68ch;
+  color: var(--sv-tenue);
+  font-size: .8rem;
+  line-height: 1.55;
+}
+
+.sv-aceptacion-enlace{
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px;
+  border: 1px dashed var(--sv-linea-fuerte);
+  border-radius: 12px;
+  background: var(--sv-lienzo-suave);
+}
+
+.sv-aceptacion-enlace code{
+  display: block;
+  padding: 10px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--sv-azul);
+  font-size: .75rem;
+  /* El enlace es largo por diseño: se parte en vez de desbordar. */
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.sv-aceptacion-enlace-acciones{ display: flex; flex-wrap: wrap; gap: 8px; }
+.sv-aceptacion-enlace-acciones .sv-btn{ text-decoration: none; }
+
+.sv-aceptacion-historial summary{
+  cursor: pointer;
+  color: var(--sv-tinta-suave);
+  font-size: .82rem;
+  font-weight: 650;
+}
+
+.sv-aceptacion-historial summary:focus-visible{ outline: 2px solid var(--sv-azul); outline-offset: 2px; }
+
+.sv-aceptacion-historial ul{
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sv-aceptacion-historial li{
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.sv-aceptacion-historial small{ color: var(--sv-tenue); font-size: .76rem; }

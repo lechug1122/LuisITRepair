@@ -1,4 +1,8 @@
 import { db } from "../../initializer/firebase";
+import { getTicketPlan } from "./ticket_plan.js";
+import { readPOSFeatureConfig } from "./pos_feature_config.js";
+import { obtenerServiciosConfig } from "./configure_servicios.js";
+import { canUseServiceDeposits } from "./plan_features.js";
 import {
   addDoc,
   getDoc,
@@ -233,6 +237,9 @@ export const buscarClientePorTelefono = async (telefono) => {
 
 
 export const sumarPuntosCliente = async (clienteId, puntosNuevos) => {
+  if (getTicketPlan() !== "premium" || (await obtenerServiciosConfig()).habilitarCanjes !== false) {
+    throw new Error("Los canjes y puntos requieren Premium y estar activados.");
+  }
 
   const ref = getDocRef("clientes", clienteId);
 
@@ -263,6 +270,19 @@ export const sumarPuntosCliente = async (clienteId, puntosNuevos) => {
 /* ================= VENTAS ================= */
 
 export const registrarVenta = async (data) => {
+  if (data.productos?.some((item) => item.esAbonoServicio)
+    && !canUseServiceDeposits({ premiumState: getTicketPlan() })) {
+    throw new Error("Abonar servicio está disponible con CajaLibre Premium.");
+  }
+  const features = readPOSFeatureConfig();
+  if (data.tipoPago === "fiado" && !features.fiado) throw new Error("Las ventas fiadas requieren Premium y estar activadas.");
+  if (Number(data.descuentoManual) > 0 && !features.descuentoAutorizado) throw new Error("El descuento autorizado requiere Premium y estar activado.");
+  if ((Number(data.descuentoRegla) > 0 || data.promocionDescuentoAplicado) && !features.promocionesDescuentos) throw new Error("Los descuentos y promociones requieren Premium y estar activados.");
+  if (Number(data.puntosCanjeados) > 0 || Number(data.descuentoPuntos) > 0) {
+    if (getTicketPlan() !== "premium" || (await obtenerServiciosConfig()).habilitarCanjes !== false) {
+      throw new Error("Los canjes requieren Premium y estar activados.");
+    }
+  }
   const docRef = await addDoc(getCollectionRef("ventas"), withTenantData(data));
   return docRef.id;
 };

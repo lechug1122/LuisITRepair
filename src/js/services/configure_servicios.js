@@ -6,6 +6,8 @@ import {
   getTenantConfigDocRef,
   withTenantData,
 } from "./tenant";
+import { PLAN_PREMIUM } from "./plan_features.js";
+import { getTicketPlan } from "./ticket_plan.js";
 
 const SERVICIOS_STORAGE_KEY = "servicios_config_cache_v1";
 
@@ -31,6 +33,7 @@ export const DEFAULT_RETARDO_CONFIG = {
 
 export const DEFAULT_HOJA_SERVICIO_CONFIG = {
   habilitada: true,
+  terminosPersonalizados: true,
   terminos: [...DEFAULT_TERMINOS_SERVICIO],
   retardo: { ...DEFAULT_RETARDO_CONFIG },
 };
@@ -39,12 +42,23 @@ export const DEFAULT_SERVICIOS_CONFIG = {
   precioRevision: 0,
   habilitarCanjes: true,
   catalogoCanjes: [],
+  trackingEnabled: false,
   hojaServicio: {
     ...DEFAULT_HOJA_SERVICIO_CONFIG,
     terminos: [...DEFAULT_HOJA_SERVICIO_CONFIG.terminos],
     retardo: { ...DEFAULT_HOJA_SERVICIO_CONFIG.retardo },
   },
 };
+
+export function isServiceReturnsLegend(value) {
+  const normalized = String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized.includes("se aceptan devoluciones");
+}
 
 function toMoney(value, fallback = 0) {
   const n = Number(String(value ?? "").replace(/[^\d.]/g, ""));
@@ -115,6 +129,7 @@ export function normalizeRetardoConfig(raw = {}) {
 export function normalizeHojaServicioConfig(raw = {}) {
   return {
     habilitada: toBoolean(raw?.habilitada, DEFAULT_HOJA_SERVICIO_CONFIG.habilitada),
+    terminosPersonalizados: toBoolean(raw?.terminosPersonalizados, true),
     terminos: normalizeTerminos(raw?.terminos),
     retardo: normalizeRetardoConfig(raw?.retardo),
   };
@@ -142,6 +157,7 @@ export function describeRetardoConfig(retardoRaw = {}) {
 export function normalizeServiciosConfig(raw = {}) {
   return {
     precioRevision: toMoney(raw?.precioRevision, DEFAULT_SERVICIOS_CONFIG.precioRevision),
+    trackingEnabled: toBoolean(raw?.trackingEnabled, DEFAULT_SERVICIOS_CONFIG.trackingEnabled),
     habilitarCanjes: toBoolean(
       raw?.habilitarCanjes,
       DEFAULT_SERVICIOS_CONFIG.habilitarCanjes,
@@ -256,7 +272,25 @@ export function escucharServiciosConfig(callback, onError) {
 
 export async function actualizarServiciosConfig(config) {
   const serviciosRef = getTenantConfigDocRef("servicios");
-  const normalized = normalizeServiciosConfig(config);
+  const requested = normalizeServiciosConfig(config);
+  const premiumState = getTicketPlan();
+  if (premiumState === "loading") throw new Error("Espera a que se confirme el plan del negocio.");
+  const saved = premiumState === PLAN_PREMIUM ? null : await obtenerServiciosConfig();
+  const normalized = premiumState === PLAN_PREMIUM
+    ? requested
+    : {
+        ...requested,
+        // Free no puede alterar la preferencia histórica. El valor se conserva
+        // para una posible renovación, pero el permiso efectivo sigue apagado.
+        trackingEnabled: saved.trackingEnabled,
+        habilitarCanjes: saved.habilitarCanjes,
+        catalogoCanjes: saved.catalogoCanjes,
+        hojaServicio: {
+          ...requested.hojaServicio,
+          terminos: saved.hojaServicio.terminos,
+          terminosPersonalizados: saved.hojaServicio.terminosPersonalizados,
+        },
+      };
 
   saveServiciosConfigCache(normalized);
   await setDoc(
@@ -267,6 +301,18 @@ export async function actualizarServiciosConfig(config) {
     },
     { merge: true },
   );
+
+  if (premiumState === PLAN_PREMIUM && normalized.trackingEnabled) {
+    try {
+      const { sincronizarRastreoServiciosPublicos } = await import("./servicios_firestore.js");
+      await sincronizarRastreoServiciosPublicos();
+    } catch (error) {
+      // La preferencia ya quedó guardada. Un servicio se vuelve a sincronizar
+      // también cuando se crea o cambia de estado, por lo que no se destruye
+      // ni se bloquea la operación básica ante un fallo transitorio.
+      console.warn("[servicios-config] No se pudo actualizar el rastreador público:", error?.code || error);
+    }
+  }
 
   return normalized;
 }

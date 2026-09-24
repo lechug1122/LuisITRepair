@@ -35,12 +35,6 @@ export default function AdPanel({ placement = "dashboard" }) {
     };
   }, [adPlacement]);
   const src = `${AD_FRAME_ORIGIN}/ad-frame.html?placement=${adPlacement}`;
-  const handleLoad = () => {
-    if (import.meta.env.DEV) {
-      console.log(`[ADS] iframe ${adPlacement} cargado`);
-      console.log("[ADS] iframe src:", src);
-    }
-  };
   // El espacio publicitario permanece montado y con el mismo tamano siempre:
   // si el proveedor falla, tarda o esta bloqueado, se conserva UNICAMENTE la
   // etiqueta "Publicidad" (sin un segundo texto/placeholder) para no generar
@@ -62,7 +56,6 @@ export default function AdPanel({ placement = "dashboard" }) {
         width={width}
         height={height}
         className="ad-frame"
-        onLoad={handleLoad}
       />
     </aside>
   );

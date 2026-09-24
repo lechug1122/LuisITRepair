@@ -7,11 +7,7 @@ class AdBoundary extends Component {
   render() { return this.state.failed ? null : this.props.children; }
 }
 export default function Advertising({ placement }) {
-  const { puedeMostrarPublicidad, isPremium } = useAutorizacionActual();
-  if (import.meta.env.DEV) {
-    console.log("[ADS] isPremium:", isPremium);
-    console.log("[ADS] mostrar publicidad:", puedeMostrarPublicidad);
-  }
+  const { puedeMostrarPublicidad } = useAutorizacionActual();
   if (!puedeMostrarPublicidad) return null;
   return <AdBoundary><Suspense fallback={null}><AdPanel placement={placement} /></Suspense></AdBoundary>;
 }

@@ -14,6 +14,12 @@ import {
 } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
 import { resolveTenantId, withTenantData } from "./tenant";
+import {
+  canUseRestaurantActivityPayments,
+  canUseRestaurantCookLimit,
+  canUseRestaurantReservations,
+} from "./plan_features.js";
+import { getTicketPlan } from "./ticket_plan.js";
 
 const COLLECTION = "restaurante_ordenes";
 const TABLE_GROUPS_CONFIG = "restaurante_grupos_mesas";
@@ -197,12 +203,28 @@ export function normalizeOperacionRestaurante(raw = {}) {
   };
 }
 
+export function aplicarPlanOperacionRestaurante(raw = {}, premiumState = getTicketPlan()) {
+  const current = normalizeOperacionRestaurante(raw);
+  if (!canUseRestaurantCookLimit({ premiumState })) {
+    current.limiteCocineroActivo = false;
+  }
+  if (!canUseRestaurantActivityPayments({ premiumState })) {
+    current.pagosPersonalActivos = false;
+    current.porcentajeMesero = 0;
+    current.porcentajeCocinero = 0;
+  }
+  return current;
+}
+
 export function escucharOperacionRestaurante(tenantId = "", onData, onError) {
   const negocioId = resolveTenantId(tenantId);
   if (!negocioId) return () => {};
 
   return onSnapshot(
     getDocRef("configuracion", `${OPERATION_CONFIG}__${negocioId}`),
+    // Se entrega la preferencia histórica sin alterarla. Cada consumidor
+    // combina estos datos con el permiso efectivo actual; así una renovación
+    // Premium recupera la configuración sin esperar otra escritura Firestore.
     (snapshot) => onData?.(normalizeOperacionRestaurante(snapshot.exists() ? snapshot.data() : {})),
     onError,
   );
@@ -211,17 +233,24 @@ export function escucharOperacionRestaurante(tenantId = "", onData, onError) {
 export async function guardarOperacionRestaurante(data = {}, tenantId = "") {
   const negocioId = resolveTenantId(tenantId);
   if (!negocioId) throw new Error("No se pudo identificar el negocio.");
+  const premiumState = getTicketPlan();
   const current = normalizeOperacionRestaurante(data);
+  const puedeConfigurarLimite = canUseRestaurantCookLimit({ premiumState });
+  const puedeConfigurarPagos = canUseRestaurantActivityPayments({ premiumState });
 
   await setDoc(
     getDocRef("configuracion", `${OPERATION_CONFIG}__${negocioId}`),
     withTenantData({
-      limiteCocineroActivo: current.limiteCocineroActivo,
-      maxPlatillosPorCocinero: current.maxPlatillosPorCocinero,
       minutosAlertaCocina: current.minutosAlertaCocina,
-      pagosPersonalActivos: current.pagosPersonalActivos,
-      porcentajeMesero: current.porcentajeMesero,
-      porcentajeCocinero: current.porcentajeCocinero,
+      ...(puedeConfigurarLimite ? {
+        limiteCocineroActivo: current.limiteCocineroActivo,
+        maxPlatillosPorCocinero: current.maxPlatillosPorCocinero,
+      } : {}),
+      ...(puedeConfigurarPagos ? {
+        pagosPersonalActivos: current.pagosPersonalActivos,
+        porcentajeMesero: current.porcentajeMesero,
+        porcentajeCocinero: current.porcentajeCocinero,
+      } : {}),
       updatedAt: serverTimestamp(),
     }, negocioId),
     { merge: true },
@@ -314,6 +343,10 @@ const SHIFTS_COLLECTION = "restaurante_turnos";
 export function escucharReservacionesRestaurante(tenantId = "", onItems, onError) {
   const negocioId = resolveTenantId(tenantId);
   if (!negocioId) return () => {};
+  if (!canUseRestaurantReservations({ premiumState: getTicketPlan() })) {
+    onItems?.([]);
+    return () => {};
+  }
   return onSnapshot(
     query(getCollectionRef(RESERVATIONS_COLLECTION, negocioId), where("cuentaPrincipalUid", "==", negocioId)),
     (snapshot) => onItems?.(snapshot.docs
@@ -324,6 +357,9 @@ export function escucharReservacionesRestaurante(tenantId = "", onItems, onError
 }
 
 export async function guardarReservacionRestaurante(data = {}, tenantId = "") {
+  if (!canUseRestaurantReservations({ premiumState: getTicketPlan() })) {
+    throw new Error("Las reservaciones están disponibles con CajaLibre Premium.");
+  }
   const negocioId = resolveTenantId(tenantId);
   if (!negocioId) throw new Error("No se pudo identificar el negocio.");
   const payload = withTenantData({
@@ -350,6 +386,9 @@ export async function guardarReservacionRestaurante(data = {}, tenantId = "") {
 }
 
 export async function actualizarEstadoReservacionRestaurante(id, estado) {
+  if (!canUseRestaurantReservations({ premiumState: getTicketPlan() })) {
+    throw new Error("Las reservaciones están disponibles con CajaLibre Premium.");
+  }
   await updateDoc(getDocRef(RESERVATIONS_COLLECTION, String(id)), {
     estado: String(estado || "reservada"),
     updatedAt: serverTimestamp(),

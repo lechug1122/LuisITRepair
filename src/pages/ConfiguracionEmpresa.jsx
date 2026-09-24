@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { FiArrowRight, FiStar } from "react-icons/fi";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
+import useServiciosConfig from "../hooks/useServiciosConfig";
+import PremiumFeatureModal from "../components/PremiumFeatureModal";
 import { actualizarEmpresaConfig } from "../js/services/configure_empresa";
+import { actualizarServiciosConfig } from "../js/services/configure_servicios";
+import { getRestaurantPlanLimits } from "../js/services/plan_features";
 import { LOGO_EXTENSIONES, procesarArchivoLogo } from "../js/services/empresa_logo";
 import {
   buildCampoHojaVacio,
@@ -36,7 +41,7 @@ function cloneEmpresaConfig(config) {
             nombre: String(piso?.nombre || `Piso ${index + 1}`),
             cantidadMesas: Math.max(1, Number(piso?.cantidadMesas) || 1),
           }))
-        : [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 12 }],
+        : [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 10 }],
     },
   };
 }
@@ -78,7 +83,15 @@ export default function ConfiguracionEmpresa() {
   const { empresa } = useEmpresaConfig();
   // isPremium solo es true cuando el plan esta confirmado, asi que mientras
   // carga el logo queda bloqueado (falla del lado seguro).
-  const { isPremium } = useAutorizacionActual();
+  const { isPremium, premiumState } = useAutorizacionActual();
+  // El rastreo QR vive en config/servicios; aqui solo se expone el interruptor
+  // para el tipo de negocio activo, sin duplicar el resto de esa configuracion.
+  const {
+    config: serviciosConfig,
+    trackingEnabled: rastreoQrGuardado,
+    loading: serviciosConfigLoading,
+  } = useServiciosConfig();
+  const limitesRestaurante = getRestaurantPlanLimits({ premiumState });
   const [draft, setDraft] = useState(() => cloneEmpresaConfig(empresa));
   const [tipoEditorId, setTipoEditorId] = useState(() => String(empresa?.tipoNegocioId || ""));
   const [mostrarEditorTipo, setMostrarEditorTipo] = useState(false);
@@ -87,6 +100,11 @@ export default function ConfiguracionEmpresa() {
   const [errorDetalle, setErrorDetalle] = useState("");
   const [errorLogo, setErrorLogo] = useState("");
   const [procesandoLogo, setProcesandoLogo] = useState(false);
+  const [modalRestaurantePremium, setModalRestaurantePremium] = useState(false);
+  const [modalRastreoPremium, setModalRastreoPremium] = useState(false);
+  const [rastreoQr, setRastreoQr] = useState(rastreoQrGuardado);
+  const [guardandoRastreo, setGuardandoRastreo] = useState(false);
+  const [mensajeRastreo, setMensajeRastreo] = useState("");
   const editorRef = useRef(null);
   const logoInputRef = useRef(null);
   const didMountEditorRef = useRef(false);
@@ -99,6 +117,10 @@ export default function ConfiguracionEmpresa() {
   }, [empresa]);
 
   useEffect(() => {
+    setRastreoQr(rastreoQrGuardado);
+  }, [rastreoQrGuardado]);
+
+  useEffect(() => {
     if (!didMountEditorRef.current) {
       didMountEditorRef.current = true;
       return;
@@ -107,7 +129,7 @@ export default function ConfiguracionEmpresa() {
     editorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [mostrarEditorTipo, tipoEditorId]);
 
-  const tiposNegocio = draft.tiposNegocio || [];
+  const tiposNegocio = useMemo(() => draft.tiposNegocio || [], [draft.tiposNegocio]);
   const tipoActivo =
     tiposNegocio.find((item) => item.id === draft.tipoNegocioId) || tiposNegocio[0] || null;
   const tipoEnEdicion =
@@ -149,38 +171,92 @@ export default function ConfiguracionEmpresa() {
   }
 
   function handleCantidadPisosChange(rawValue) {
-    const cantidad = Math.min(20, Math.max(1, Number(rawValue) || 1));
+    if (!isPremium) {
+      setModalRestaurantePremium(true);
+      return;
+    }
+    const cantidad = Math.min(limitesRestaurante.maxPisos, Math.max(1, Number(rawValue) || 1));
     setDraft((prev) => {
       const actuales = prev.restaurante?.pisos || [];
       const pisos = Array.from({ length: cantidad }, (_, index) => (
         actuales[index] || {
           id: `piso-${index + 1}`,
           nombre: `Piso ${index + 1}`,
-          cantidadMesas: 12,
+          cantidadMesas: 10,
         }
       ));
       return { ...prev, restaurante: { ...prev.restaurante, pisos } };
     });
   }
 
+  async function handleRastreoQrChange(valor) {
+    // Free nunca escribe la preferencia: el servicio la conserva, pero el
+    // permiso efectivo sigue apagado, asi que aqui ni siquiera se intenta.
+    if (!isPremium || guardandoRastreo || serviciosConfigLoading) return;
+
+    const anterior = rastreoQr;
+    setRastreoQr(valor);
+    setGuardandoRastreo(true);
+    setMensajeRastreo("");
+
+    try {
+      await actualizarServiciosConfig({ ...serviciosConfig, trackingEnabled: valor });
+      setMensajeRastreo(valor ? "Rastreo mediante QR activado." : "Rastreo mediante QR desactivado.");
+      window.setTimeout(() => setMensajeRastreo(""), 2500);
+    } catch (error) {
+      console.error("No se pudo actualizar el rastreo QR:", error);
+      setRastreoQr(anterior);
+      setMensajeRastreo("No se pudo guardar el cambio. Intenta de nuevo.");
+    } finally {
+      setGuardandoRastreo(false);
+    }
+  }
+
   function handlePisoChange(index, key, value) {
-    setDraft((prev) => ({
-      ...prev,
-      restaurante: {
-        ...prev.restaurante,
-        pisos: prev.restaurante.pisos.map((piso, pisoIndex) => (
-          pisoIndex === index
-            ? { ...piso, [key]: key === "cantidadMesas" ? Math.min(200, Math.max(1, Number(value) || 1)) : value }
-            : piso
-        )),
-      },
-    }));
+    setDraft((prev) => {
+      const pisoActual = prev.restaurante.pisos[index];
+      const cantidadSolicitada = Math.max(1, Number(value) || 1);
+      const mesasActuales = prev.restaurante.pisos.reduce(
+        (total, piso) => total + Number(piso?.cantidadMesas || 0),
+        0,
+      );
+      const mesasPropuestas = mesasActuales
+        - Number(pisoActual?.cantidadMesas || 0)
+        + cantidadSolicitada;
+      const intentaIncrementarFueraDeLimite = key === "cantidadMesas"
+        && !isPremium
+        && mesasPropuestas > limitesRestaurante.maxMesasTotal
+        && mesasPropuestas > mesasActuales;
+
+      if (intentaIncrementarFueraDeLimite) {
+        setModalRestaurantePremium(true);
+        return prev;
+      }
+
+      return {
+        ...prev,
+        restaurante: {
+          ...prev.restaurante,
+          pisos: prev.restaurante.pisos.map((piso, pisoIndex) => (
+            pisoIndex === index
+              ? {
+                  ...piso,
+                  [key]: key === "cantidadMesas"
+                    ? (isPremium
+                        ? Math.min(limitesRestaurante.maxMesasPorPiso, cantidadSolicitada)
+                        : cantidadSolicitada)
+                    : value,
+                }
+              : piso
+          )),
+        },
+      };
+    });
   }
 
   function handleImportPreset(presetId) {
     const preset = findTipoNegocioPreset(presetId);
     if (!preset) return;
-
     setDraft((prev) => {
       if (prev.tiposNegocio.some((item) => item.id === preset.id)) {
         setTipoEditorId(preset.id);
@@ -189,7 +265,6 @@ export default function ConfiguracionEmpresa() {
       }
 
       const nextTypes = [...prev.tiposNegocio, preset];
-      setTipoEditorId(preset.id);
       setMostrarEditorTipo(true);
       return {
         ...prev,
@@ -432,10 +507,28 @@ export default function ConfiguracionEmpresa() {
               id="restaurante-cantidad-pisos"
               type="number"
               min="1"
-              max="20"
+              max={limitesRestaurante.maxPisos}
               value={draft.restaurante.pisos.length}
               onChange={(event) => handleCantidadPisosChange(event.target.value)}
+              disabled={!isPremium}
             />
+            {!isPremium && (
+              <button
+                type="button"
+                className="cfg-premium-inline"
+                onClick={() => setModalRestaurantePremium(true)}
+              >
+                <span className="cfg-premium-inline-badge">
+                  <FiStar aria-hidden="true" />
+                  Free
+                </span>
+                <span className="cfg-premium-inline-text">Incluye 1 piso y hasta 10 mesas</span>
+                <span className="cfg-premium-inline-cta">
+                  Conocer Premium
+                  <FiArrowRight aria-hidden="true" />
+                </span>
+              </button>
+            )}
             <div className="cfg-restaurant-floors">
               {draft.restaurante.pisos.map((piso, index) => (
                 <div className="cfg-restaurant-floor" key={piso.id}>
@@ -446,6 +539,7 @@ export default function ConfiguracionEmpresa() {
                       type="text"
                       value={piso.nombre}
                       maxLength={40}
+                      disabled={!isPremium && index >= limitesRestaurante.maxPisos}
                       onChange={(event) => handlePisoChange(index, "nombre", event.target.value)}
                     />
                   </label>
@@ -454,17 +548,82 @@ export default function ConfiguracionEmpresa() {
                     <input
                       type="number"
                       min="1"
-                      max="200"
+                      max={limitesRestaurante.maxMesasPorPiso}
                       value={piso.cantidadMesas}
+                      disabled={!isPremium && index >= limitesRestaurante.maxPisos}
                       onChange={(event) => handlePisoChange(index, "cantidadMesas", event.target.value)}
                     />
                   </label>
+                  {!isPremium && index >= limitesRestaurante.maxPisos && (
+                    <small className="cfg-pos-help">Piso heredado: no se pueden crear pisos adicionales en Free.</small>
+                  )}
                 </div>
               ))}
             </div>
           </div>
         </div>
       )}
+
+      {serviciosActivosEnEmpresa && (
+        <div className="cfg-pos-card cfg-empresa-card cfg-empresa-editor-card cfg-qr-card" id="rastreo-servicios-empresa">
+          <div className="cfg-ticket-block cfg-ticket-block-wide">
+            <div className="cfg-empresa-section-head">
+              <div>
+                <h4>Rastreo de servicios mediante QR</h4>
+                <p>
+                  Permite que tus clientes consulten el estado de su servicio con un codigo QR y su
+                  folio, sin exponer datos internos del negocio.
+                </p>
+              </div>
+            </div>
+            <label className="cfg-check-row cfg-qr-toggle">
+              <input
+                type="checkbox"
+                checked={isPremium && rastreoQr}
+                disabled={!isPremium || serviciosConfigLoading || guardandoRastreo}
+                onChange={(event) => handleRastreoQrChange(event.target.checked)}
+              />
+              <span>{isPremium ? "Activar rastreo mediante QR" : "Rastreo mediante QR · Premium"}</span>
+            </label>
+            {isPremium && mensajeRastreo ? (
+              <small className="cfg-pos-saved cfg-qr-flash">{mensajeRastreo}</small>
+            ) : null}
+            {!isPremium && (
+              <button
+                type="button"
+                className="cfg-premium-inline"
+                onClick={() => setModalRastreoPremium(true)}
+              >
+                <span className="cfg-premium-inline-badge">
+                  <FiStar aria-hidden="true" />
+                  Free
+                </span>
+                <span className="cfg-premium-inline-text">El rastreo QR esta disponible en Premium</span>
+                <span className="cfg-premium-inline-cta">
+                  Conocer Premium
+                  <FiArrowRight aria-hidden="true" />
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <PremiumFeatureModal
+        abierto={modalRastreoPremium}
+        titulo="Rastreo de Servicios"
+        mensaje="Permite que tus clientes consulten el estado de sus servicios mediante QR, folio y una pagina personalizada."
+        textoSecundario="Ahora no"
+        onCerrar={() => setModalRastreoPremium(false)}
+      />
+
+      <PremiumFeatureModal
+        abierto={modalRestaurantePremium}
+        titulo="Amplía la distribución de tu restaurante"
+        mensaje="CajaLibre Free incluye un piso y hasta 10 mesas. Con Premium puedes configurar más pisos y ampliar el mapa de mesas."
+        textoSecundario="Ahora no"
+        onCerrar={() => setModalRestaurantePremium(false)}
+      />
 
       <div className="cfg-pos-card cfg-empresa-card cfg-empresa-editor-card">
         <div className="cfg-ticket-block cfg-ticket-block-wide">

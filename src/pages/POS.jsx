@@ -77,7 +77,9 @@ import { escucharPromocionesDescuentos } from "../js/services/promociones_descue
 import { registrarPagoFiado, registrarVentaFiada } from "../js/services/fiados_firestore";
 import { calcularRecargoTarjeta } from "../js/services/tarjeta_recargo_config";
 import { generarPdfBoletaVenta } from "../js/services/pdf_boleta_venta";
-import { readPOSFeatureConfig } from "../js/services/pos_feature_config";
+import usePOSFeatures from "../hooks/usePOSFeatures";
+import { getPOSQuickActions } from "../js/services/pos_quick_actions";
+import { canUseServiceDeposits } from "../js/services/plan_features";
 import {
   actualizarCotizacion,
   eliminarCotizacion,
@@ -260,8 +262,20 @@ export default function POS() {
   const { habilitarCanjes, catalogoCanjes } = useServiciosConfig();
   const { config: tarjetaRecargoConfig } = useTarjetaRecargoConfig();
   const { imprimirAlCobrar } = useImpresorasConfig();
-  const { puede, isPremium } = useAutorizacionActual();
-  const [funcionesPOS] = useState(readPOSFeatureConfig);
+  const { puede, isPremium, premiumState } = useAutorizacionActual();
+  const puedeAbonarServicio = canUseServiceDeposits({ premiumState });
+  const funcionesPOS = usePOSFeatures();
+  const accionesRapidas = useMemo(() => getPOSQuickActions({
+    serviciosHabilitados,
+    premiumState,
+    funcionesPOS: {
+      promocionesDescuentos: funcionesPOS.promocionesDescuentos,
+      fiado: funcionesPOS.fiado,
+      descuentoAutorizado: funcionesPOS.descuentoAutorizado,
+    },
+  }), [serviciosHabilitados, premiumState, funcionesPOS.promocionesDescuentos, funcionesPOS.fiado, funcionesPOS.descuentoAutorizado]);
+  const atajosAcciones = Object.fromEntries(accionesRapidas.map(({ id, tecla }) => [id, tecla]));
+  const rangoAtajos = `F1–F${accionesRapidas.length}`;
   const mostrarProgramaCliente = !habilitarCanjes;
   const vistaParamPOS = searchParams.get("vista");
   const vistaPOS = ["clientes", "cotizacion"].includes(vistaParamPOS)
@@ -818,7 +832,7 @@ export default function POS() {
   };
 
   const abrirSelectorAbonosServicio = async () => {
-    if (!serviciosHabilitados) return;
+    if (!serviciosHabilitados || !puedeAbonarServicio) return;
     if (cajaCerradaHoy || faltaFondoInicial) {
       if (cajaCerradaHoy) alert("La caja de hoy ya esta cerrada.");
       else setMostrarAperturaModal(true);
@@ -838,12 +852,14 @@ export default function POS() {
   };
 
   const seleccionarServicioParaAbono = (servicio) => {
+    if (!puedeAbonarServicio) return;
     setMostrarSelectorAbono(false);
     setServicioParaAbono(servicio);
     setMontoAbonoServicio("");
   };
 
   const agregarAbonoServicioAlCarrito = async () => {
+    if (!puedeAbonarServicio) return;
     const monto = Math.round(Number(String(montoAbonoServicio).replace(",", ".")) * 100) / 100;
     if (!servicioParaAbono || !Number.isFinite(monto) || monto <= 0) {
       alert("Ingresa un abono mayor que cero.");
@@ -873,11 +889,15 @@ export default function POS() {
 
   useEffect(() => {
     const folioAbono = String(searchParams.get("abonarServicio") || "").trim();
-    if (!folioAbono || !serviciosHabilitados) return;
+    if (!folioAbono || !serviciosHabilitados || !puedeAbonarServicio) return;
     let cancelado = false;
     buscarServicioPorFolio(folioAbono)
       .then((servicio) => {
-        if (!cancelado && servicio && !servicio.cobradoEnPOS) seleccionarServicioParaAbono(servicio);
+        if (!cancelado && servicio && !servicio.cobradoEnPOS) {
+          setMostrarSelectorAbono(false);
+          setServicioParaAbono(servicio);
+          setMontoAbonoServicio("");
+        }
       })
       .catch((error) => console.error("No se pudo abrir el servicio para abono:", error))
       .finally(() => {
@@ -888,7 +908,7 @@ export default function POS() {
         }
       });
     return () => { cancelado = true; };
-  }, [searchParams, serviciosHabilitados, setSearchParams]);
+  }, [searchParams, serviciosHabilitados, puedeAbonarServicio, setSearchParams]);
 
   const vincularClienteDesdeServicio = async (servicio) => {
     const telefonoServicio = String(servicio?.telefono || "").trim();
@@ -1297,6 +1317,7 @@ export default function POS() {
   };
 
   const agregarPagoFiadoAlCarrito = (cuenta, monto) => {
+    if (!funcionesPOS.fiado) return;
     if (carrito.some((item) => item.esPagoFiado && item.fiadoId === cuenta.id)) {
       alert("Esta cuenta de fiado ya está agregada al cobro.");
       return;
@@ -1412,7 +1433,7 @@ export default function POS() {
   );
 
   const canjeActivo = Boolean(
-    clienteData && preferenciaCanje === "canjear" && canjeSeleccionado,
+    mostrarProgramaCliente && clienteData && preferenciaCanje === "canjear" && canjeSeleccionado,
   );
 
   useEffect(() => {
@@ -1420,25 +1441,33 @@ export default function POS() {
       // El modal de cobro tiene sus propios atajos. Mientras esté abierto,
       // F1 debe confirmar el pago y no ejecutar "Venta extra" en segundo plano.
       if (mostrarPago) return;
-      // F5 pertenece a "Abonar servicio" dentro del POS; evita recargar la página.
-      if (event.key === "F5" && serviciosHabilitados) event.preventDefault();
+      const accionRapida = accionesRapidas.find(({ tecla }) => tecla === event.key);
+      // Evita recargar la p?gina si F5 corresponde a una acci?n disponible.
+      if (event.key === "F5" && accionRapida) event.preventDefault();
       const tag = String(event.target?.tagName || "").toLowerCase();
       if (["input", "textarea", "select"].includes(tag) || event.target?.isContentEditable) return;
       if (document.querySelector('[role="dialog"]:not(.pos-quick-actions-modal)')) return;
       const cajaBloqueada = cajaCerradaHoy || faltaFondoInicial;
-      if (/^F[1-7]$/.test(event.key)) setMostrarAccionesRapidas(false);
-      if (event.key === "F1" && !cajaBloqueada) { event.preventDefault(); setMostrarVentaExtra(true); }
-      if (event.key === "F2" && funcionesPOS.promocionesDescuentos) { event.preventDefault(); setMostrarPromociones(true); }
-      if (event.key === "F3" && serviciosHabilitados && !cajaBloqueada) { event.preventDefault(); abrirSelectorServiciosListos(); }
-      if (event.key === "F4" && funcionesPOS.fiado && !cajaBloqueada) { event.preventDefault(); setMostrarPagoFiado(true); }
-      if (event.key === "F5" && serviciosHabilitados && !cajaBloqueada) { event.preventDefault(); abrirSelectorAbonosServicio(); }
-      if (event.key === "F6" && funcionesPOS.promocionesDescuentos && !cajaBloqueada) { event.preventDefault(); abrirDescuentoManual(); }
-      if (event.key === "F7" && !cajaBloqueada) { event.preventDefault(); abrirAltaCliente({ vacio: true }); }
+      if (accionRapida) {
+        event.preventDefault();
+        setMostrarAccionesRapidas(false);
+        if (cajaBloqueada && accionRapida.id !== "promociones") return;
+        switch (accionRapida.id) {
+          case "ventaExtra": setMostrarVentaExtra(true); break;
+          case "promociones": setMostrarPromociones(true); break;
+          case "pagarServicio": abrirSelectorServiciosListos(); break;
+          case "pagarFiado": setMostrarPagoFiado(true); break;
+          case "abonarServicio": abrirSelectorAbonosServicio(); break;
+          case "descuentoManual": abrirDescuentoManual(); break;
+          case "agregarCliente": abrirAltaCliente({ vacio: true }); break;
+        }
+        return;
+      }
       if (event.code === "Space") {
         if (cajaBloqueada) return;
         event.preventDefault();
         const hayCanjeActivo = Boolean(
-          clienteData && preferenciaCanje === "canjear" && canjeSeleccionado,
+          mostrarProgramaCliente && clienteData && preferenciaCanje === "canjear" && canjeSeleccionado,
         );
         if (carrito.length === 0 && !hayCanjeActivo) return alert("Agrega un producto antes de realizar la venta.");
         setMostrarPago(true);
@@ -1447,7 +1476,7 @@ export default function POS() {
     };
     window.addEventListener("keydown", atajosPOS);
     return () => window.removeEventListener("keydown", atajosPOS);
-  }, [carrito.length, clienteData, preferenciaCanje, canjeSeleccionado, serviciosHabilitados, cajaCerradaHoy, faltaFondoInicial, mostrarPago]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [carrito.length, clienteData, preferenciaCanje, canjeSeleccionado, serviciosHabilitados, cajaCerradaHoy, faltaFondoInicial, mostrarPago, mostrarProgramaCliente, accionesRapidas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const puntosCanjeados = canjeActivo ? canjeSeleccionado.puntosRequeridos : 0;
 
@@ -1658,12 +1687,12 @@ export default function POS() {
   const descuentoRegla = reglaElegida?.importe || 0;
 
   const descuentoPuntos =
-    usarPuntos && clienteData
+    mostrarProgramaCliente && usarPuntos && clienteData
       ? Math.min(clienteData.puntos || 0, subtotal)
       : 0;
 
   const subtotalConDescuento =
-    subtotal - descuentoManual - descuentoRegla - descuentoPuntos;
+    subtotal - (funcionesPOS.descuentoAutorizado ? descuentoManual : 0) - descuentoRegla - descuentoPuntos;
 
   useEffect(() => {
     if (descuentoManual <= 0) return;
@@ -1672,6 +1701,7 @@ export default function POS() {
   }, [subtotal, descuentoManual, porcentajeDescuentoManual]);
 
   const abrirDescuentoManual = () => {
+    if (!funcionesPOS.descuentoAutorizado) return;
     if (subtotal <= 0) {
       alert("Agrega productos al carrito antes de aplicar el descuento.");
       return;
@@ -1684,6 +1714,7 @@ export default function POS() {
 
   const autorizarDescuentoManual = async (event) => {
     event.preventDefault();
+    if (!funcionesPOS.descuentoAutorizado) return;
     setErrorDescuentoManual("");
     const porcentaje = Number(porcentajeDescuentoDraft);
     if (!Number.isFinite(porcentaje) || porcentaje <= 0 || porcentaje > 100) {
@@ -1951,7 +1982,7 @@ export default function POS() {
   const basePuntos = carrito
     .filter((item) => !item.esPagoFiado && !item.esAbonoServicio)
     .reduce((suma, item) => suma + Number(item.precioVenta || 0) * Number(item.cantidad || 0), 0);
-  const puntosGenerados = Math.floor(basePuntos / 10);
+  const puntosGenerados = mostrarProgramaCliente ? Math.floor(basePuntos / 10) : 0;
   const clienteComprasResumen = useMemo(
     () => construirResumenComprasCliente(clienteVentasHistorial),
     [clienteVentasHistorial],
@@ -1997,6 +2028,22 @@ export default function POS() {
 
     if (carrito.length === 0 && !canjeActivo) {
       alert("No hay productos ni canjes seleccionados");
+      return;
+    }
+
+    if (carrito.some((item) => item.esAbonoServicio) && !puedeAbonarServicio) {
+      alert("Los abonos a servicios requieren CajaLibre Premium.");
+      return;
+    }
+
+    if ((tipoPago === "fiado" || carrito.some((item) => item.esPagoFiado)) && !funcionesPOS.fiado) {
+      alert("Activa las ventas fiadas con Premium en Configuraci?n > Punto de venta.");
+      return;
+    }
+    if (descuentoManual > 0 && !funcionesPOS.descuentoAutorizado) {
+      setDescuentoManual(0);
+      setPorcentajeDescuentoManual(0);
+      alert("El descuento autorizado est? desactivado. Revisa el total antes de cobrar.");
       return;
     }
 
@@ -2141,8 +2188,19 @@ export default function POS() {
     const folioTicket = `${String(facturacionCfgVenta.serie || "A").trim() || "A"}-${String(
       Math.max(1, Number(facturacionCfgVenta.folioActual) || 1),
     ).padStart(6, "0")}`;
+    // Quien cobra la venta. Se resuelve antes de armar el documento porque
+    // ahora forma parte de la venta y no solo del ticket impreso: sin este dato
+    // guardado, el reporte de rendimiento por empleado no puede atribuir nada.
+    const atendioVenta =
+      String(auth.currentUser?.displayName || "").trim() ||
+      String(auth.currentUser?.email || "").trim() ||
+      "Sin asignar";
+
     const ventaPayload = {
       folioTicket,
+      atendio: atendioVenta,
+      atendioUid: String(auth.currentUser?.uid || "").trim() || null,
+      atendioEmail: String(auth.currentUser?.email || "").trim().toLowerCase() || null,
       clienteId: clienteData?.id || null,
       clienteNombre: clienteData?.nombre || null,
       clienteTelefono: clienteTelefono || null,
@@ -2272,7 +2330,7 @@ export default function POS() {
       });
     }
 
-    if (clienteData) {
+    if (mostrarProgramaCliente && clienteData) {
 
       if (usarPuntos && descuentoPuntos > 0) {
         await sumarPuntosCliente(clienteData.id, -descuentoPuntos);
@@ -2308,11 +2366,6 @@ export default function POS() {
           : {}),
       });
     }
-
-    const atendioVenta =
-      String(auth.currentUser?.displayName || "").trim() ||
-      String(auth.currentUser?.email || "").trim() ||
-      "Sin asignar";
 
     if (imprimirAlCobrar) {
       imprimirTicketVenta({
@@ -2723,7 +2776,7 @@ export default function POS() {
               >
                 <FiZap aria-hidden="true" />
                 <span>Acciones rápidas</span>
-                <small>F1–F7</small>
+                <small>{rangoAtajos}</small>
                 <FiChevronDown className={mostrarAccionesRapidas ? "open" : ""} aria-hidden="true" />
               </button>
 
@@ -2746,7 +2799,7 @@ export default function POS() {
                         <div>
                           <small>PUNTO DE VENTA</small>
                           <h2 id="pos-quick-actions-title">Acciones rápidas</h2>
-                          <p>Elige una opción o usa directamente F1–F7.</p>
+                          <p>Elige una opción o usa directamente {rangoAtajos}.</p>
                         </div>
                       </div>
                       <button
@@ -2770,7 +2823,7 @@ export default function POS() {
                   >
                     <i className="blue"><FiShoppingCart /></i>
                     <span><strong>Venta extra</strong><small>Agrega un cobro manual</small></span>
-                    <kbd>F1</kbd>
+                    <kbd>{atajosAcciones.ventaExtra}</kbd>
                   </button>
 
                   {funcionesPOS.promocionesDescuentos && (
@@ -2783,7 +2836,7 @@ export default function POS() {
                     >
                       <i className="violet"><FiPercent /></i>
                       <span><strong>Promociones</strong><small>Consulta ofertas activas</small></span>
-                      <kbd>F2</kbd>
+                      <kbd>{atajosAcciones.promociones}</kbd>
                     </button>
                   )}
 
@@ -2798,7 +2851,7 @@ export default function POS() {
                     >
                       <i className="amber"><FiFileText /></i>
                       <span><strong>Pagar servicio</strong><small>Cobra un servicio terminado</small></span>
-                      <kbd>F3</kbd>
+                      <kbd>{atajosAcciones.pagarServicio}</kbd>
                     </button>
                   )}
 
@@ -2813,11 +2866,11 @@ export default function POS() {
                     >
                       <i className="green"><FiCreditCard /></i>
                       <span><strong>Pagar fiado</strong><small>Registra un abono pendiente</small></span>
-                      <kbd>F4</kbd>
+                      <kbd>{atajosAcciones.pagarFiado}</kbd>
                     </button>
                   )}
 
-                  {serviciosHabilitados && (
+                  {serviciosHabilitados && puedeAbonarServicio && (
                     <button
                       type="button"
                       disabled={cajaCerradaHoy || faltaFondoInicial}
@@ -2828,11 +2881,11 @@ export default function POS() {
                     >
                       <i className="cyan"><FiTool /></i>
                       <span><strong>Abonar servicio</strong><small>Agrega un abono al cobro</small></span>
-                      <kbd>F5</kbd>
+                      <kbd>{atajosAcciones.abonarServicio}</kbd>
                     </button>
                   )}
 
-                  {funcionesPOS.promocionesDescuentos && (
+                  {funcionesPOS.descuentoAutorizado && (
                     <button
                       type="button"
                       disabled={cajaCerradaHoy || faltaFondoInicial}
@@ -2843,7 +2896,7 @@ export default function POS() {
                     >
                       <i className="slate"><FiTag /></i>
                       <span><strong>Descuento manual</strong><small>Requiere autorización</small></span>
-                      <kbd>F6</kbd>
+                      <kbd>{atajosAcciones.descuentoManual}</kbd>
                     </button>
                   )}
 
@@ -2858,7 +2911,7 @@ export default function POS() {
                   >
                     <i className="indigo"><FiUserPlus /></i>
                     <span><strong>Agregar cliente</strong><small>Registra uno para esta venta</small></span>
-                    <kbd>F7</kbd>
+                    <kbd>{atajosAcciones.agregarCliente}</kbd>
                   </button>
                     </div>
                   </section>
@@ -3025,7 +3078,7 @@ export default function POS() {
                 >
                   <FiUserPlus />
                   <span>Añadir cliente</span>
-                  <kbd>F7</kbd>
+                  <kbd>{atajosAcciones.agregarCliente}</kbd>
                 </button>
               </div>
 
@@ -3439,7 +3492,7 @@ export default function POS() {
 
       <ModalPagoFiado mostrar={mostrarPagoFiado} onClose={() => setMostrarPagoFiado(false)} onAgregar={agregarPagoFiadoAlCarrito} formatCurrency={formatCurrency} />
       <ModalSelectorServicio
-        mostrar={mostrarSelectorAbono}
+        mostrar={mostrarSelectorAbono && puedeAbonarServicio}
         cargando={cargandoServiciosListos}
         servicios={serviciosAbonables}
         titulo="Abonar servicio"
@@ -3449,7 +3502,7 @@ export default function POS() {
         onClose={() => setMostrarSelectorAbono(false)}
         onSeleccionar={seleccionarServicioParaAbono}
       />
-      {servicioParaAbono && (
+      {servicioParaAbono && puedeAbonarServicio && (
         <div className="abono-servicio-overlay" onMouseDown={(event) => {
           if (event.target === event.currentTarget) setServicioParaAbono(null);
         }}>

@@ -11,6 +11,7 @@ import PermissionRoute from "./components/PermissionRoute";
 import ServiceModuleRoute from "./components/ServiceModuleRoute";
 import Ticket from "./pages/tickets";
 import StatusScan from "./pages/status_scan";
+import AceptacionOrden from "./pages/AceptacionOrden";
 import Clientes from "./pages/Clientes";
 import ClienteDetalle from "./pages/ClienteDetalle";
 import NotFound from "./pages/NotFound";
@@ -20,6 +21,7 @@ import Productos from "./pages/ProductosGateway";
 import Reportes from "./pages/reportes";
 import Promociones from "./pages/Promociones";
 import Fiado from "./pages/Fiado";
+import ConsultaPrecios from "./pages/ConsultaPrecios";
 import Configuracion from "./pages/Configuracion";
 import ConfiguracionEmpresa from "./pages/ConfiguracionEmpresa";
 import ConfiguracionPOS from "./pages/ConfiguracionPOS";
@@ -41,6 +43,7 @@ import Empleados from "./pages/empleados";
 import PanelGeneral from "./pages/panelgeneralCon";
 import Landing from "./pages/Landing";
 import CentroAyuda from "./pages/CentroAyuda";
+import SoporteNegocio from "./pages/SoporteNegocio";
 import CookieConsent from "./components/CookieConsent";
 import { PoliticaCookies, PoliticaPrivacidad } from "./pages/PoliticaLegal";
 
@@ -50,13 +53,15 @@ export default function App() {
     <Routes>
       {/* PUBLICO */}
       <Route path="/status" element={<Status />} />
+      <Route path="/status/scan" element={<StatusScan />} />
       <Route path="/status/:folio" element={<StatusDetalle />} />
+      {/* El cliente llega con un token en la URL; la validacion es del servidor. */}
+      <Route path="/aceptar/:referencia" element={<AceptacionOrden />} />
       <Route path="/login" element={<Login />} />
       <Route path="/ayuda" element={<CentroAyuda />} />
       <Route path="/" element={<Landing />} />
       <Route path="/privacidad" element={<PoliticaPrivacidad />} />
       <Route path="/cookies" element={<PoliticaCookies />} />
-      <Route path="/status/scan" element={<StatusScan />} />
 
       <Route
         path="/terminos"
@@ -94,6 +99,15 @@ export default function App() {
         }
       >
         <Route path="/home" element={<Home />} />
+        <Route path="/soporte" element={<SoporteNegocio />} />
+        <Route
+          path="/consulta-precios"
+          element={
+            <PermissionRoute permission="productos.ver" permissionsAny={["ventas.pos"]}>
+              <ConsultaPrecios />
+            </PermissionRoute>
+          }
+        />
         <Route
           path="/hoja_servicio"
           element={
@@ -175,7 +189,7 @@ export default function App() {
         <Route
           path="/promociones"
           element={
-            <PermissionRoute permission="promociones.gestionar" permissionsAny={["descuentos.gestionar"]}>
+            <PermissionRoute permission="promociones.gestionar" permissionsAny={["descuentos.gestionar"]} salesFeature="promocionesDescuentos">
               <Promociones />
             </PermissionRoute>
           }
@@ -183,7 +197,7 @@ export default function App() {
         <Route
           path="/fiado"
           element={
-            <PermissionRoute permission="clientes.ver">
+            <PermissionRoute permission="clientes.ver" salesFeature="fiado">
               <Fiado />
             </PermissionRoute>
           }

@@ -1,79 +1,68 @@
-import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../initializer/firebase";
-import { obtenerEstadoAutorizacion } from "../js/services/autorizacion";
+import { Navigate, useLocation } from "react-router-dom";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import AccesoErrorPanel from "./AccesoErrorPanel";
 import PageLoader from "./PageLoader";
+import {
+  FASES_SESION,
+  registrarRedireccion,
+  resolverRutaSesion,
+  rutasDeMotivos,
+} from "../js/services/ruta_sesion";
 
-const MOTIVE_ROUTE = {
-  terminos_pendientes: "/terminos",
-  configuracion_inicial_pendiente: "/configuracion-inicial",
-  negocio_bloqueado: "/negocio-bloqueado",
-};
-
+/**
+ * Puerta unica de las rutas privadas.
+ *
+ * No consulta Firestore ni interpreta motivos por su cuenta: pide el destino a
+ * `resolverRutaSesion` y solo compara si esta pantalla ya es ese destino. Como
+ * todas las guardias usan la misma funcion, ninguna puede contradecir a otra y
+ * dos rutas no pueden rebotarse entre si.
+ */
 export default function ProtectedRoute({ allowMotives = [], children }) {
-  const [loading, setLoading] = useState(true);
-  const [permitido, setPermitido] = useState(false);
-  const [mensajeAcceso, setMensajeAcceso] = useState("");
-  const [motivo, setMotivo] = useState("");
+  const location = useLocation();
+  const {
+    loading,
+    uid,
+    accesoPermitido,
+    motivoAcceso,
+    mensajeAcceso,
+  } = useAutorizacionActual();
 
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        setPermitido(false);
-        setMensajeAcceso("");
-        setMotivo("");
-        setLoading(false);
-        return;
-      }
+  const destino = resolverRutaSesion({ loading, uid, accesoPermitido, motivoAcceso });
 
-      try {
-        const estado = await obtenerEstadoAutorizacion(user.uid);
-        setPermitido(estado.permitido);
-        setMensajeAcceso(estado.mensaje || "");
-        setMotivo(estado.motivo || "");
-      } catch (error) {
-        setPermitido(false);
-        setMotivo("");
-        setMensajeAcceso(
-          String(error?.message || "").trim() || "No se pudo validar tu acceso.",
-        );
-      } finally {
-        setLoading(false);
-      }
-    });
+  // 1. Mientras Auth o Firestore siguen cargando no se decide nada.
+  if (destino.fase === FASES_SESION.CARGANDO) {
+    return <PageLoader text="Validando acceso..." />;
+  }
 
-    return () => unsub();
-  }, []);
+  // 2. Un fallo de lectura se muestra como error real; jamas redirige.
+  if (destino.fase === FASES_SESION.ERROR) {
+    return <AccesoErrorPanel mensaje={mensajeAcceso} />;
+  }
 
-  if (loading) return <PageLoader text="Validando acceso..." />;
-
-  if (!auth.currentUser) return <Navigate to="/login" replace />;
-
-  if (!permitido && allowMotives.includes(motivo)) {
+  // 3. Con acceso confirmado se abre la pantalla solicitada.
+  if (destino.fase === FASES_SESION.PERMITIDO) {
     return children;
   }
 
-  if (!permitido) {
-    const route = MOTIVE_ROUTE[motivo];
-    if (route) {
-      return (
-        <Navigate
-          to={route}
-          replace
-          state={mensajeAcceso ? { accessMessage: mensajeAcceso } : undefined}
-        />
-      );
-    }
-
-    return (
-      <Navigate
-        to="/login"
-        replace
-        state={mensajeAcceso ? { accessMessage: mensajeAcceso } : undefined}
-      />
-    );
+  // 4. Las pantallas de onboarding y bloqueo declaran los motivos que
+  //    resuelven: si el motivo de la sesion es uno de ellos, ya estamos donde
+  //    corresponde.
+  if (rutasDeMotivos(allowMotives).includes(destino.ruta)) {
+    return children;
   }
 
-  return children;
+  // 5. Seguro final: nunca navegar hacia la ruta en la que ya estamos.
+  if (!destino.ruta || destino.ruta === location.pathname) {
+    return <AccesoErrorPanel titulo="Acceso no disponible" mensaje={mensajeAcceso} />;
+  }
+
+  registrarRedireccion("ProtectedRoute", location.pathname, destino.ruta, destino.motivo);
+
+  return (
+    <Navigate
+      to={destino.ruta}
+      replace
+      state={mensajeAcceso ? { accessMessage: mensajeAcceso } : undefined}
+    />
+  );
 }

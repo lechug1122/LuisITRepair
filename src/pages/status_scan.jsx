@@ -1,10 +1,17 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
+import "../css/status.css";
 import "../css/status_scan.css";
 
 const REAR_CAMERA_HINTS = ["back", "rear", "environment", "trasera", "posterior"];
-const SCAN_CONFIG = { fps: 10, qrbox: 250 };
+const SCAN_CONFIG = {
+  fps: 10,
+  qrbox: (width, height) => {
+    const size = Math.min(250, Math.floor(Math.min(width, height) * 0.75));
+    return { width: size, height: size };
+  },
+};
 
 function pickRearCameraId(cameras = []) {
   const rear = cameras.find((cam) => {
@@ -21,6 +28,7 @@ function readFolioFromText(decodedText) {
 
 export default function StatusScan() {
   const navigate = useNavigate();
+  const [cameraError, setCameraError] = useState("");
 
   useEffect(() => {
     const qr = new Html5Qrcode("reader");
@@ -48,10 +56,13 @@ export default function StatusScan() {
           const rearCameraId = pickRearCameraId(cameras);
           const fallbackCameraId = rearCameraId || cameras?.[0]?.id;
 
-          if (!fallbackCameraId) return;
+          if (!fallbackCameraId) {
+            setCameraError("No encontramos una cámara disponible. Puedes consultar el servicio con tu folio.");
+            return;
+          }
           await qr.start(fallbackCameraId, SCAN_CONFIG, onSuccess);
         } catch {
-          // Camera permissions or availability failure.
+          setCameraError("No se pudo abrir la cámara. Revisa el permiso de tu navegador o consulta con tu folio.");
         }
       }
     })();
@@ -62,15 +73,17 @@ export default function StatusScan() {
   }, [navigate]);
 
   return (
-    <div className="scan-page">
-      <div className="scan-box">
-        <h2>Escanear QR</h2>
-        <p>Usa la camara trasera para leer el QR del ticket.</p>
+    <main className="status-page status-page--centered">
+      <section className="status-box status-entry scan-box">
+        <span className="status-eyebrow">Consulta de servicio</span>
+        <h1>Escanea tu código QR</h1>
+        <p>Coloca el QR de tu ticket frente a la cámara para consultar tu servicio.</p>
         <div id="reader" className="scan-reader" />
-        <button type="button" onClick={() => navigate("/status")}>
-          Regresar
+        {cameraError ? <p className="scan-error" role="alert">{cameraError}</p> : <p className="scan-hint">Mantén el código visible y procura tener buena iluminación.</p>}
+        <button className="status-button status-button-secondary" type="button" onClick={() => navigate("/status")}>
+          Consultar con mi folio
         </button>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

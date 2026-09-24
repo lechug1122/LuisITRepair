@@ -11,6 +11,7 @@ import { printPdfBlobSilently } from "./silent_print";
 import {
   DEFAULT_TERMINOS_SERVICIO,
   describeRetardoConfig,
+  isServiceReturnsLegend,
 } from "./configure_servicios";
 import {
   buildCamposPersonalizados,
@@ -382,12 +383,13 @@ function getTermsForPdf(form) {
     Array.isArray(form?.hojaServicio?.terminos) && form.hojaServicio.terminos.length
       ? form.hojaServicio.terminos.map((item) => String(item ?? "").trim()).filter(Boolean)
       : [...DEFAULT_TERMINOS_SERVICIO];
+  const safeTerms = baseTerms.filter((item) => !isServiceReturnsLegend(item));
 
   if (form?.hojaServicio?.retardo?.habilitado) {
-    baseTerms.push(`Retardo y abandono: ${describeRetardoConfig(form.hojaServicio.retardo)}`);
+    safeTerms.push(`Retardo y abandono: ${describeRetardoConfig(form.hojaServicio.retardo)}`);
   }
 
-  return baseTerms;
+  return safeTerms;
 }
 
 function drawTermsSection(doc, y, form, setPdfFont) {
@@ -439,14 +441,69 @@ function drawTermsSection(doc, y, form, setPdfFont) {
   return y + sectionHeight + SECTION_GAP;
 }
 
-function drawFirmas(doc, y, setPdfFont) {
-  const blockHeight = 13;
+/* =========================
+   Aceptacion del cliente
+
+   La firma NO genera un PDF aparte: se integra en el bloque de firmas que la
+   hoja de servicio ya tenia. Cuando no hay aceptacion registrada, el bloque
+   se dibuja exactamente igual que siempre -- una raya para firmar a mano.
+   Nunca se pinta una firma que no existe.
+========================= */
+
+/** Datos de aceptacion listos para el PDF, o `null` si no hay firma real. */
+function leerAceptacionParaPdf(form) {
+  const aceptacion = form?.aceptacion;
+  if (!aceptacion || aceptacion.estado !== "aceptado") return null;
+
+  // Se prefiere la copia en el documento: el PDF se genera tambien desde
+  // impresion automatica, donde una descarga remota puede fallar o tardar.
+  const imagen = String(aceptacion.firmaDataUrl || "").startsWith("data:image/png")
+    ? aceptacion.firmaDataUrl
+    : "";
+
+  return {
+    imagen,
+    nombre: String(aceptacion.nombreCliente || "").trim(),
+    fecha: formatDateTimeText(aceptacion.fechaRespuesta),
+  };
+}
+
+/**
+ * Dibuja la firma dentro del recuadro indicado, respetando su proporcion.
+ * Devuelve false si la imagen no se pudo pintar, para que el llamador deje la
+ * raya en blanco en vez de un hueco sin explicacion.
+ */
+function drawFirmaImagen(doc, imagen, { x, y, w, h }) {
+  if (!imagen) return false;
+  try {
+    const props = doc.getImageProperties(imagen);
+    const escala = Math.min(w / props.width, h / props.height);
+    const ancho = props.width * escala;
+    const alto = props.height * escala;
+    doc.addImage(imagen, "PNG", x + ((w - ancho) / 2), y + (h - alto), ancho, alto);
+    return true;
+  } catch (error) {
+    console.warn("Firma no incrustada en el PDF:", error?.message || error);
+    return false;
+  }
+}
+
+function drawFirmas(doc, y, setPdfFont, form) {
+  const aceptacion = leerAceptacionParaPdf(form);
+  // Con firma el bloque necesita altura para la imagen y el sello de fecha.
+  const blockHeight = aceptacion ? 30 : 13;
   y = ensureSpace(doc, y, blockHeight);
 
   const leftX = 22;
   const rightX = 118;
-  const lineY = y + 7;
   const lineWidth = 68;
+  const lineY = aceptacion ? y + 20 : y + 7;
+
+  if (aceptacion) {
+    drawFirmaImagen(doc, aceptacion.imagen, {
+      x: rightX, y: y + 2, w: lineWidth, h: 17,
+    });
+  }
 
   doc.setDrawColor(15, 23, 42);
   doc.setLineWidth(0.45);
@@ -456,8 +513,148 @@ function drawFirmas(doc, y, setPdfFont) {
   setPdfFont("bold");
   doc.setTextColor(15, 23, 42);
   doc.setFontSize(8);
-  doc.text("NOMBRE Y FIRMA DEL TECNICO", leftX + (lineWidth / 2), y + 11, { align: "center" });
-  doc.text("NOMBRE Y FIRMA DEL CLIENTE", rightX + (lineWidth / 2), y + 11, { align: "center" });
+  doc.text("NOMBRE Y FIRMA DEL TECNICO", leftX + (lineWidth / 2), lineY + 4, { align: "center" });
+  doc.text("NOMBRE Y FIRMA DEL CLIENTE", rightX + (lineWidth / 2), lineY + 4, { align: "center" });
+
+  if (!aceptacion) return;
+
+  setPdfFont("normal");
+  doc.setFontSize(6.6);
+  doc.setTextColor(21, 94, 63);
+  const centroDerecha = rightX + (lineWidth / 2);
+  if (aceptacion.nombre) {
+    doc.text(aceptacion.nombre, centroDerecha, lineY + 7.6, { align: "center" });
+  }
+  doc.text(
+    `ACEPTADA DIGITALMENTE${aceptacion.fecha ? ` - ${aceptacion.fecha}` : ""}`,
+    centroDerecha,
+    lineY + (aceptacion.nombre ? 10.6 : 7.6),
+    { align: "center" },
+  );
+  doc.setTextColor(15, 23, 42);
+}
+
+/* =========================
+   Anexo de evidencias
+
+   La hoja de servicio esta calibrada al milimetro; meter fotos entre sus
+   secciones desarma esa maqueta. Por eso las evidencias van en una PAGINA
+   APARTE al final, y solo si existen: un servicio sin fotos genera
+   exactamente el mismo PDF de siempre.
+
+   Se imprimen como maximo DOS por categoria, en el orden del proceso. Un
+   servicio con cuarenta fotos produciria un PDF que nadie imprime; dos por
+   etapa cuentan la historia completa -- como llego, que se encontro, que se
+   reparo y como se entrego -- en una sola hoja.
+========================= */
+
+const EVIDENCIAS_PDF = [
+  ["ingreso", "Ingreso"],
+  ["diagnostico", "Diagnostico"],
+  ["reparacion", "Reparacion"],
+  ["entrega", "Entrega"],
+];
+
+const MAX_EVIDENCIAS_POR_TIPO = 2;
+
+function seleccionarEvidenciasParaPdf(form) {
+  const crudo = form?.evidencias;
+  const lista = Array.isArray(crudo)
+    ? crudo
+    : (crudo && typeof crudo === "object" ? Object.values(crudo) : []);
+
+  return EVIDENCIAS_PDF.flatMap(([tipo, etiqueta]) => lista
+    .filter((foto) => foto?.url && String(foto?.tipo || "ingreso") === tipo)
+    .sort((a, b) => (a?.fecha?.seconds || 0) - (b?.fecha?.seconds || 0))
+    .slice(0, MAX_EVIDENCIAS_POR_TIPO)
+    .map((foto) => ({ ...foto, etiqueta })));
+}
+
+async function drawEvidenciasAnexo(doc, form, folio, setPdfFont) {
+  const seleccion = seleccionarEvidenciasParaPdf(form);
+  if (!seleccion.length) return;
+
+  // Se descargan las MINIATURAS, no las imagenes completas: el PDF pesaria
+  // varios megabytes sin ganar nada a este tamaño de impresion.
+  const imagenes = await Promise.all(seleccion.map(async (foto) => {
+    try {
+      const dataUrl = await fetchAsDataURL(foto.miniaturaUrl || foto.url);
+      return { ...foto, dataUrl: await convertirADataURLPNG(dataUrl) };
+    } catch (error) {
+      console.warn("Evidencia no incluida en el PDF:", error?.message || error);
+      return null;
+    }
+  }));
+
+  const listas = imagenes.filter(Boolean);
+  if (!listas.length) return;
+
+  doc.addPage();
+  drawPageBorder(doc);
+
+  setPdfFont("bold");
+  doc.setFontSize(11);
+  doc.setTextColor(15, 23, 42);
+  doc.text("EVIDENCIAS DEL SERVICIO", BOX_X, 16);
+
+  setPdfFont("normal");
+  doc.setFontSize(7.6);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Folio ${sanitize(folio)}`, BOX_X, 21);
+
+  const columnas = 2;
+  const ancho = (BOX_W - 8) / columnas;
+  const altoFoto = 52;
+  const altoCelda = altoFoto + 13;
+  let fila = 0;
+
+  listas.forEach((foto, indice) => {
+    const columna = indice % columnas;
+    if (columna === 0 && indice > 0) fila += 1;
+
+    let y = 27 + (fila * altoCelda);
+    if (y + altoCelda > getPdfPageMetrics(doc).bottomLimit) {
+      doc.addPage();
+      drawPageBorder(doc);
+      fila = 0;
+      y = 27;
+    }
+
+    const x = BOX_X + (columna * (ancho + 8));
+
+    doc.setDrawColor(203, 213, 225);
+    doc.setLineWidth(0.3);
+    doc.rect(x, y, ancho, altoFoto);
+
+    try {
+      const props = doc.getImageProperties(foto.dataUrl);
+      const escala = Math.min((ancho - 2) / props.width, (altoFoto - 2) / props.height);
+      doc.addImage(
+        foto.dataUrl,
+        "PNG",
+        x + ((ancho - (props.width * escala)) / 2),
+        y + ((altoFoto - (props.height * escala)) / 2),
+        props.width * escala,
+        props.height * escala,
+      );
+    } catch (error) {
+      console.warn("Evidencia no dibujada:", error?.message || error);
+    }
+
+    setPdfFont("bold");
+    doc.setFontSize(7.4);
+    doc.setTextColor(15, 23, 42);
+    doc.text(foto.etiqueta.toUpperCase(), x, y + altoFoto + 4.5);
+
+    if (foto.descripcion) {
+      setPdfFont("normal");
+      doc.setFontSize(6.8);
+      doc.setTextColor(71, 85, 105);
+      doc.text(doc.splitTextToSize(String(foto.descripcion), ancho).slice(0, 2), x, y + altoFoto + 8.5);
+    }
+  });
+
+  doc.setTextColor(15, 23, 42);
 }
 
 function isAutomotiveTemplate(tipoNegocio, form) {
@@ -1030,10 +1227,13 @@ function drawAutomotiveCommentsAndTotals(doc, data) {
   return y + 31;
 }
 
-function drawAutomotiveSignatures(doc, setPdfFont, y = 196) {
-  y = ensureSpace(doc, y, 23);
-  drawAutomotiveBox(doc, 10, y, 95.5, 23);
-  drawAutomotiveBox(doc, 105.5, y, 95.5, 23);
+function drawAutomotiveSignatures(doc, setPdfFont, y = 196, form = null) {
+  const aceptacion = leerAceptacionParaPdf(form);
+  const alto = aceptacion ? 30 : 23;
+
+  y = ensureSpace(doc, y, alto);
+  drawAutomotiveBox(doc, 10, y, 95.5, alto);
+  drawAutomotiveBox(doc, 105.5, y, 95.5, alto);
 
   setPdfFont("bold");
   doc.setFontSize(8);
@@ -1041,13 +1241,32 @@ function drawAutomotiveSignatures(doc, setPdfFont, y = 196) {
   doc.text("EL PRESTADOR DEL SERVICIO", 57.5, y + 7.5, { align: "center" });
   doc.text("FIRMA DEL CLIENTE", 153, y + 7.5, { align: "center" });
 
+  const lineaY = aceptacion ? y + 23 : y + 16;
+
+  if (aceptacion) {
+    drawFirmaImagen(doc, aceptacion.imagen, { x: 116, y: y + 9, w: 75, h: 13 });
+  }
+
   doc.setLineWidth(0.25);
-  doc.line(20, y + 16, 95, y + 16);
-  doc.line(116, y + 16, 191, y + 16);
+  doc.line(20, lineaY, 95, lineaY);
+  doc.line(116, lineaY, 191, lineaY);
 
   setPdfFont("normal");
   doc.setFontSize(6.8);
-  doc.text("Acepto y autorizo el trabajo descrito en esta orden de servicio", 153, y + 20, {
+
+  if (aceptacion) {
+    doc.setTextColor(21, 94, 63);
+    doc.text(
+      `${aceptacion.nombre || "Cliente"} - ACEPTADA DIGITALMENTE${aceptacion.fecha ? ` ${aceptacion.fecha}` : ""}`,
+      153,
+      lineaY + 4,
+      { align: "center" },
+    );
+    doc.setTextColor(15, 23, 42);
+    return;
+  }
+
+  doc.text("Acepto y autorizo el trabajo descrito en esta orden de servicio", 153, lineaY + 4, {
     align: "center",
   });
 }
@@ -1119,7 +1338,7 @@ function drawAutomotivePdf(doc, data) {
   }
 
   const yAfterTerms = drawTermsSection(doc, yAfterContent, form, setPdfFont);
-  drawAutomotiveSignatures(doc, setPdfFont, yAfterTerms);
+  drawAutomotiveSignatures(doc, setPdfFont, yAfterTerms, form);
 }
 
 function downloadPdfBlob(blob, filename) {
@@ -1168,9 +1387,10 @@ export async function generarPdfHojaServicio(form, folio, options = {}) {
       silentPrint = false,
       printerName = "",
       paperSize = "",
+      empresaOverride = null,
     } = options;
-    const empresaCfg = await obtenerEmpresa();
-    const empresaCache = readEmpresaConfigCache();
+    const empresaCfg = empresaOverride || await obtenerEmpresa();
+    const empresaCache = empresaOverride || readEmpresaConfigCache();
     const printerCfg = readImpresorasConfigCache();
     const nombreEmpresa = empresaCfg?.nombre || empresaCache.nombre;
     const tipoNegocio = inferTipoNegocioServicio(form, empresaCfg || empresaCache);
@@ -1237,8 +1457,12 @@ export async function generarPdfHojaServicio(form, folio, options = {}) {
       y = drawDeviceSection(doc, y, form, setPdfFont);
       y = drawProblemSection(doc, y, form, setPdfFont);
       y = drawTermsSection(doc, y, form, setPdfFont);
-      drawFirmas(doc, y, setPdfFont);
+      drawFirmas(doc, y, setPdfFont, form);
     }
+
+    // El anexo se arma al final para que nunca desplace el contenido de la
+    // hoja: si falla la descarga de una foto, el PDF sale igual que siempre.
+    await drawEvidenciasAnexo(doc, form, folio, setPdfFont);
 
     if (openPrint && typeof doc.autoPrint === "function") {
       doc.autoPrint();
@@ -1274,7 +1498,10 @@ export async function generarPdfHojaServicio(form, folio, options = {}) {
       filename,
     };
   } catch (err) {
+    // El detalle tecnico se queda en la consola. Quien llama decide como se lo
+    // cuenta a la persona: la pantalla de alta y el detalle del servicio tienen
+    // sistemas de aviso distintos, y este modulo no deberia imponer ninguno.
     console.error("Error generando PDF:", err);
-    alert("Error generando PDF. Revisa consola (F12).");
+    return { ok: false, error: err };
   }
 }

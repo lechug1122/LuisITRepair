@@ -12,6 +12,7 @@ import { generarPdfHojaServicio } from "../js/services/pdf_hoja_servicio";
 import useImpresorasConfig from "../hooks/useImpresorasConfig";
 import useServiciosConfig from "../hooks/useServiciosConfig";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import {
   buildCamposPersonalizados,
   getCamposVisiblesTipoNegocio,
@@ -50,6 +51,7 @@ export default function HojaServicio() {
   const navigate = useNavigate();
   const location = useLocation();
   const { empresa } = useEmpresaConfig();
+  const { isPremium, puedeUsarRastreoServicios } = useAutorizacionActual();
   const {
     imprimirAlIniciarServicio,
     documentoAlIniciarServicio,
@@ -501,12 +503,15 @@ export default function HojaServicio() {
         tipoNegocioNombre: tipoNegocioActivo?.nombre || "",
         tipoNegocioSnapshot: tipoNegocioActivo,
         hojaServicio: hojaServicioSnapshot,
+        trackingEnabled: puedeUsarRastreoServicios && isPremium,
+        negocioNombre: isPremium ? empresa?.nombre || "" : "",
+        negocioLogo: isPremium ? empresa?.logo || "" : "",
       };
 
       const res = await guardarServicio(payload);
 
       if (hojaServicioHabilitada) {
-        await generarPdfHojaServicio(payload, res.folio, {
+        const pdf = await generarPdfHojaServicio(payload, res.folio, {
           download: true,
           silentPrint: shouldSilentPrintHoja,
           printerName: nombreImpresoraHojaServicio || "",
@@ -514,6 +519,12 @@ export default function HojaServicio() {
           openPrint: shouldDialogPrintHoja && !!hojaPrintWindow,
           printWindow: hojaPrintWindow,
         });
+
+        // El servicio YA quedo guardado: si falla el PDF se avisa, pero no se
+        // interrumpe el alta ni se pierde el folio.
+        if (pdf?.ok === false) {
+          alert("El servicio se guardó, pero no pudimos generar la hoja en PDF. Puedes descargarla desde el detalle del servicio.");
+        }
       }
 
       navigate(`/ticket/${encodeURIComponent(String(res.folio || "").trim())}`, {

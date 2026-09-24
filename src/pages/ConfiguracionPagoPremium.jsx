@@ -1,8 +1,21 @@
 import { Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { FiCheck, FiCreditCard, FiStar } from "react-icons/fi";
-import { PREMIUM_PAYMENT_PROVIDERS } from "../js/services/premium_config";
+import {
+  FiAlertCircle,
+  FiArrowRight,
+  FiCheck,
+  FiLock,
+  FiMinus,
+  FiStar,
+} from "react-icons/fi";
+import {
+  COMPARATIVA_PLANES,
+  PLAN_FREE_RESUMEN,
+  PLAN_PREMIUM_RESUMEN,
+  TICKET_EDITOR_LEGACY_UNTIL_LABEL,
+} from "../js/services/plan_features";
 import { crearSuscripcionMercadoPago, consultarSuscripcionMercadoPago } from "../js/services/premium_payments";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import { auth } from "../initializer/firebase";
 import "../css/pago_premium.css";
 
@@ -17,21 +30,34 @@ const STATUS_MESSAGES = {
 
 const ACTION_LABELS = {
   pending: "Continuar activación",
-  cancelled: "Reactivar CajaLibre Premium",
-  paused: "Reactivar CajaLibre Premium",
+  cancelled: "Reactivar Premium",
+  paused: "Reactivar Premium",
 };
 
 function actionLabel(status) {
-  return ACTION_LABELS[status] || "Continuar con Mercado Pago";
+  return ACTION_LABELS[status] || "Actualizar a Premium";
 }
 
-const beneficios = [
-  "Sin publicidad",
-  "Soporte preferente",
-  "Insignia/icono premium",
-  "Funciones adicionales",
-  "Usuarios ilimitados",
-];
+/** Celda de la comparativa: incluido, no incluido, o un texto propio. */
+function CeldaPlan({ valor }) {
+  if (valor === true) {
+    return (
+      <span className="pp-yes">
+        <FiCheck aria-hidden="true" />
+        <span className="pp-sr-only">Incluido</span>
+      </span>
+    );
+  }
+  if (valor === false) {
+    return (
+      <span className="pp-no">
+        <FiMinus aria-hidden="true" />
+        <span className="pp-sr-only">No incluido</span>
+      </span>
+    );
+  }
+  return <span className="pp-cell-text">{valor}</span>;
+}
 
 export default function ConfiguracionPagoPremium() {
   const [busy, setBusy] = useState(false);
@@ -40,6 +66,9 @@ export default function ConfiguracionPagoPremium() {
   const [premiumActivo, setPremiumActivo] = useState(false);
   const [status, setStatus] = useState("none");
   const correoComprador = auth.currentUser?.email || "";
+  // El plan que se muestra sale de la misma fuente que el resto del sistema:
+  // una suscripción cancelada sigue siendo Premium hasta terminar su periodo.
+  const { isPremium, mostrarAvisoMigracionTicket } = useAutorizacionActual();
 
   async function consultarEstado(mensajeExito) {
     const { status: nuevoStatus, premiumActivo: activo } = await consultarSuscripcionMercadoPago();
@@ -79,63 +108,153 @@ export default function ConfiguracionPagoPremium() {
     run("status");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  return (
-    <section className="cfg-sus-wrap premium-payment" aria-labelledby="premium-payment-title">
-      <div className="cfg-header">
-        <h1 id="premium-payment-title">Pago Premium</h1>
-        <p>Conoce tu suscripción y revisa el importe mensual de CajaLibre Premium.</p>
-      </div>
 
-      <div className="premium-payment-grid">
-        <article className="cfg-pos-card premium-payment-plan">
-          <span className="premium-payment-badge"><FiStar aria-hidden="true" /> Premium</span>
-          <h2>CajaLibre Premium</h2>
-          <p>Más beneficios para ti y todo tu equipo.</p>
-          <div className="premium-payment-price">$300 <span>MXN / mes</span></div>
-          <p>Una suscripción por negocio, con usuarios ilimitados.</p>
-          <ul className="premium-payment-benefits">
-            {beneficios.map((beneficio) => (
-              <li key={beneficio}><FiCheck aria-hidden="true" /> {beneficio}</li>
+  const esPremium = isPremium || premiumActivo;
+
+  return (
+    <section className="cfg-sus-wrap premium-payment" aria-labelledby="pp-title">
+      <header className="pp-head">
+        <div className="pp-head-copy">
+          <h1 id="pp-title">Planes de CajaLibre</h1>
+          <p>
+            Compara lo que incluye cada plan y elige el que le sirva a tu negocio.
+            La suscripción es por negocio, no por usuario.
+          </p>
+        </div>
+        <p className={`pp-status${esPremium ? " pp-status-premium" : ""}`} role="status">
+          {esPremium ? <FiStar aria-hidden="true" /> : null}
+          Tu plan actual: <strong>{esPremium ? "Premium" : "Free"}</strong>
+        </p>
+      </header>
+
+      <div className="pp-plans">
+        <article className="pp-plan" aria-labelledby="pp-plan-free">
+          <h2 className="pp-plan-name" id="pp-plan-free">{PLAN_FREE_RESUMEN.nombre}</h2>
+          <p className="pp-plan-tagline">{PLAN_FREE_RESUMEN.descripcion}</p>
+
+          <div className="pp-price">
+            <span className="pp-price-amount">{PLAN_FREE_RESUMEN.precio}</span>
+            <span className="pp-price-period">{PLAN_FREE_RESUMEN.periodo}</span>
+          </div>
+
+          <ul className="pp-features">
+            {PLAN_FREE_RESUMEN.incluye.map((item) => (
+              <li key={item}><FiCheck aria-hidden="true" /> {item}</li>
             ))}
           </ul>
+
+          <p className="pp-plan-note">
+            {esPremium
+              ? "Tu negocio tiene Premium, así que no dependes de estos límites."
+              : "Es el plan que usas hoy. Puedes seguir en él todo el tiempo que quieras."}
+          </p>
         </article>
 
-        <article className="cfg-pos-card premium-payment-summary">
-          <h2>Resumen de la suscripción</h2>
-          <dl>
-            <div><dt>Plan</dt><dd>Premium</dd></div>
-            <div><dt>Frecuencia</dt><dd>Mensual</dd></div>
-            <div><dt>Usuarios</dt><dd>Ilimitados</dd></div>
-            <div className="premium-payment-total"><dt>Importe mensual</dt><dd>$300 MXN</dd></div>
-          </dl>
-          <div className="premium-payment-provider"><FiCreditCard aria-hidden="true" /><span>Formas de pago</span></div>
-          <p id="premium-payment-availability" className="premium-payment-notice">
-            Mercado Pago cobrará $300 MXN cada mes después de que autorices la suscripción. PayPal estará disponible próximamente.
-          </p>
-          {premiumActivo ? (
-            <p role="status" className="premium-payment-notice">
-              <strong>Premium está activo</strong> para tu negocio (cobro confirmado).
+        <article className="pp-plan pp-plan-premium" aria-labelledby="pp-plan-premium">
+          <span className="pp-plan-ribbon">
+            <FiStar aria-hidden="true" /> Recomendado
+          </span>
+
+          <h2 className="pp-plan-name" id="pp-plan-premium">{PLAN_PREMIUM_RESUMEN.nombre}</h2>
+          <p className="pp-plan-tagline">{PLAN_PREMIUM_RESUMEN.descripcion}</p>
+
+          <div className="pp-price">
+            <span className="pp-price-amount">{PLAN_PREMIUM_RESUMEN.precio}</span>
+            <span className="pp-price-period">{PLAN_PREMIUM_RESUMEN.periodo}</span>
+          </div>
+
+          <ul className="pp-features">
+            {PLAN_PREMIUM_RESUMEN.incluye.map((item) => (
+              <li key={item}><FiCheck aria-hidden="true" /> {item}</li>
+            ))}
+          </ul>
+
+          {esPremium ? (
+            <p className="pp-plan-note pp-plan-note-ok">
+              <strong>Premium está activo</strong> para tu negocio. Administra la
+              suscripción desde Mi Plan.
             </p>
           ) : (
-            <>
-              <div className="premium-payment-options">
-                {PREMIUM_PAYMENT_PROVIDERS.map((provider) => (
-                  <button key={provider.id} type="button" className="premium-payment-button" disabled={provider.id !== "mercadopago" || busy || !correoComprador} onClick={() => run("checkout")} aria-describedby="premium-payment-availability">
-                    {provider.id === "mercadopago" ? (busy ? "Procesando…" : actionLabel(status)) : "PayPal · Próximamente"}
-                  </button>
-                ))}
-              </div>
-              <p className="premium-payment-notice">Pago seguro procesado por Mercado Pago.</p>
-            </>
+            <div className="pp-cta-zone">
+              <button
+                type="button"
+                className="pp-btn pp-btn-primary"
+                disabled={busy || !correoComprador}
+                onClick={() => run("checkout")}
+              >
+                {busy ? "Procesando…" : actionLabel(status)}
+                {busy ? null : <FiArrowRight aria-hidden="true" />}
+              </button>
+              <p className="pp-trust">
+                <FiLock aria-hidden="true" />
+                Pago seguro con Mercado Pago. Cancela cuando quieras.
+              </p>
+              <p className="pp-trust-alt">PayPal estará disponible próximamente.</p>
+            </div>
           )}
-          <div className="premium-payment-options">
-            <button type="button" className="emp-btn emp-btn-soft" disabled={busy} onClick={() => run("status")}>Consultar estado</button>
-          </div>
-          {message && <p role="status">{message}</p>}
-          {error && <p role="alert">{error}</p>}
-          <Link className="premium-payment-back" to="/configuracion/mi-suscripcion">Volver a Mi Plan</Link>
         </article>
       </div>
+
+      <section className="pp-compare" aria-labelledby="pp-compare-title">
+        <h2 id="pp-compare-title">Comparación de funciones</h2>
+        <p className="pp-compare-sub">Todo lo que hoy verifica el sistema, plan por plan.</p>
+
+        <div className="pp-table-scroll">
+          <table className="pp-table">
+            <thead>
+              <tr>
+                <th scope="col">Función</th>
+                <th scope="col" className="pp-col-plan">Free</th>
+                <th scope="col" className="pp-col-plan pp-col-premium">Premium</th>
+              </tr>
+            </thead>
+            <tbody>
+              {COMPARATIVA_PLANES.map((fila) => (
+                <tr key={fila.funcion}>
+                  <th scope="row">{fila.funcion}</th>
+                  <td className="pp-col-plan"><CeldaPlan valor={fila.free} /></td>
+                  <td className="pp-col-plan pp-col-premium">
+                    <CeldaPlan valor={fila.premium ?? true} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {mostrarAvisoMigracionTicket && (
+          <p className="pp-legacy-note">
+            <FiAlertCircle aria-hidden="true" />
+            <span>
+              Tu negocio conserva temporalmente la edición de tickets hasta el{" "}
+              {TICKET_EDITOR_LEGACY_UNTIL_LABEL}.
+            </span>
+          </p>
+        )}
+      </section>
+
+      <section className="pp-account" aria-labelledby="pp-account-title">
+        <div className="pp-account-copy">
+          <h2 id="pp-account-title">Estado de tu suscripción</h2>
+          <p>
+            {esPremium
+              ? "Desde Mi Plan puedes revisar la vigencia y administrar la renovación."
+              : "Aquí verás el avance de tu activación con Mercado Pago."}
+          </p>
+        </div>
+
+        <div className="pp-account-actions">
+          <button type="button" className="pp-btn pp-btn-ghost" disabled={busy} onClick={() => run("status")}>
+            {busy ? "Consultando…" : "Consultar estado"}
+          </button>
+          <Link className="pp-link" to="/configuracion/mi-suscripcion">
+            Ir a Mi Plan <FiArrowRight aria-hidden="true" />
+          </Link>
+        </div>
+
+        {message && <p className="pp-message pp-message-info" role="status">{message}</p>}
+        {error && <p className="pp-message pp-message-error" role="alert">{error}</p>}
+      </section>
     </section>
   );
 }

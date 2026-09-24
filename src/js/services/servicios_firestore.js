@@ -1,15 +1,17 @@
-import { getCollectionRef, getDocRef } from "./tenant";
+import { getCollectionRef, getDocRef, resolveTenantId } from "./tenant";
 import {
   getDocs,
   getDoc,
   doc,
+  setDoc,
   updateDoc,
   serverTimestamp,
   runTransaction,
   writeBatch,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
-import { db } from "../../initializer/firebase";
+import { auth, db } from "../../initializer/firebase";
 import { generarFolio } from "../utils_folio";
 import {
   buildCamposPersonalizados,
@@ -23,6 +25,19 @@ import {
   getTenantCollectionQuery,
   withTenantData,
 } from "./tenant";
+import { canUseServiceTrackingQr, canUseServiceDeposits } from "./plan_features.js";
+import { getTicketPlan } from "./ticket_plan.js";
+import {
+  ORIGEN_NEGOCIO,
+  ORIGEN_SISTEMA,
+  normalizarEstadoServicio,
+} from "./servicio_estados.js";
+import { construirEntradaHistorial, nuevaClaveHistorial } from "./servicio_historial.js";
+import { readServiciosConfigCache } from "./configure_servicios.js";
+import { readEmpresaConfigCache } from "./configure_empresa.js";
+
+const PUBLIC_SERVICES_COLLECTION = "servicios_publicos";
+const PUBLIC_BUSINESSES_COLLECTION = "rastreo_publico_negocios";
 
 /* =========================
    Helpers status
@@ -42,6 +57,65 @@ function normalizarStatus(raw) {
 function isFinalStatus(status) {
   const s = normalizarStatus(status);
   return s === "entregado" || s === "abandonado";
+}
+
+/* =========================
+   Historial de estados
+
+   El historial se guarda como MAPA (no arreglo) porque Firestore solo admite
+   `serverTimestamp()` en una ruta de campo, nunca dentro de un arreglo. Asi
+   cada paso queda sellado con la hora del servidor y dos personas que cambian
+   el estado a la vez escriben claves distintas en vez de pisarse.
+   Ver `servicio_historial.js` para la lectura.
+========================= */
+
+/** Quien esta operando, para firmar el paso del historial. */
+function usuarioActualParaHistorial() {
+  const usuario = auth?.currentUser || null;
+  return {
+    usuarioId: String(usuario?.uid || ""),
+    usuarioNombre: String(usuario?.displayName || usuario?.email || ""),
+  };
+}
+
+/**
+ * Campos que agregan un paso al historial, listos para `update`.
+ *
+ * Devuelve `{}` cuando no hay nada que registrar, para poder derramarlo sin
+ * condicionales en el llamador.
+ */
+export function camposDePasoHistorial({
+  estado,
+  estadoAnterior = null,
+  origen = ORIGEN_NEGOCIO,
+  usuarioId,
+  usuarioNombre,
+  nota = "",
+  forzar = false,
+} = {}) {
+  const siguiente = normalizarEstadoServicio(estado);
+  if (!forzar && estadoAnterior !== null && normalizarEstadoServicio(estadoAnterior) === siguiente) {
+    return {};
+  }
+
+  const identidad = usuarioId === undefined && usuarioNombre === undefined
+    ? usuarioActualParaHistorial()
+    : { usuarioId: usuarioId || "", usuarioNombre: usuarioNombre || "" };
+
+  const entrada = construirEntradaHistorial({
+    estado: siguiente,
+    origen,
+    nota,
+    ...identidad,
+  });
+
+  return {
+    [`historialEstados.${nuevaClaveHistorial()}`]: {
+      ...entrada,
+      fecha: serverTimestamp(),
+    },
+    ultimoCambioEstadoEn: serverTimestamp(),
+  };
 }
 
 function isCancelableParaAbandono(status) {
@@ -105,6 +179,14 @@ export async function cerrarServiciosAbandonados(servicios = []) {
 
   pendientesDeCierre.forEach((servicio) => {
     batch.update(getDocRef("servicios", servicio.id), {
+      ...camposDePasoHistorial({
+        estado: "abandonado",
+        estadoAnterior: servicio?.status,
+        origen: ORIGEN_SISTEMA,
+        usuarioId: "",
+        usuarioNombre: "",
+        nota: "Cierre automatico por plazo de abandono",
+      }),
       status: "abandonado",
       entregado: false,
       fechaCierre: serverTimestamp(),
@@ -122,6 +204,11 @@ export async function cerrarServiciosAbandonados(servicios = []) {
 
   try {
     await batch.commit();
+    await Promise.allSettled(pendientesDeCierre.map((servicio) => publicarRastreoServicio({
+      ...servicio,
+      status: "abandonado",
+      id: servicio.id,
+    })));
   } catch (error) {
     console.warn("[servicios] No se pudo cerrar abandono automaticamente:", error?.code || error);
   }
@@ -203,6 +290,104 @@ function folioToKey(folio) {
   return (folio || "").trim().replace(/\//g, "-");
 }
 
+function canPublishServiceTracking() {
+  return canUseServiceTrackingQr({
+    premiumState: getTicketPlan(),
+    trackingEnabled: readServiciosConfigCache().trackingEnabled,
+  });
+}
+
+/**
+ * Proyección pública estricta. Nunca se copia el documento completo del
+ * servicio: quedan fuera cliente, teléfono, dirección, serie, costos, pagos,
+ * notas internas, empleado, boleta y cualquier campo técnico.
+ */
+export function buildPublicServiceTracking(service = {}, negocioId = "") {
+  return {
+    negocioId: String(negocioId || service?.negocioId || service?.cuentaPrincipalUid || "").trim(),
+    folio: String(service?.folio || "").trim(),
+    tipoDispositivo: String(service?.tipoDispositivo || "").trim(),
+    marca: String(service?.marca || "").trim(),
+    modelo: String(service?.modelo || "").trim(),
+    trabajo: String(service?.trabajo || "").trim(),
+    status: String(service?.status || "pendiente").trim(),
+    fechaAprox: String(service?.fechaAprox || "").trim(),
+    createdAt: service?.createdAt || serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    trackingEnabled: true,
+  };
+}
+
+function buildPublicBusinessTracking(negocioId = "") {
+  const empresa = readEmpresaConfigCache();
+  return {
+    negocioId: String(negocioId || "").trim(),
+    nombre: String(empresa?.nombre || "").trim(),
+    logo: String(empresa?.logo || "").trim(),
+    trackingEnabled: true,
+    updatedAt: serverTimestamp(),
+  };
+}
+
+export async function sincronizarMarcaRastreoPublico(tenantId = "") {
+  if (!canPublishServiceTracking()) return false;
+  const negocioId = resolveTenantId(tenantId);
+  if (!negocioId) return false;
+  await setDoc(
+    doc(db, PUBLIC_BUSINESSES_COLLECTION, negocioId),
+    buildPublicBusinessTracking(negocioId),
+    { merge: true },
+  );
+  return true;
+}
+
+async function publicarRastreoServicio(servicio = {}, negocioId = "") {
+  if (!canPublishServiceTracking()) return false;
+  const tenantId = String(negocioId || resolveTenantId() || "").trim();
+  const serviceId = String(servicio?.id || "").trim();
+  if (!tenantId || !serviceId || !servicio?.folio) return false;
+
+  const batch = writeBatch(db);
+  batch.set(
+    doc(db, PUBLIC_BUSINESSES_COLLECTION, tenantId),
+    buildPublicBusinessTracking(tenantId),
+    { merge: true },
+  );
+  batch.set(
+    getDocRef(PUBLIC_SERVICES_COLLECTION, serviceId, tenantId),
+    buildPublicServiceTracking(servicio, tenantId),
+    { merge: true },
+  );
+  await batch.commit();
+  return true;
+}
+
+/** Publica o refresca de forma segura los servicios históricos al activar QR. */
+export async function sincronizarRastreoServiciosPublicos(tenantId = "") {
+  if (!canPublishServiceTracking()) return { sincronizados: 0 };
+  const negocioId = resolveTenantId(tenantId);
+  if (!negocioId) throwNice("No se pudo identificar el negocio.");
+
+  const snapshot = await getDocs(getTenantCollectionQuery("servicios", negocioId));
+  await sincronizarMarcaRastreoPublico(negocioId);
+
+  let sincronizados = 0;
+  for (let start = 0; start < snapshot.docs.length; start += 400) {
+    const batch = writeBatch(db);
+    snapshot.docs.slice(start, start + 400).forEach((item) => {
+      batch.set(
+        getDocRef(PUBLIC_SERVICES_COLLECTION, item.id, negocioId),
+        buildPublicServiceTracking({ id: item.id, ...item.data() }, negocioId),
+        { merge: true },
+      );
+      sincronizados += 1;
+    });
+    await batch.commit();
+  }
+
+  return { sincronizados };
+}
+
 function throwNice(msg) {
   throw new Error(msg);
 }
@@ -272,6 +457,21 @@ async function construirPayload(form, folioOverride = "") {
 
     folio: folioFinal,
     status: "pendiente",
+    // Primer paso del historial. Va dentro del documento (no con ruta de
+    // campo) porque el servicio todavia no existe; `serverTimestamp()` si se
+    // admite dentro de un mapa anidado, solo no dentro de un arreglo.
+    historialEstados: {
+      [nuevaClaveHistorial()]: {
+        ...construirEntradaHistorial({
+          estado: "pendiente",
+          origen: ORIGEN_SISTEMA,
+          nota: "Servicio recibido",
+          ...usuarioActualParaHistorial(),
+        }),
+        fecha: serverTimestamp(),
+      },
+    },
+    ultimoCambioEstadoEn: serverTimestamp(),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -290,6 +490,8 @@ async function crearServicioConFolioReservado(payload) {
   const folioKey = folioToKey(folio);
   const folioRef = getDocRef("folios", folioKey);
   const servicioRef = doc(getCollectionRef("servicios"));
+  const negocioId = resolveTenantId();
+  const publicarRastreo = canPublishServiceTracking();
 
   await runTransaction(db, async (tx) => {
     const folioSnap = await tx.get(folioRef);
@@ -308,6 +510,18 @@ async function crearServicioConFolioReservado(payload) {
     });
 
     tx.set(servicioRef, payload);
+    if (publicarRastreo) {
+      tx.set(
+        doc(db, PUBLIC_BUSINESSES_COLLECTION, negocioId),
+        buildPublicBusinessTracking(negocioId),
+        { merge: true },
+      );
+      tx.set(
+        getDocRef(PUBLIC_SERVICES_COLLECTION, servicioRef.id, negocioId),
+        buildPublicServiceTracking({ id: servicioRef.id, ...payload }, negocioId),
+        { merge: true },
+      );
+    }
   });
 
   return { id: servicioRef.id, folio };
@@ -408,6 +622,8 @@ export async function guardarOActualizarPorFolio(form) {
   const folioRef = getDocRef("folios", folioKey);
 
   const nuevoServicioRef = doc(getCollectionRef("servicios"));
+  const negocioId = resolveTenantId();
+  const publicarRastreo = canPublishServiceTracking();
 
   const result = await runTransaction(db, async (tx) => {
     const folioSnap = await tx.get(folioRef);
@@ -420,6 +636,18 @@ export async function guardarOActualizarPorFolio(form) {
       });
 
       tx.set(nuevoServicioRef, payload);
+      if (publicarRastreo) {
+        tx.set(
+          doc(db, PUBLIC_BUSINESSES_COLLECTION, negocioId),
+          buildPublicBusinessTracking(negocioId),
+          { merge: true },
+        );
+        tx.set(
+          getDocRef(PUBLIC_SERVICES_COLLECTION, nuevoServicioRef.id, negocioId),
+          buildPublicServiceTracking({ id: nuevoServicioRef.id, ...payload }, negocioId),
+          { merge: true },
+        );
+      }
       return { id: nuevoServicioRef.id, folio, mode: "created" };
     }
 
@@ -434,9 +662,24 @@ export async function guardarOActualizarPorFolio(form) {
 
     const patch = { ...payload };
     delete patch.createdAt;
+    // El historial pertenece al servicio, no al formulario: reescribirlo con
+    // el mapa recien construido borraria todos los pasos ya registrados.
+    delete patch.historialEstados;
     patch.updatedAt = serverTimestamp();
 
     tx.update(servRef, patch);
+    if (publicarRastreo) {
+      tx.set(
+        doc(db, PUBLIC_BUSINESSES_COLLECTION, negocioId),
+        buildPublicBusinessTracking(negocioId),
+        { merge: true },
+      );
+      tx.set(
+        getDocRef(PUBLIC_SERVICES_COLLECTION, servicioId, negocioId),
+        buildPublicServiceTracking({ id: servicioId, ...servSnap.data(), ...patch }, negocioId),
+        { merge: true },
+      );
+    }
     return { id: servicioId, folio, mode: "updated" };
   });
 
@@ -470,6 +713,20 @@ export async function buscarServicioPorFolio(folio) {
   const d = snap.docs.find((item) => String(item.data()?.folio || "").trim() === folioLimpio);
   if (!d) return null;
   return { id: d.id, ...d.data() };
+}
+
+export async function buscarServicioPublicoPorFolio(folio, aceptacion = "") {
+  const folioLimpio = String(folio || "").trim();
+  if (!folioLimpio) return null;
+  const consultar = httpsCallable(
+    getFunctions(db.app, "southamerica-east1"),
+    "consultarServicioPublico",
+  );
+  const result = await consultar({
+    folio: folioLimpio,
+    aceptacion: String(aceptacion || ""),
+  });
+  return result.data || null;
 }
 
 /* =========================
@@ -507,7 +764,11 @@ export async function listarServiciosHistorial() {
 /* =========================
    Actualizar por ID
 ========================= */
-export async function actualizarServicioPorId(id, data) {
+export async function actualizarServicioPorId(id, data, opciones = {}) {
+  if (["abonos", "totalAbonado", "ultimoAbonoEn"].some((key) => Object.hasOwn(data || {}, key))
+    && !canUseServiceDeposits({ premiumState: getTicketPlan() })) {
+    throwNice("Abonar servicio está disponible con CajaLibre Premium.");
+  }
   const ref = getDocRef("servicios", id);
 
   const before = await getDoc(ref);
@@ -524,6 +785,18 @@ export async function actualizarServicioPorId(id, data) {
   const nextStatus = data?.status ?? current?.status;
   const nextStatusNorm = normalizarStatus(nextStatus);
   const isFinal = isFinalStatus(nextStatusNorm);
+
+  // Un cambio de estado siempre deja rastro. Se compara por estado CANONICO:
+  // pasar de "revision" a "en_revision" es el mismo estado escrito de otra
+  // forma y no merece una linea en la historia del servicio.
+  Object.assign(patch, camposDePasoHistorial({
+    estado: nextStatus,
+    estadoAnterior: current?.status,
+    origen: opciones?.origen || ORIGEN_NEGOCIO,
+    usuarioId: opciones?.usuarioId,
+    usuarioNombre: opciones?.usuarioNombre,
+    nota: opciones?.nota || "",
+  }));
 
   if (nextStatusNorm === "entregado") {
     patch.fechaEntregado = serverTimestamp();
@@ -555,7 +828,13 @@ export async function actualizarServicioPorId(id, data) {
   await updateDoc(ref, patch);
 
   const snap = await getDoc(ref);
-  return { id: snap.id, ...snap.data() };
+  const actualizado = { id: snap.id, ...snap.data() };
+  try {
+    await publicarRastreoServicio(actualizado);
+  } catch (error) {
+    console.warn("[servicios] No se pudo actualizar el rastreo público:", error?.code || error);
+  }
+  return actualizado;
 }
 
 /* =========================

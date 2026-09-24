@@ -8,6 +8,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import QRCode from "react-qr-code";
 import { Html5Qrcode } from "html5-qrcode";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import { canUseServiceDeposits, canUseServiceEvidence } from "../js/services/plan_features";
 
 import {
   buscarServicioPorFolio,
@@ -18,8 +19,22 @@ import { obtenerProductos } from "../js/services/POS_firebase";
 import useServiciosConfig from "../hooks/useServiciosConfig";
 import useNotificacionesConfig from "../hooks/useNotificacionesConfig";
 import { generarPdfBoletaVenta } from "../js/services/pdf_boleta_venta";
+import { generarPdfHojaServicio } from "../js/services/pdf_hoja_servicio";
 import { obtenerCotizacionPorId } from "../js/services/cotizaciones_firestore";
-import { STATUS } from "../js/utils/status_map";
+import {
+  ORIGEN_NEGOCIO,
+  esEstadoFinal,
+  etiquetaEstadoServicio,
+  getEstadosSeleccionables,
+  normalizarEstadoServicio,
+} from "../js/services/servicio_estados";
+import ServiceProgress from "../components/ServiceProgress";
+import ServicioEstadoBadge from "../components/ServicioEstadoBadge";
+import ServicioTimeline from "../components/ServicioTimeline";
+import ServicioEvidencias from "../components/ServicioEvidencias";
+import ServicioAceptacionPanel from "../components/ServicioAceptacionPanel";
+import ToastStack from "../components/ToastStack";
+import useToasts from "../hooks/useToasts";
 import {
   buildCamposPersonalizados,
   buildLegacyBlocksFromCampos,
@@ -29,12 +44,12 @@ import {
   inferTipoNegocioServicio,
 } from "../js/services/tipos_negocio";
 
+import "../css/servicio_modulo.css";
 import "../css/servicio_detalle.css";
 
 /* =========================
    CONFIG
 ========================= */
-const STATUS_VALUE_SET = new Set(STATUS.map((s) => s.value));
 const BOLETA_SCANNER_ID = "boleta-reader";
 
 /* =========================
@@ -51,36 +66,30 @@ function normalizarStatus(raw) {
     .trim();
 }
 
-function isFinalStatus(status) {
-  const s = normalizarStatus(status);
-  return s === "entregado" || s === "abandonado";
-}
+// Un servicio cerrado ya no se edita. La regla vive en `servicio_estados.js`
+// para que la pantalla, el guardado y el rastreador coincidan siempre.
+const isFinalStatus = esEstadoFinal;
+const statusValueFromRaw = normalizarEstadoServicio;
 
-function statusValueFromRaw(raw) {
-  const s = normalizarStatus(raw);
-  if (!s) return "pendiente";
-  if (s === "en_revision") return "revision";
-  if (s === "en_reparacion") return "reparacion";
-  if (s === "en_espera_de_refaccion") return "espera_refaccion";
-  if (s === "finalizado") return "listo";
-  return STATUS_VALUE_SET.has(s) ? s : "pendiente";
-}
-
+/**
+ * Estados en los que todavia no tiene sentido exigir el precio final: el
+ * trabajo apenas va empezando o esta detenido esperando a alguien.
+ */
 function requierePrecioFinal(status) {
-  const s = normalizarStatus(status);
   const estadosTempranos = new Set([
     "pendiente",
-    "en_revision",
     "revision",
-    "en_reparacion",
+    "esperando_autorizacion",
+    "autorizado",
+    "espera_refaccion",
     "reparacion",
   ]);
-  return !estadosTempranos.has(s);
+  return !estadosTempranos.has(normalizarEstadoServicio(status));
 }
 
 function permitePrecioCero(status) {
-  const s = normalizarStatus(status);
-  return s === "cancelado" || s === "no_reparable";
+  const s = normalizarEstadoServicio(status);
+  return s === "cancelado" || s === "no_reparable" || s === "rechazado";
 }
 
 function formatFecha(ts) {
@@ -161,102 +170,6 @@ function uid() {
 /* =========================
    Wizard
 ========================= */
-const PASOS_BASE = [
-  { key: "pendiente", label: "Pendiente" },
-  { key: "proceso", label: "En proceso" },
-  { key: "final", label: "Finalizado" },
-  { key: "entregado", label: "Entregado" },
-];
-
-const WIZARD_VARIANTS = {
-  normal: {
-    theme: "normal",
-    steps: PASOS_BASE,
-    activeByStatus: {
-      pendiente: 0,
-      revision: 1,
-      reparacion: 1,
-      en_reparacion: 1,
-      espera_refaccion: 1,
-      en_espera_de_refaccion: 1,
-      trabajando: 1,
-      listo: 2,
-      finalizado: 2,
-      entregado: 3,
-    },
-  },
-  danger: {
-    theme: "danger",
-    steps: [
-      { key: "pendiente", label: "Pendiente" },
-      { key: "proceso", label: "En proceso" },
-      { key: "cancelado", label: "Cancelado" },
-    ],
-    activeByStatus: {
-      cancelado: 2,
-    },
-  },
-  muted: {
-    theme: "muted",
-    steps: [
-      { key: "pendiente", label: "Pendiente" },
-      { key: "proceso", label: "En proceso" },
-      { key: "no_reparable", label: "No reparable" },
-    ],
-    activeByStatus: {
-      no_reparable: 2,
-    },
-  },
-};
-
-function getWizardConfig(status) {
-  const s = normalizarStatus(status);
-  if (s === "cancelado") return WIZARD_VARIANTS.danger;
-  if (s === "no_reparable") return WIZARD_VARIANTS.muted;
-  return WIZARD_VARIANTS.normal;
-}
-
-function WizardProgress({ status }) {
-  const statusKey = normalizarStatus(status);
-  const cfg = getWizardConfig(statusKey);
-  const pasos = cfg.steps;
-  const activeIndex = cfg.activeByStatus[statusKey] ?? 0;
-  const fillPct = pasos.length > 1 ? (activeIndex / (pasos.length - 1)) * 100 : 0;
-
-  const themeClass =
-    cfg.theme === "danger"
-      ? "wizard--danger"
-      : cfg.theme === "muted"
-        ? "wizard--muted"
-        : "wizard--normal";
-
-  return (
-    <div
-      className={`wizard-progress2 ${themeClass}`}
-      style={{
-        ["--pct"]: `${fillPct}%`,
-        gridTemplateColumns: `repeat(${pasos.length}, minmax(0, 1fr))`,
-      }}
-    >
-      <div className="wizard-track" />
-      <div className="wizard-fill" />
-
-      {pasos.map((paso, i) => {
-        let cls = "wizard-step";
-        if (i < activeIndex) cls += " complete";
-        if (i === activeIndex) cls += " in-progress";
-
-        return (
-          <div key={paso.key} className={cls}>
-            <div className="wizard-node" />
-            <div className="wizard-label">{paso.label}</div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /* =========================
    Boleta Items
 ========================= */
@@ -462,8 +375,17 @@ function tieneCaracteristicasPendientesDynamic(servicio) {
 export default function ServicioDetalle() {
   const { folio: folioParam } = useParams();
   const navigate = useNavigate();
-  const { rol } = useAutorizacionActual();
-  const { precioRevision, politicaRetardo } = useServiciosConfig();
+  const {
+    uid: uidUsuario,
+    nombre: nombreUsuario,
+    rol,
+    puedeUsarRastreoServicios,
+    premiumState,
+  } = useAutorizacionActual();
+  const { toasts, descartar, exito: avisarExito, error: avisarError } = useToasts();
+  const puedeAbonarServicio = canUseServiceDeposits({ premiumState });
+  const puedeGestionarEvidencias = canUseServiceEvidence({ premiumState });
+  const { precioRevision, politicaRetardo, trackingEnabled } = useServiciosConfig();
   const { config: notificacionesConfig } = useNotificacionesConfig();
   const folio = useMemo(() => {
     const raw = String(folioParam || "").trim();
@@ -504,6 +426,7 @@ export default function ServicioDetalle() {
   const [obsFotos, setObsFotos] = useState([]); // [{url,path,name}]
 
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [exportingHoja, setExportingHoja] = useState(false);
   const [savingAll, setSavingAll] = useState(false);
   const [savingNotaAdmin, setSavingNotaAdmin] = useState(false);
   const [mostrarModalCaracteristicas, setMostrarModalCaracteristicas] =
@@ -533,8 +456,7 @@ export default function ServicioDetalle() {
   );
   const esAdmin = normalizarStatus(rol) === "administrador";
   const statusActual = statusValueFromRaw(status || servicio?.status || "pendiente");
-  const statusMeta = STATUS.find((s) => s.value === statusActual);
-  const statusLabel = statusMeta?.label || "Pendiente";
+  const statusLabel = etiquetaEstadoServicio(statusActual);
   const equipoDetalles = useMemo(() => getEquipoDetallesDynamic(servicio), [servicio]);
   const tipoNegocioServicio = useMemo(
     () => equipoEdit?.tipoNegocioSnapshot || inferTipoNegocioServicio(servicio),
@@ -1000,8 +922,8 @@ export default function ServicioDetalle() {
 
   const handleEdit = () => {
     if (locked) {
-      alert(
-        "🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.",
+      avisarError(
+        "Este servicio ya está cerrado/bloqueado. No se puede modificar.",
       );
       return;
     }
@@ -1022,7 +944,7 @@ export default function ServicioDetalle() {
       const texto = `Hola ${nombre},\n\nTe informamos que el servicio ${fol} (${tipo} ${marca} ${modelo}) ahora se encuentra en estado: *${nextStatus}*.\n\nGracias por confiar en nosotros — te avisaremos cuando haya novedades.`;
 
       const tel = String(servicio?.telefono || "").replace(/\D/g, "");
-      if (!tel) return alert("No hay teléfono del cliente para WhatsApp.");
+      if (!tel) return avisarError("No hay teléfono del cliente para WhatsApp.");
 
       const wa = `https://wa.me/52${tel}?text=${encodeURIComponent(texto)}`;
       window.open(wa, "_blank", "noopener,noreferrer");
@@ -1040,7 +962,7 @@ export default function ServicioDetalle() {
     try {
       const tel = String(servicio?.telefono || "").replace(/\D/g, "");
       if (!tel) {
-        alert("No hay telefono del cliente para WhatsApp.");
+        avisarError("No hay telefono del cliente para WhatsApp.");
         return;
       }
 
@@ -1058,7 +980,7 @@ export default function ServicioDetalle() {
       cerrarAdvertenciaAbandono();
     } catch (error) {
       console.error("No se pudo notificar abandono:", error);
-      alert("No se pudo abrir la notificacion de abandono.");
+      avisarError("No se pudo abrir la notificacion de abandono.");
     }
   };
 
@@ -1411,13 +1333,13 @@ export default function ServicioDetalle() {
 // =========================
 const guardarTodo = async ({ silent = false } = {}) => {
   if (!servicio?.id) {
-    if (!silent) alert("❌ No se encontró el ID del servicio.");
+    if (!silent) avisarError("No se encontró el ID del servicio.");
     return false;
   }
 
   if (locked) {
     if (!silent)
-      alert("🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.");
+      avisarError("Este servicio ya está cerrado/bloqueado. No se puede modificar.");
     return false;
   }
 
@@ -1449,21 +1371,21 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
     if (pidePrecio && costoManualInvalido) {
       if (!silent)
-        alert(
+        avisarError(
           aceptaPrecioCero
-            ? "⚠️ Captura un Precio final válido (puede ser 0) o activa Boleta."
-            : "⚠️ Captura un Precio final válido (mayor a 0) o activa Boleta.",
+            ? "Captura un Precio final válido (puede ser 0) o activa Boleta."
+            : "Captura un Precio final válido (mayor a 0) o activa Boleta.",
         );
       return false;
     }
   } else {
     if (!itemsValidos) {
       if (!silent)
-        alert("⚠️ Agrega al menos 1 artículo con descripción para guardar la boleta.");
+        avisarError("Agrega al menos 1 artículo con descripción para guardar la boleta.");
       return false;
     }
     if (!boletaFormaPago) {
-      if (!silent) alert("⚠️ Selecciona una Forma de pago.");
+      if (!silent) avisarError("Selecciona una Forma de pago.");
       return false;
     }
   }
@@ -1476,7 +1398,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
     const estaCobradoEnPOS = !!servicio?.cobradoEnPOS;
     if (!estaCobradoEnPOS) {
       if (!silent) {
-        alert("No puedes marcar como ENTREGADO hasta que el servicio sea cobrado en POS/Ventas.");
+        avisarError("No puedes marcar como ENTREGADO hasta que el servicio sea cobrado en POS/Ventas.");
       }
       return false;
     }
@@ -1567,7 +1489,11 @@ const guardarTodo = async ({ silent = false } = {}) => {
   try {
     setSavingAll(true);
 
-    const actualizado = await actualizarServicioPorId(servicio.id, patch);
+    const actualizado = await actualizarServicioPorId(servicio.id, patch, {
+      origen: ORIGEN_NEGOCIO,
+      usuarioId: uidUsuario || "",
+      usuarioNombre: nombreUsuario || "",
+    });
 
     setServicio(actualizado);
     notaAdminGuardadaRef.current = String(notaAdminEdit || "").trim();
@@ -1582,10 +1508,22 @@ const guardarTodo = async ({ silent = false } = {}) => {
       )
     );
 
+    if (!silent) {
+      const cambioEstado = statusValueFromRaw(actualizado?.status) !== statusValueFromRaw(servicio?.status);
+      avisarExito(
+        cambioEstado ? "Estado actualizado." : "Cambios guardados.",
+        cambioEstado
+          ? { detalle: `El servicio quedó en "${etiquetaEstadoServicio(actualizado?.status)}".` }
+          : undefined,
+      );
+    }
+
     return true;
   } catch (e) {
-    console.error(e);
-    if (!silent) alert(`❌ Error guardando: ${e?.message || e}`);
+    // El detalle tecnico se queda en la consola; a la persona se le dice que
+    // hacer, no como se llama el error de Firebase.
+    console.error("[servicio] No se pudo guardar:", e);
+    if (!silent) avisarError("No pudimos guardar los cambios. Intenta nuevamente.");
     return false;
   } finally {
     setSavingAll(false);
@@ -1596,11 +1534,28 @@ const guardarTodo = async ({ silent = false } = {}) => {
     await guardarTodo({ silent: false });
   };
 
+  /**
+   * Refresca el servicio desde Firestore sin tocar el formulario.
+   *
+   * Lo usan las secciones que escriben por su cuenta (evidencias, aceptacion).
+   * Reconstruir todo el estado de la pantalla borraria lo que la persona
+   * tuviera a medio capturar en la boleta o en las observaciones.
+   */
+  const recargarServicio = async () => {
+    if (!folio) return;
+    try {
+      const data = await buscarServicioPorFolio(folio);
+      if (data) setServicio(data);
+    } catch (error) {
+      console.error("[servicio] No se pudo refrescar:", error);
+    }
+  };
+
   const guardarCaracteristicasEquipo = async () => {
     if (!servicio?.id) return;
     if (locked) {
-      alert(
-        "🔒 Este servicio ya está cerrado/bloqueado. No se puede modificar.",
+      avisarError(
+        "Este servicio ya está cerrado/bloqueado. No se puede modificar.",
       );
       return;
     }
@@ -1616,12 +1571,12 @@ const guardarTodo = async ({ silent = false } = {}) => {
     const numeroSerieLimpio = String(equipoEdit?.numeroSerie || "").trim();
 
     if (!nombreLimpio) {
-      alert("Captura el nombre del cliente.");
+      avisarError("Captura el nombre del cliente.");
       return;
     }
 
     if (!equipoEdit?.omitirNumeroSerie && !numeroSerieLimpio) {
-      alert(
+      avisarError(
         "Captura el numero de serie o activa 'No quiero poner el numero de serie'.",
       );
       return;
@@ -1694,7 +1649,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
   const guardarCaracteristicasEquipoDynamic = async () => {
     if (!servicio?.id) return;
     if (locked) {
-      alert("Este servicio ya esta cerrado o bloqueado. No se puede modificar.");
+      avisarError("Este servicio ya esta cerrado o bloqueado. No se puede modificar.");
       return;
     }
 
@@ -1709,12 +1664,12 @@ const guardarTodo = async ({ silent = false } = {}) => {
     const numeroSerieLimpio = String(equipoEdit?.numeroSerie || "").trim();
 
     if (!nombreLimpio) {
-      alert("Captura el nombre del cliente.");
+      avisarError("Captura el nombre del cliente.");
       return;
     }
 
     if (!equipoEdit?.omitirNumeroSerie && !numeroSerieLimpio) {
-      alert("Captura el numero de serie o activa 'No quiero poner el numero de serie'.");
+      avisarError("Captura el numero de serie o activa 'No quiero poner el numero de serie'.");
       return;
     }
 
@@ -1729,7 +1684,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
     });
 
     if (campoFaltante) {
-      alert(`Completa el campo obligatorio: ${campoFaltante.etiqueta}.`);
+      avisarError(`Completa el campo obligatorio: ${campoFaltante.etiqueta}.`);
       return;
     }
 
@@ -1775,14 +1730,39 @@ const guardarTodo = async ({ silent = false } = {}) => {
     setMostrarModalCaracteristicas(false);
   };
 
+  /**
+   * Reimprime la HOJA DE SERVICIO con el generador que ya existe.
+   *
+   * Hasta ahora solo se generaba al dar de alta el servicio, es decir siempre
+   * antes de que el cliente pudiera firmar. Sin esta reimpresion, la firma
+   * registrada no llegaria nunca a un PDF. No se crea otro documento: se llama
+   * a `generarPdfHojaServicio`, el mismo de siempre.
+   */
+  const descargarHojaServicio = async () => {
+    if (exportingHoja || !servicio) return;
+    setExportingHoja(true);
+    try {
+      const resultado = await generarPdfHojaServicio(servicio, servicio.folio || folio, {
+        download: true,
+      });
+      if (resultado?.ok === false) throw resultado.error || new Error("PDF no generado");
+      avisarExito("Hoja de servicio descargada.");
+    } catch (error) {
+      console.error("[servicio] No se pudo generar la hoja:", error);
+      avisarError("No pudimos generar la hoja de servicio. Intenta nuevamente.");
+    } finally {
+      setExportingHoja(false);
+    }
+  };
+
   const handleExportPdf = async () => {
     if (!puedeExportarBoleta) {
-      alert("⚠️ Activa 'Generar boleta' y captura al menos 1 descripción.");
+      avisarError("Activa 'Generar boleta' y captura al menos 1 descripción.");
       return;
     }
     if (locked) {
-      alert(
-        "🔒 Servicio bloqueado. Puedes generar PDF si ya está guardada la boleta, pero no modificar.",
+      avisarError(
+        "Servicio bloqueado. Puedes generar PDF si ya está guardada la boleta, pero no modificar.",
       );
     }
 
@@ -1805,7 +1785,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
       });
     } catch (error) {
       console.error("No se pudo generar la boleta PDF:", error);
-      alert("No se pudo generar la boleta PDF. Intenta nuevamente.");
+      avisarError("No se pudo generar la boleta PDF. Intenta nuevamente.");
     } finally {
       setExportingPdf(false);
     }
@@ -1914,6 +1894,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
 
   return (
     <div className="detalle-page">
+      <ToastStack toasts={toasts} onDescartar={descartar} />
       <div className="detalle-card">
         {/* Topbar */}
         <div className="detalle-topbar">
@@ -1925,11 +1906,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
             <h2>Detalle del Servicio</h2>
             <small className="detalle-meta">
               Folio: <b>{servicio.folio}</b> · Estado:{" "}
-              <span
-                className={`servicio-status-badge servicio-status-badge-${normalizarStatus(statusActual)}`}
-              >
-                {statusLabel}
-              </span>
+              <ServicioEstadoBadge estado={statusActual} />
               {locked && (
                 <span className="detalle-locked-flag">
                   🔒 CERRADO
@@ -1946,7 +1923,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
         {/* Estado */}
         <div className="box full">
           <h3>Estado del servicio</h3>
-          <WizardProgress status={statusActual} />
+          <ServiceProgress status={statusActual} />
 
           <div className="estado-controls">
             <div className="estado-control-item">
@@ -1960,13 +1937,9 @@ const guardarTodo = async ({ silent = false } = {}) => {
                 onChange={(e) => setStatus(e.target.value)}
                 disabled={locked}
               >
-                {STATUS.filter(
-                  (s) =>
-                    s.value !== "entregado" ||
-                    statusValueFromRaw(status) === "entregado",
-                ).map((s, idx) => (
-                  <option key={`${s.value}-${s.label}-${idx}`} value={s.value}>
-                    {s.label}
+                {getEstadosSeleccionables(servicio?.status).map((estado) => (
+                  <option key={estado.key} value={estado.key}>
+                    {estado.label}
                   </option>
                 ))}
               </select>
@@ -1996,6 +1969,15 @@ const guardarTodo = async ({ silent = false } = {}) => {
               </button>
             </div>
           </div>
+
+          {!locked && (statusValueFromRaw(status) !== statusValueFromRaw(servicio.status) || (fechaAprox || "") !== (servicio.fechaAprox || "")) && (
+            <div className="estado-save-row">
+              <small role="status">Hay cambios sin guardar. El rastreador mostrará el nuevo estado después de guardarlos.</small>
+              <button type="button" className="btn btn-ok" onClick={handleGuardarTodo} disabled={savingAll}>
+                {savingAll ? "Guardando…" : "Guardar cambios"}
+              </button>
+            </div>
+          )}
 
         </div>
 
@@ -2028,13 +2010,15 @@ const guardarTodo = async ({ silent = false } = {}) => {
               </small>
             )}
 
-            <div className="qr-status-wrap">
-              <b>QR estado:</b>
-              <div className="qr-status-code">
-                <QRCode value={urlStatus} size={esVistaMovil ? 92 : 110} />
+            {puedeUsarRastreoServicios && trackingEnabled && (
+              <div className="qr-status-wrap">
+                <b>QR estado:</b>
+                <div className="qr-status-code">
+                  <QRCode value={urlStatus} size={esVistaMovil ? 92 : 110} />
+                </div>
+                <small style={{ opacity: 0.8 }}>/status/{folio}</small>
               </div>
-              <small style={{ opacity: 0.8 }}>/status/{folio}</small>
-            </div>
+            )}
           </div>
 
           <div className="box">
@@ -2085,6 +2069,45 @@ const guardarTodo = async ({ silent = false } = {}) => {
             placeholder="Observaciones internas del servicio..."
             disabled={locked}
           />
+        </div>
+
+        {/* Evidencias */}
+        <div className="box full sv-bloque-evidencias">
+          <ServicioEvidencias
+            servicio={servicio}
+            puedeGestionar={puedeGestionarEvidencias}
+            bloqueado={locked}
+            usuarioNombre={nombreUsuario || ""}
+            onActualizado={recargarServicio}
+            onExito={avisarExito}
+            onError={avisarError}
+          />
+        </div>
+
+        {/* Aceptacion del cliente */}
+        <div className="box full sv-bloque-aceptacion">
+          <ServicioAceptacionPanel
+            servicio={servicio}
+            usuarioId={uidUsuario || ""}
+            usuarioNombre={nombreUsuario || ""}
+            bloqueado={locked}
+            onActualizado={recargarServicio}
+            onExito={avisarExito}
+            onError={avisarError}
+          />
+        </div>
+
+        {/* Historial */}
+        <div className="box full sv-modulo sv-bloque-historial">
+          <div className="sv-bloque-encabezado">
+            <div>
+              <h3>Historial del servicio</h3>
+              <p className="sv-bloque-sub">
+                Cada cambio de estado queda registrado con su fecha, quién lo hizo y desde dónde.
+              </p>
+            </div>
+          </div>
+          <ServicioTimeline servicio={servicio} />
         </div>
 
         {/* Boleta */}
@@ -2227,7 +2250,7 @@ const guardarTodo = async ({ silent = false } = {}) => {
                       if (e.key !== "Enter") return;
                       const result = agregarProductoBoletaPorCodigo(scanCode);
                       if (!result.ok) {
-                        alert(result.message || "No se pudo agregar producto.");
+                        avisarError(result.message || "No se pudo agregar producto.");
                         return;
                       }
                       setScanCode("");
@@ -2485,9 +2508,31 @@ const guardarTodo = async ({ silent = false } = {}) => {
           )}
         </div>
 
+        {/* Documentos */}
+        <div className="box full sv-modulo sv-bloque-documentos">
+          <div className="sv-bloque-encabezado">
+            <div>
+              <h3>Documentos</h3>
+              <p className="sv-bloque-sub">
+                La hoja de servicio incluye la firma del cliente cuando ya aceptó la orden.
+              </p>
+            </div>
+            <div className="sv-bloque-acciones">
+              <button
+                type="button"
+                className="sv-btn sv-btn--suave"
+                onClick={descargarHojaServicio}
+                disabled={exportingHoja}
+              >
+                {exportingHoja ? "Generando…" : "Descargar hoja de servicio"}
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* ✅ BOTÓN ÚNICO HASTA ABAJO */}
         <div className="box full" style={{ marginTop: 14 }}>
-          {!locked && (
+          {!locked && puedeAbonarServicio && (
             <button
               type="button"
               className="btn servicio-abono-pos-btn"
@@ -2984,7 +3029,4 @@ const guardarTodo = async ({ silent = false } = {}) => {
     </div>
   );
 }
-
-
-
 

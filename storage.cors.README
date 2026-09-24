@@ -1,0 +1,8 @@
+# NOTA: la configuracion CORS del bucket NO se puede desplegar desde
+# firebase.json. Se aplica a mano con:
+#
+#   gcloud storage buckets update gs://cajalibre-b4ca5.firebasestorage.app #     --cors-file=storage.cors.json
+#
+# Sin esto, el navegador bloquea la subida de evidencias (preflight) y la
+# descarga de miniaturas que hace el PDF. El archivo se versiona para que la
+# lista de origenes permitidos no viva solo en la consola de Google Cloud.

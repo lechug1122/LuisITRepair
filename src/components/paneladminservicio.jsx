@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { actualizarServicioPorId } from "../js/services/servicios_firestore";
-import { STATUS } from "../js/utils/status_map";
+import {
+  ORIGEN_NEGOCIO,
+  getEstadosSeleccionables,
+  normalizarEstadoServicio,
+} from "../js/services/servicio_estados";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import { imprimirEtiquetas } from "../components/print_label";
 
 function normalizarStatus(raw) {
@@ -19,8 +24,6 @@ const PASOS_BASE = [
   { key: "proceso", label: "En proceso" },
   { key: "final", label: "Finalizado" },
 ];
-
-const ADMIN_STATUS_OPTIONS = STATUS.filter((item) => item.value !== "entregado");
 
 const PROGRESO_POR_STATUS = {
   pendiente: { pct: 0, theme: "normal", finalLabel: "Finalizado" },
@@ -47,13 +50,11 @@ function getCfg(statusNormalized) {
   );
 }
 
+// Desde este panel no se marca "entregado": eso pasa al cobrar en el POS.
+// Un servicio ya entregado se muestra como "listo" para no perder el valor.
 function normalizeAdminStatus(raw) {
-  const normalized = normalizarStatus(raw);
-  if (!normalized) return "pendiente";
-  if (normalized === "entregado" || normalized === "finalizado") return "listo";
-  if (normalized === "en_reparacion") return "reparacion";
-  if (normalized === "en_espera_de_refaccion") return "espera_refaccion";
-  return normalized;
+  const normalizado = normalizarEstadoServicio(raw);
+  return normalizado === "entregado" ? "listo" : normalizado;
 }
 
 function WizardProgress({ status }) {
@@ -108,6 +109,7 @@ export default function PanelAdminServicio({
   onImprimir,
   onRegresar,
 }) {
+  const { uid, nombre } = useAutorizacionActual();
   const [status, setStatus] = useState("pendiente");
   const [notaAdmin, setNotaAdmin] = useState("");
   const [saving, setSaving] = useState(false);
@@ -128,7 +130,11 @@ export default function PanelAdminServicio({
         notaAdmin,
       };
 
-      const actualizado = await actualizarServicioPorId(servicio.id, payload);
+      const actualizado = await actualizarServicioPorId(servicio.id, payload, {
+        origen: ORIGEN_NEGOCIO,
+        usuarioId: uid || "",
+        usuarioNombre: nombre || "",
+      });
 
       onActualizado?.({
         ...servicio,
@@ -159,9 +165,9 @@ export default function PanelAdminServicio({
           onChange={(e) => setStatus(e.target.value)}
           disabled={saving}
         >
-          {ADMIN_STATUS_OPTIONS.map((item, idx) => (
-            <option key={`status-${idx}`} value={item.value}>
-              {item.label}
+          {getEstadosSeleccionables(servicio?.status).map((estado) => (
+            <option key={estado.key} value={estado.key}>
+              {estado.label}
             </option>
           ))}
         </select>

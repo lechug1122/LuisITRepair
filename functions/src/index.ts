@@ -15,6 +15,8 @@ export {crearSuscripcionMercadoPago, consultarSuscripcionMercadoPago, cancelarSu
 export {adminEstablecerPremium} from "./admin";
 export {listarNotificacionesNegocio} from "./notifications";
 export {consultarServicioPublico} from "./service_tracking";
+export {consultarOrdenAceptacion, responderOrdenAceptacion} from "./service_acceptance";
+export {subirEvidenciaServicio, eliminarEvidenciaServicio} from "./service_evidence";
 
 // Start writing functions
 // https://firebase.google.com/docs/functions/typescript

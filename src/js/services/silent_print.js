@@ -7,8 +7,7 @@ import { readEmpresaConfigCache } from "./configure_empresa";
 import { readImpresorasConfigCache } from "./impresoras_config";
 import { formatCurrency, readMonedaConfigCache } from "./moneda_config";
 import {
-  buildTicketConfig,
-  readTicketConfigStorage,
+  readTicketPrintConfig,
   splitTicketLines,
 } from "./ticket_config";
 import { getEtiquetaOpcionTipo, inferTipoNegocioServicio } from "./tipos_negocio";
@@ -217,7 +216,7 @@ async function postSilentPrint(endpoints, payload) {
 }
 
 export function buildSaleTicketText(payload = {}) {
-  const cfg = buildTicketConfig(payload.ticketConfig || readTicketConfigStorage());
+  const cfg = readTicketPrintConfig(payload.ticketConfig);
   const lines = [];
   const businessLines = getBusinessLines(cfg);
 
@@ -308,6 +307,7 @@ export function buildSaleTicketText(payload = {}) {
   splitTicketLines(cfg.extraBottomLines).forEach((line) => lines.push(centerText(line)));
   if (cfg.showLegend && cfg.legendText?.trim()) pushWrapped(lines, cfg.legendText.trim());
   if (cfg.footerText?.trim()) lines.push(centerText(cfg.footerText.trim()));
+  if (cfg.advertisingText) pushWrapped(lines, cfg.advertisingText);
 
   return `${lines.join("\n")}\n\n\n\n`;
 }
@@ -318,7 +318,7 @@ export function buildServiceTicketText({
   urlStatus,
   ticketConfig,
 } = {}) {
-  const cfg = buildTicketConfig(ticketConfig || readTicketConfigStorage());
+  const cfg = readTicketPrintConfig(ticketConfig);
   const lines = [];
   const businessLines = getBusinessLines(cfg);
   const subjectInfo = getServiceSubjectInfo(servicio);
@@ -370,6 +370,7 @@ export function buildServiceTicketText({
   splitTicketLines(cfg.extraBottomLines).forEach((line) => lines.push(centerText(line)));
   if (cfg.showLegend && cfg.legendText?.trim()) pushWrapped(lines, cfg.legendText.trim());
   if (cfg.footerText?.trim()) lines.push(centerText(cfg.footerText.trim()));
+  if (cfg.advertisingText) pushWrapped(lines, cfg.advertisingText);
 
   return `${lines.join("\n")}\n\n\n\n`;
 }

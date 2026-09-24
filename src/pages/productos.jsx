@@ -23,6 +23,9 @@ import {
   INVENTARIO_EXCEL_COLUMNS,
   INVENTARIO_EXCEL_NUMERIC_KEYS,
 } from "../js/services/inventario_excel";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import PremiumBadge from "../components/PremiumBadge";
+import PremiumFeatureModal from "../components/PremiumFeatureModal";
 
 const TIPO_OPTIONS = ["producto", "refaccion", "servicio", "accesorio", "consumible"];
 const UNIDAD_OPTIONS = ["Pza", "Caja", "Paquete", "Juego", "Kit", "Litro", "Metro"];
@@ -478,6 +481,10 @@ export default function Productos({ embedded = false }) {
   const catalogoAutocompletadoRef = useRef(null);
   const [mostrarModalCatalogo, setMostrarModalCatalogo] = useState(false);
   const [noMostrarModalCatalogo, setNoMostrarModalCatalogo] = useState(false);
+  // El conteo de inventario pertenece a Premium. Se sigue mostrando en la
+  // barra de acciones para que todos sepan que existe, pero no se abre.
+  const { puedeUsarConteoInventario, premiumStatusLoaded } = useAutorizacionActual();
+  const [avisoConteoPremium, setAvisoConteoPremium] = useState(false);
   const [mostrarAvisoConteo, setMostrarAvisoConteo] = useState(false);
   const [mostrarConteoInventario, setMostrarConteoInventario] = useState(false);
   const [mostrarConfirmacionConteo, setMostrarConfirmacionConteo] = useState(false);
@@ -920,6 +927,10 @@ export default function Productos({ embedded = false }) {
   };
 
   const abrirAvisoConteo = () => {
+    if (!puedeUsarConteoInventario) {
+      setAvisoConteoPremium(true);
+      return;
+    }
     setMostrarAvisoConteo(true);
   };
 
@@ -1031,6 +1042,15 @@ export default function Productos({ embedded = false }) {
   };
 
   const aplicarConteoInventario = async () => {
+    // Segunda comprobacion antes de tocar el inventario: el plan pudo vencer
+    // con el conteo ya abierto en pantalla.
+    if (!puedeUsarConteoInventario) {
+      setMostrarConfirmacionConteo(false);
+      setMostrarConteoInventario(false);
+      setAvisoConteoPremium(true);
+      return;
+    }
+
     const cambios = productosConteo.filter((producto) => {
       const value = conteoInventario[producto.id];
       return text(value) !== "" && toNumber(value) !== toNumber(producto.stock);
@@ -1236,8 +1256,11 @@ export default function Productos({ embedded = false }) {
               className="btn-accion-header btn-conteo"
               onClick={abrirAvisoConteo}
               type="button"
+              disabled={!premiumStatusLoaded}
+              title={premiumStatusLoaded ? undefined : "Estamos verificando tu plan"}
             >
               Conteo inventario
+              {premiumStatusLoaded && !puedeUsarConteoInventario ? <PremiumBadge size="sm" /> : null}
             </button>
             <button
               className="btn-accion-header btn-categorias"
@@ -1920,6 +1943,15 @@ export default function Productos({ embedded = false }) {
           </div>
         </div>
       )}
+
+      <PremiumFeatureModal
+        abierto={avisoConteoPremium}
+        titulo="Conteo de inventario es una funcion Premium"
+        mensaje="Realiza conteos fisicos, detecta diferencias entre las existencias registradas y las reales y manten actualizado tu inventario con CajaLibre Premium."
+        textoPrincipal="Conocer Premium"
+        textoSecundario="Cancelar"
+        onCerrar={() => setAvisoConteoPremium(false)}
+      />
     </div>
   );
 

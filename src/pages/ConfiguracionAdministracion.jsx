@@ -6,7 +6,9 @@ import { hasAnalyticsAccess } from "../js/services/analytics_access";
 import ConfiguracionSuscripciones from "./ConfiguracionSuscripciones";
 import ConfiguracionAnalitica from "./ConfiguracionAnalitica";
 import ConfiguracionVideosSoporte from "./ConfiguracionVideosSoporte";
-import { FiActivity, FiBarChart2, FiBriefcase, FiVideo } from "react-icons/fi";
+import ConfiguracionNotificacionesGlobales from "./ConfiguracionNotificacionesGlobales";
+import ConfiguracionSoporte from "./ConfiguracionSoporte";
+import { FiActivity, FiBarChart2, FiBell, FiBriefcase, FiLifeBuoy, FiVideo } from "react-icons/fi";
 import "../css/configuracion_administracion.css";
 
 export default function ConfiguracionAdministracion() {
@@ -22,8 +24,11 @@ export default function ConfiguracionAdministracion() {
   const requestedAnalytics =
     requestedTab === "analitica" || location.pathname === "/configuracion/analitica";
   const requestedVideos = requestedTab === "videos";
+  const pestanaSolicitada = ["avisos", "soporte", "videos"].includes(requestedTab)
+    ? requestedTab
+    : "";
   const initialTab = superAdmin
-    ? requestedAnalytics ? "analitica" : requestedVideos ? "videos" : "negocios"
+    ? requestedAnalytics ? "analitica" : (pestanaSolicitada || (requestedVideos ? "videos" : "negocios"))
     : "analitica";
   const [activeTab, setActiveTab] = useState(initialTab);
   const visibleTab = superAdmin ? activeTab : "analitica";
@@ -63,6 +68,24 @@ export default function ConfiguracionAdministracion() {
           {superAdmin && (
             <button
               type="button"
+              className={visibleTab === "avisos" ? "active" : ""}
+              onClick={() => changeTab("avisos")}
+            >
+              <FiBell /> <span>Notificaciones</span>
+            </button>
+          )}
+          {superAdmin && (
+            <button
+              type="button"
+              className={visibleTab === "soporte" ? "active" : ""}
+              onClick={() => changeTab("soporte")}
+            >
+              <FiLifeBuoy /> <span>Soporte</span>
+            </button>
+          )}
+          {superAdmin && (
+            <button
+              type="button"
               className={visibleTab === "videos" ? "active" : ""}
               onClick={() => changeTab("videos")}
             >
@@ -75,6 +98,8 @@ export default function ConfiguracionAdministracion() {
       <div className="cfg-admin-hub-content">
         {visibleTab === "negocios" && superAdmin && <ConfiguracionSuscripciones />}
         {visibleTab === "analitica" && <ConfiguracionAnalitica />}
+        {visibleTab === "avisos" && superAdmin && <ConfiguracionNotificacionesGlobales />}
+        {visibleTab === "soporte" && superAdmin && <ConfiguracionSoporte />}
         {visibleTab === "videos" && superAdmin && <ConfiguracionVideosSoporte />}
       </div>
     </section>

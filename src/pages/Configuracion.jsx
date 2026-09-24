@@ -9,6 +9,7 @@ import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import "../css/configuracion.css";
 import { hasAnalyticsAccess } from "../js/services/analytics_access";
+import { liberarSesionDelDispositivo } from "../js/services/device_sessions";
 
 const SYSTEM_VERSION = "2.1";
 const SUPPORT_PHONE = "2731159520";
@@ -135,6 +136,8 @@ export default function Configuracion() {
         window.location.replace("/");
         return;
       }
+      // Libera la sesion de ESTE equipo antes de salir; las demas continuan.
+      await liberarSesionDelDispositivo(user.uid).catch(() => {});
       await updateDoc(doc(db, "autorizados", user.uid), {
         online: false,
       });

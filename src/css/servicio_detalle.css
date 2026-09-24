@@ -994,6 +994,15 @@
 /* =========================
    WIZARD PROGRESS (Progress Bar)
 ========================= */
+.wizard-progress-scroll { overflow-x: auto; }
+.wizard-progress-scroll .wizard-progress2 { min-width: 620px; }
+.estado-save-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; padding: 12px 14px; border: 1px solid #bfdbfe; border-radius: 12px; background: #eff6ff; }
+.estado-save-row small { color: #1e40af; line-height: 1.5; }
+.estado-save-row button { flex-shrink: 0; }
+body.ui-theme-dark .estado-save-row { background: #19314c; border-color: #355477; }
+body.ui-theme-dark .estado-save-row small { color: #c3ddff; }
+@media (max-width: 560px) { .estado-save-row { align-items: stretch; flex-direction: column; } }
+
 .wizard-progress2{
   position: relative;
   width: 100%;

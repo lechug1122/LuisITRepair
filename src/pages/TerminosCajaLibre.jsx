@@ -9,12 +9,13 @@ import {
 } from "../js/services/negocios";
 import { obtenerEstadoAutorizacion } from "../js/services/autorizacion";
 import terminosPdf from "../assets/Terminos_y_Condiciones_Caja_Libre.pdf";
+import AccesoErrorPanel from "../components/AccesoErrorPanel";
 import AppFooter from "../components/AppFooter";
 import "../css/onboarding.css";
 
 export default function TerminosCajaLibre({ readOnly = false }) {
   const navigate = useNavigate();
-  const { loading, uid, nombre, cuentaPrincipalUid } = useAutorizacionActual();
+  const { loading, uid, nombre, cuentaPrincipalUid, esTitular } = useAutorizacionActual();
   const [acepta, setAcepta] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -69,6 +70,20 @@ export default function TerminosCajaLibre({ readOnly = false }) {
         </main>
         <AppFooter />
       </>
+    );
+  }
+
+  // El personal hereda la aceptacion del titular: no se le pide firmar nada.
+  // Se informa sin navegar para no competir con la guardia de ruta.
+  if (!readOnly && !esTitular) {
+    return (
+      <AccesoErrorPanel
+        titulo="Los terminos los acepta el titular"
+        mensaje="Tu cuenta ya pertenece a un negocio. Quien lo registro es quien debe aceptar los Terminos y Condiciones."
+        mostrarReintentar={false}
+        mostrarCerrarSesion={false}
+        mostrarInicio
+      />
     );
   }
 

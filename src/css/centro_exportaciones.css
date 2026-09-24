@@ -1,0 +1,625 @@
+/* ---------------------------------------------------------------------------
+   Centro de exportaciones a Excel.
+
+   Misma identidad que los archivos que genera: azul marino, turquesa y ambar
+   solo como acento. Se apoya en las variables de apariencia de la app
+   (--app-surface, --app-border, --app-text...) para heredar el tema y el color
+   de acento que la persona haya elegido.
+   --------------------------------------------------------------------------- */
+
+.export-center {
+  --ec-navy: #0f2a44;
+  --ec-navy-medio: #1e5f8c;
+  --ec-turquesa: #17b3a3;
+  --ec-ambar: #f5b301;
+  --ec-superficie: #ffffff;
+  --ec-fondo: #f7f9fc;
+  --ec-borde: #e2e8f0;
+  --ec-texto: #1f2d3d;
+  --ec-suave: #64748b;
+
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--ec-borde);
+  border-radius: 18px;
+  background: var(--ec-superficie);
+  color: var(--ec-texto);
+}
+
+/* ------------------------------- Encabezado ------------------------------ */
+
+.export-center-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--ec-navy) 0%, var(--ec-navy-medio) 100%);
+  color: #fff;
+}
+
+.export-center-eyebrow {
+  display: block;
+  color: var(--ec-ambar);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.export-center-head h2 {
+  margin: 4px 0 6px;
+  font-size: 1.55rem;
+  line-height: 1.2;
+}
+
+.export-center-head p {
+  max-width: 52ch;
+  margin: 0;
+  color: #c7d6e4;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.export-center-periodo {
+  display: grid;
+  gap: 7px;
+  min-width: 244px;
+}
+
+.export-center-periodo label {
+  color: #b6c8d8;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.export-center-periodo select,
+.export-center-rango input {
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* El menu nativo se despliega con el fondo del sistema, asi que sus opciones
+   necesitan color propio o quedan blancas sobre blanco en algunos equipos. */
+.export-center-periodo select option {
+  color: #0f2a44;
+  background: #fff;
+}
+
+.export-center-periodo select:focus-visible,
+.export-center-rango input:focus-visible {
+  outline: 2px solid var(--ec-turquesa);
+  outline-offset: 1px;
+}
+
+.export-center-rango {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.export-center-rango span {
+  color: #9fb4c7;
+  font-size: 13px;
+}
+
+.export-center-periodo small {
+  color: #9fb4c7;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+/* --------------------------------- Avisos -------------------------------- */
+
+.export-center-aviso {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-left: 4px solid;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.export-center-aviso svg {
+  flex: 0 0 auto;
+  font-size: 17px;
+}
+
+.export-center-aviso.tono-exito {
+  border-color: #0e9f6e;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.export-center-aviso.tono-info {
+  border-color: var(--ec-navy-medio);
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.export-center-aviso.tono-error {
+  border-color: #dc2626;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+/* ------------------------------ Categorias ------------------------------- */
+
+.export-center-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.export-center-tabs button {
+  padding: 7px 14px;
+  border: 1px solid var(--ec-borde);
+  border-radius: 999px;
+  background: var(--ec-fondo);
+  color: var(--ec-suave);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+.export-center-tabs button:hover {
+  border-color: var(--ec-navy-medio);
+  color: var(--ec-navy);
+}
+
+.export-center-tabs button.activa {
+  border-color: var(--ec-navy);
+  background: var(--ec-navy);
+  color: #fff;
+}
+
+.export-center-grupo {
+  display: grid;
+  gap: 12px;
+}
+
+.export-center-grupo-head h3 {
+  margin: 0;
+  font-size: 1.02rem;
+  font-weight: 800;
+}
+
+.export-center-grupo-head p {
+  margin: 3px 0 0;
+  color: var(--ec-suave);
+  font-size: 12.5px;
+}
+
+/* ------------------------------- Tarjetas -------------------------------- */
+
+.export-center-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(292px, 1fr));
+  gap: 13px;
+}
+
+.export-card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 16px;
+  border: 1px solid var(--ec-borde);
+  border-top: 3px solid var(--ec-navy-medio);
+  border-radius: 14px;
+  background: var(--ec-superficie);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.export-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 26px rgba(15, 42, 68, 0.1);
+}
+
+.export-card.es-premium {
+  border-top-color: var(--ec-ambar);
+}
+
+.export-card.destacada {
+  border-top-color: var(--ec-turquesa);
+  background: linear-gradient(180deg, #f2fbfa 0%, var(--ec-superficie) 62%);
+}
+
+.export-card.no-disponible {
+  border-top-color: #cbd5e1;
+  background: var(--ec-fondo);
+}
+
+.export-card.no-disponible:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.export-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.export-card-icono {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: #eef4f9;
+  color: var(--ec-navy-medio);
+  font-size: 19px;
+}
+
+.export-card.es-premium .export-card-icono {
+  background: #fdf6e3;
+  color: #b47f04;
+}
+
+.export-card.no-disponible .export-card-icono {
+  background: #eef1f5;
+  color: #94a3b8;
+}
+
+.export-card-plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.export-card-plan.plan-free {
+  background: #e7f7f4;
+  color: #0b7d71;
+}
+
+.export-card-plan.plan-premium {
+  background: var(--ec-ambar);
+  color: #4a3600;
+}
+
+.export-card h4 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.export-card-desc {
+  margin: 0;
+  color: var(--ec-suave);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.export-card-incluye,
+.export-card-nota,
+.export-card-motivo {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.export-card-incluye {
+  color: var(--ec-suave);
+}
+
+.export-card-incluye strong {
+  color: var(--ec-navy);
+}
+
+.export-card-nota {
+  padding: 8px 10px;
+  border-left: 3px solid var(--ec-ambar);
+  border-radius: 8px;
+  background: #fffbef;
+  color: #7a5b00;
+}
+
+.export-card-motivo {
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: #eef1f5;
+  color: #475569;
+}
+
+.export-card-cliente {
+  display: grid;
+  gap: 4px;
+}
+
+.export-card-cliente span {
+  color: var(--ec-suave);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.export-card-cliente select {
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--ec-borde);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ec-texto);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.export-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 9px;
+  /* Empuja el pie al fondo para que todas las tarjetas de una fila alineen
+     su boton, aunque sus descripciones tengan distinto largo. */
+  margin-top: auto;
+  padding-top: 11px;
+  border-top: 1px solid var(--ec-borde);
+}
+
+.export-card-periodo {
+  color: var(--ec-suave);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.export-card-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 15px;
+  border: none;
+  border-radius: 10px;
+  background: var(--ec-navy);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.export-card-btn:hover:not(:disabled) {
+  background: var(--ec-navy-medio);
+  transform: translateY(-1px);
+}
+
+.export-card.es-premium .export-card-btn {
+  background: linear-gradient(135deg, #b47f04 0%, var(--ec-ambar) 100%);
+  color: #3d2c00;
+}
+
+.export-card-btn:disabled {
+  background: #cbd5e1;
+  color: #64748b;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.export-card-btn .girando {
+  animation: export-girar 0.9s linear infinite;
+}
+
+@keyframes export-girar {
+  to { transform: rotate(360deg); }
+}
+
+/* Quien pide menos animación no debería ver el icono girando. */
+@media (prefers-reduced-motion: reduce) {
+  .export-card,
+  .export-card-btn { transition: none; }
+  .export-card:hover { transform: none; }
+  .export-card-btn .girando { animation: none; }
+}
+
+/* ---------------------- Aviso de reporte no disponible ------------------- */
+
+.export-center-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 42, 68, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.export-center-dialogo {
+  display: grid;
+  gap: 12px;
+  width: min(520px, 100%);
+  padding: 24px;
+  border-radius: 16px;
+  background: #fff;
+  color: var(--ec-texto, #1f2d3d);
+  box-shadow: 0 24px 60px rgba(15, 42, 68, 0.32);
+}
+
+.export-center-dialogo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: #eef1f5;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.export-center-dialogo h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.export-center-dialogo p {
+  margin: 0;
+  color: #475569;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.export-center-dialogo button {
+  justify-self: end;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 10px;
+  background: var(--ec-navy, #0f2a44);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* -------------------------------- Responsive ----------------------------- */
+
+@media (max-width: 900px) {
+  .export-center { padding: 15px; }
+
+  .export-center-head {
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .export-center-periodo {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .export-center {
+    padding: 12px;
+    border-radius: 14px;
+  }
+
+  .export-center-head h2 { font-size: 1.3rem; }
+
+  .export-center-grid {
+    /* Una sola columna: dos tarjetas de 290px no caben en un teléfono y
+       partirlas deja los botones inalcanzables. */
+    grid-template-columns: 1fr;
+  }
+
+  .export-center-rango { grid-template-columns: 1fr; }
+
+  .export-center-rango span { display: none; }
+
+  .export-card-foot { justify-content: stretch; }
+
+  .export-card-btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .export-center-tabs {
+    /* Las categorías se deslizan en lugar de apilarse en cinco renglones. */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+
+  .export-center-tabs::-webkit-scrollbar { display: none; }
+
+  .export-center-tabs button { white-space: nowrap; }
+}
+
+/* ---------------------------------- Oscuro ------------------------------- */
+
+body.ui-theme-dark .export-center {
+  --ec-superficie: var(--app-surface-elevated);
+  --ec-fondo: var(--app-surface);
+  --ec-borde: var(--app-border);
+  --ec-texto: var(--app-text);
+  --ec-suave: var(--app-muted);
+}
+
+body.ui-theme-dark .export-card,
+body.ui-theme-dark .export-card-cliente select,
+body.ui-theme-dark .export-center-dialogo {
+  background: var(--app-surface-elevated);
+  border-color: var(--app-border);
+  color: var(--app-text);
+}
+
+body.ui-theme-dark .export-card.destacada,
+body.ui-theme-dark .export-card.no-disponible {
+  background: var(--app-surface);
+}
+
+body.ui-theme-dark .export-card-icono {
+  background: rgba(30, 95, 140, 0.22);
+  color: #8fc4e8;
+}
+
+body.ui-theme-dark .export-card.es-premium .export-card-icono {
+  background: rgba(245, 179, 1, 0.16);
+  color: var(--ec-ambar);
+}
+
+body.ui-theme-dark .export-card-plan.plan-free {
+  background: rgba(23, 179, 163, 0.18);
+  color: #5fd6c8;
+}
+
+body.ui-theme-dark .export-card-nota {
+  background: rgba(245, 179, 1, 0.12);
+  color: #e8c56b;
+}
+
+body.ui-theme-dark .export-card-motivo,
+body.ui-theme-dark .export-center-dialogo-pill {
+  background: var(--app-surface);
+  color: var(--app-muted);
+}
+
+body.ui-theme-dark .export-center-dialogo p {
+  color: var(--app-muted);
+}
+
+body.ui-theme-dark .export-center-aviso.tono-exito {
+  background: rgba(14, 159, 110, 0.14);
+  color: #6ee7b7;
+}
+
+body.ui-theme-dark .export-center-aviso.tono-info {
+  background: rgba(30, 95, 140, 0.18);
+  color: #93c5fd;
+}
+
+body.ui-theme-dark .export-center-aviso.tono-error {
+  background: rgba(220, 38, 38, 0.14);
+  color: #fca5a5;
+}
+
+body.ui-theme-dark .export-card-btn:disabled {
+  background: var(--app-surface);
+  color: var(--app-muted);
+}

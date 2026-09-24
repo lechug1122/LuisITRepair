@@ -76,9 +76,116 @@ service cloud.firestore {
            hasPermission('restaurante.cocina') ||
            hasPermission('restaurante.mesero'))) ||
         name in [
-          'sesiones_dispositivo', 'pos_mobile_scans', 'terminos_aceptaciones',
+          'pos_mobile_scans', 'terminos_aceptaciones',
           'recomendaciones', 'folios', 'contadores_folio'
         ];
+    }
+
+    function negocioTienePremiumVigente(negocioId) {
+      let negocio = get(/databases/$(database)/documents/negocios/$(negocioId)).data;
+      return negocio.premiumUntil is timestamp && negocio.premiumUntil > request.time;
+    }
+
+    function terminosServicioPredeterminados() {
+      return [
+        'Respaldar datos antes de la intervencion.',
+        'La garantia cubre solo los trabajos realizados.',
+        'No hay responsabilidad por virus, mal uso o cambios de terceros.',
+        'Todo trabajo requiere autorizacion del cliente.',
+        'El tiempo de entrega depende de la complejidad del caso.',
+        'El cliente debe revisar el equipo al momento de la entrega.',
+        'No cubre golpes, liquidos, caidas o manipulacion indebida.',
+        'Tras 30 dias de abandono no se garantiza resguardo del equipo.'
+      ];
+    }
+
+    function configuracionServiciosFreeValida(negocioId) {
+      let configPath = /databases/$(database)/documents/negocios/$(negocioId)/configuracion/servicios;
+      let nueva = request.resource.data;
+      let hoja = nueva.get('hojaServicio', {});
+      return exists(configPath)
+        ? (
+            nueva.get('habilitarCanjes', true) == resource.data.get('habilitarCanjes', true) &&
+            nueva.get('catalogoCanjes', []) == resource.data.get('catalogoCanjes', []) &&
+            hoja.get('terminos', terminosServicioPredeterminados()) == resource.data.get('hojaServicio', {}).get('terminos', terminosServicioPredeterminados()) &&
+            hoja.get('terminosPersonalizados', true) == resource.data.get('hojaServicio', {}).get('terminosPersonalizados', true)
+          )
+        : (
+            nueva.get('habilitarCanjes', true) == true &&
+            nueva.get('catalogoCanjes', []) == [] &&
+            hoja.get('terminos', terminosServicioPredeterminados()) == terminosServicioPredeterminados()
+          );
+    }
+
+    function escrituraFuncionesPremiumValida(negocioId, coleccion, documento) {
+      return negocioTienePremiumVigente(negocioId) || (
+        !(coleccion in ['fiados', 'promociones_descuentos']) &&
+        !(coleccion == 'configuracion' && documento == 'descuento_manual') &&
+        (coleccion != 'configuracion' || documento != 'servicios' ||
+          (request.resource != null && configuracionServiciosFreeValida(negocioId))) &&
+        (coleccion != 'clientes' || request.resource == null ||
+          (resource == null
+            ? request.resource.data.get('puntos', 0) == 0
+            : request.resource.data.get('puntos', 0) == resource.data.get('puntos', 0))) &&
+        // Servicios en plan gratuito: los abonos y las EVIDENCIAS quedan
+        // congelados. "Congelados" y no "borrados" a proposito -- el negocio
+        // que documento con Premium y luego dejo de pagar conserva sus fotos y
+        // las sigue viendo; lo que no puede es agregar, reemplazar ni
+        // eliminar. Exigir igualdad exacta cubre los tres casos de una vez.
+        (coleccion != 'servicios' || request.resource == null ||
+          (resource == null
+            ? (request.resource.data.get('abonos', []) == [] &&
+               request.resource.data.get('totalAbonado', 0) == 0 &&
+               request.resource.data.get('ultimoAbonoEn', null) == null &&
+               request.resource.data.get('evidencias', {}) == {})
+            : (request.resource.data.get('abonos', []) == resource.data.get('abonos', []) &&
+               request.resource.data.get('totalAbonado', 0) == resource.data.get('totalAbonado', 0) &&
+               request.resource.data.get('ultimoAbonoEn', null) == resource.data.get('ultimoAbonoEn', null) &&
+               request.resource.data.get('evidencias', {}) == resource.data.get('evidencias', {})))) &&
+        (coleccion != 'ventas' || resource != null || request.resource == null || (
+          request.resource.data.get('tipoPago', '') != 'fiado' &&
+          request.resource.data.get('descuentoManual', 0) == 0 &&
+          request.resource.data.get('descuentoRegla', 0) == 0 &&
+          request.resource.data.get('descuentoPuntos', 0) == 0 &&
+          request.resource.data.get('puntosCanjeados', 0) == 0 &&
+          request.resource.data.get('promocionDescuentoAplicado', null) == null
+        ))
+      );
+    }
+
+    // -----------------------------------------------------------------------
+    // Integridad de la aceptacion del cliente.
+    //
+    // Una aceptacion firmada solo puede nacer del flujo de firma, que corre en
+    // una Cloud Function con el SDK de administracion -- y ese SDK no pasa por
+    // estas reglas. Desde la aplicacion, en cambio, un usuario del negocio
+    // PODRIA escribir a mano `aceptacion.estado = "aceptado"` y fabricar una
+    // firma que nunca ocurrio. Esto lo impide.
+    //
+    // Lo que si puede hacer el negocio es crear la solicitud (estado
+    // "pendiente"). Y si el servicio ya tiene una aceptacion registrada, puede
+    // seguir editando el resto del servicio siempre que la deje INTACTA.
+    //
+    // `autorizaciones` (las versiones archivadas) solo puede crecer: nadie
+    // borra en silencio una aceptacion o un rechazo anterior.
+    // -----------------------------------------------------------------------
+    function aceptacionIntegra() {
+      let nueva = request.resource.data.get('aceptacion', {});
+      let previa = resource == null ? {} : resource.data.get('aceptacion', {});
+      let historialNuevo = request.resource.data.get('autorizaciones', []);
+      let historialPrevio = resource == null ? [] : resource.data.get('autorizaciones', []);
+
+      return (
+        nueva.get('estado', '') in ['', 'pendiente'] ||
+        nueva == previa
+      ) && historialNuevo.size() >= historialPrevio.size();
+    }
+
+    function rastreoPublicoDisponible(negocioId) {
+      let configPath = /databases/$(database)/documents/negocios/$(negocioId)/configuracion/servicios;
+      return negocioTienePremiumVigente(negocioId) &&
+        exists(configPath) &&
+        get(configPath).data.get('trackingEnabled', false) == true;
     }
 
     function sameTenantValue(value) {
@@ -241,6 +348,17 @@ service cloud.firestore {
       );
     }
 
+    // Recuperacion de membresia. Un usuario autenticado puede leer UNICAMENTE
+    // su propia ficha de empleado (uid == request.auth.uid), aunque todavia no
+    // exista su documento en `autorizados`. Sin esta lectura el sistema no
+    // puede distinguir a un empleado sin perfil de un usuario nuevo, y termina
+    // creandole un negocio duplicado.
+    match /{path=**}/empleados/{document} {
+      allow read: if isSignedIn() &&
+        resource.data.uid is string &&
+        resource.data.uid == request.auth.uid;
+    }
+
     // Negocios registrados en CajaLibre.
     match /negocios/{document} {
       allow read: if isSignedIn() && (
@@ -375,16 +493,66 @@ service cloud.firestore {
       allow write: if isSignedIn() && isSuperAdmin();
     }
     
-    // Consulta publica de estatus. La regla recursiva tambien autoriza las
-    // consultas collectionGroup usadas cuando el folio no incluye el negocio.
-    match /{path=**}/servicios/{document} {
-      allow read: if true;
+    // Los servicios operativos son privados. El rastreador consulta una
+    // proyeccion separada y limitada a campos aptos para el cliente.
+    match /_legacy_servicios/{document} {
+      allow read: if isSignedIn() && sameTenantResource();
+      allow write: if isSignedIn() && sameTenantRequest();
     }
 
-    // Estado publico de servicios legacy. Escritura aislada por tenant.
-    match /_legacy_servicios/{document} {
-      allow read: if true;
-      allow write: if isSignedIn() && sameTenantRequest();
+    // Una consulta collectionGroup solo evalua las reglas declaradas con el
+    // comodin recursivo. La regla anclada a /negocios/{negocioId}/... de abajo
+    // gobierna la escritura, pero no alcanza a la busqueda por folio, que
+    // justamente no sabe a que negocio pertenece el servicio.
+    match /{path=**}/servicios_publicos/{document} {
+      allow read: if resource.data.trackingEnabled == true &&
+        resource.data.negocioId is string &&
+        rastreoPublicoDisponible(resource.data.negocioId);
+    }
+
+    match /negocios/{negocioId}/servicios_publicos/{document} {
+      function proyeccionSegura() {
+        return request.resource.data.keys().hasOnly([
+          'negocioId', 'folio', 'tipoDispositivo', 'marca', 'modelo',
+          'trabajo', 'status', 'fechaAprox', 'createdAt', 'updatedAt',
+          'trackingEnabled'
+        ]) &&
+        request.resource.data.negocioId == negocioId &&
+        request.resource.data.folio is string &&
+        request.resource.data.trackingEnabled == true;
+      }
+
+      allow read: if resource.data.negocioId == negocioId &&
+        resource.data.trackingEnabled == true &&
+        rastreoPublicoDisponible(negocioId);
+      allow create, update: if isSignedIn() &&
+        negocioId == currentTenantId() &&
+        (hasPermission('servicios.ver') || hasPermission('servicios.crear')) &&
+        rastreoPublicoDisponible(negocioId) &&
+        proyeccionSegura();
+      allow delete: if false;
+    }
+
+    match /rastreo_publico_negocios/{negocioId} {
+      function marcaPublicaSegura() {
+        return request.resource.data.keys().hasOnly([
+          'negocioId', 'nombre', 'logo', 'trackingEnabled', 'updatedAt'
+        ]) &&
+        request.resource.data.negocioId == negocioId &&
+        request.resource.data.nombre is string &&
+        request.resource.data.logo is string &&
+        request.resource.data.trackingEnabled == true;
+      }
+
+      allow read: if resource.data.negocioId == negocioId &&
+        resource.data.trackingEnabled == true &&
+        rastreoPublicoDisponible(negocioId);
+      allow create, update: if isSignedIn() &&
+        negocioId == currentTenantId() &&
+        (hasPermission('servicios.ver') || hasPermission('servicios.crear')) &&
+        rastreoPublicoDisponible(negocioId) &&
+        marcaPublicaSegura();
+      allow delete: if false;
     }
     
     // Colecciones de negocio aisladas por cuenta principal.
@@ -605,17 +773,140 @@ service cloud.firestore {
       allow create, update, delete: if isSignedIn() && isSuperAdmin();
     }
 
+    // Avisos que CajaLibre envia a los negocios. Se guardan UNA vez y el campo
+    // `audiencia` dice a quien le tocan. Solo la administracion global escribe.
+    match /notificaciones_globales/{document} {
+      // Un aviso dirigido en exclusiva a otro negocio tiene como audiencia
+      // unicamente "negocio:<ese id>", asi que ninguna de las dos pruebas lo
+      // alcanza y no hay forma de leerlo, ni con una consulta hecha a mano.
+      function avisoParaEsteNegocio() {
+        return resource.data.audiencia is list && (
+          resource.data.audiencia.hasAny(['todos', 'plan:free', 'plan:premium']) ||
+          resource.data.audiencia.hasAny(['negocio:' + currentTenantId()])
+        );
+      }
+
+      allow read: if isSignedIn() && (isSuperAdmin() || avisoParaEsteNegocio());
+      allow create, update, delete: if isSignedIn() && isSuperAdmin();
+    }
+
+    // Estado de lectura de los avisos. Un documento por persona, con el nombre
+    // de su propia cuenta: nadie puede marcar por otro ni leer lo ajeno.
+    match /negocios/{negocioId}/notificaciones_estado/{document} {
+      allow read, write: if isSignedIn() && (
+        isSuperAdmin() || (
+          negocioId == currentTenantId() &&
+          document == request.auth.uid
+        )
+      );
+    }
+
+    // Tickets de soporte. Un negocio solo alcanza los suyos; la administracion
+    // global los ve todos.
+    match /soporte_tickets/{ticketId} {
+      function esTicketPropio() {
+        return resource != null && resource.data.negocioId == currentTenantId();
+      }
+
+      allow read: if isSignedIn() && (isSuperAdmin() || esTicketPropio());
+      allow create: if isSignedIn() &&
+        request.resource.data.negocioId == currentTenantId() &&
+        request.resource.data.usuarioUid == request.auth.uid &&
+        request.resource.data.estado == 'abierto';
+      // El negocio puede mover su propio ticket, pero nunca cambiarlo de dueño
+      // ni asignarse un plan que no tiene.
+      allow update: if isSignedIn() && (
+        isSuperAdmin() || (
+          esTicketPropio() &&
+          request.resource.data.negocioId == resource.data.negocioId &&
+          request.resource.data.premium == resource.data.premium
+        )
+      );
+      allow delete: if isSignedIn() && isSuperAdmin();
+
+      // Conversacion. Una nota interna (`interna: true`) solo la lee la
+      // administracion: el cliente no puede verla aunque la pida a proposito.
+      match /mensajes/{mensajeId} {
+        function ticketDelNegocio() {
+          return get(/databases/$(database)/documents/soporte_tickets/$(ticketId)).data.negocioId
+            == currentTenantId();
+        }
+
+        allow read: if isSignedIn() && (
+          isSuperAdmin() ||
+          (resource.data.interna != true && ticketDelNegocio())
+        );
+        allow create: if isSignedIn() && (
+          (isSuperAdmin() && request.resource.data.autor == 'soporte') ||
+          (
+            ticketDelNegocio() &&
+            request.resource.data.autor == 'cliente' &&
+            request.resource.data.interna == false &&
+            request.resource.data.autorUid == request.auth.uid
+          )
+        );
+        allow update, delete: if isSignedIn() && isSuperAdmin();
+      }
+    }
+
+    // Ajustes propios de CajaLibre, como el costo de la asesoria por hora.
+    // Cualquier negocio necesita leerlos para mostrarlos; solo la
+    // administracion global los cambia.
+    match /configuracion_cajalibre/{document} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isSuperAdmin();
+    }
+
+    // Sesiones por dispositivo. Cada persona administra UNICAMENTE las suyas:
+    // el documento se llama con su uid (la sesion unica del plan Gratuito) o
+    // con "uid__equipo" (una sesion por equipo en Premium). Sin esta
+    // restriccion cualquier companero del mismo negocio podria expulsar a otro
+    // o liberarse su propio limite escribiendo la sesion ajena.
+    match /negocios/{negocioId}/sesiones_dispositivo/{document} {
+      function esSesionPropia() {
+        return isSignedIn() && (
+          document == request.auth.uid ||
+          document.matches('^' + request.auth.uid + '__.+$')
+        );
+      }
+
+      function sesionBienFormada() {
+        return request.resource.data.uid == request.auth.uid &&
+          request.resource.data.negocioId == negocioId &&
+          request.resource.data.cuentaPrincipalUid == negocioId &&
+          request.resource.data.deviceId is string &&
+          request.resource.data.deviceId != "";
+      }
+
+      // El administrador del negocio puede consultarlas para el conteo de
+      // equipos del panel, pero nunca escribirlas.
+      allow read: if isSignedIn() && (
+        isSuperAdmin() || (
+          negocioId == currentTenantId() &&
+          (esSesionPropia() || isBusinessAdmin())
+        )
+      );
+      allow create, update: if isSignedIn() &&
+        negocioId == currentTenantId() &&
+        esSesionPropia() &&
+        sesionBienFormada();
+      allow delete: if isSignedIn() && (
+        isSuperAdmin() ||
+        (negocioId == currentTenantId() && esSesionPropia())
+      );
+    }
+
     // Datos operativos privados, organizados dentro de cada negocio.
     match /negocios/{negocioId}/{subcollection}/{document} {
       allow read: if subcollection in [
         'clientes', 'fiados', 'productos', 'proveedores', 'ventas', 'cotizaciones',
         'cortes_caja', 'egresos_diarios', 'servicios', 'empleados',
-        'configuracion', 'sesiones_dispositivo', 'pos_mobile_scans',
+        'configuracion', 'pos_mobile_scans',
         'terminos_aceptaciones', 'recomendaciones', 'restaurante_ordenes',
         'restaurante_reservaciones', 'restaurante_turnos', 'folios',
         'contadores_folio', 'promociones_descuentos'
-      ] && (
-        subcollection == 'servicios' ||
+      ] &&
+      (subcollection != 'restaurante_reservaciones' || negocioTienePremiumVigente(negocioId)) && (
         (
           subcollection == 'configuracion' &&
           document in ['notificaciones', 'descuento_manual'] &&
@@ -632,7 +923,7 @@ service cloud.firestore {
           subcollection == 'promociones_descuentos' &&
           isSignedIn() &&
           negocioId == currentTenantId() &&
-          hasPermission('ventas.pos')
+          (hasPermission('ventas.pos') || hasPermission('productos.ver'))
         ) ||
         (isSignedIn() && (
           isSuperAdmin() ||
@@ -640,6 +931,8 @@ service cloud.firestore {
         ))
       );
       allow create, update, delete: if isSignedIn() &&
+        escrituraFuncionesPremiumValida(negocioId, subcollection, document) &&
+        (subcollection != 'servicios' || request.resource == null || aceptacionIntegra()) &&
         (
           isSuperAdmin() ||
           (negocioId == currentTenantId() && canUseOperationalCollection(subcollection))
@@ -650,10 +943,11 @@ service cloud.firestore {
           isSuperAdmin() ||
           isBusinessAdmin()
         ) &&
+        (subcollection != 'restaurante_reservaciones' || negocioTienePremiumVigente(negocioId)) &&
         subcollection in [
           'clientes', 'fiados', 'productos', 'proveedores', 'ventas', 'cotizaciones',
           'cortes_caja', 'egresos_diarios', 'servicios', 'empleados',
-          'configuracion', 'sesiones_dispositivo', 'pos_mobile_scans',
+          'configuracion', 'pos_mobile_scans',
           'terminos_aceptaciones', 'recomendaciones', 'restaurante_ordenes',
           'restaurante_reservaciones', 'restaurante_turnos', 'folios',
           'contadores_folio', 'promociones_descuentos'

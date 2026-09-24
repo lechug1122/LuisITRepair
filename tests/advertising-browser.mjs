@@ -7,13 +7,20 @@ export const auth={},db={}; export const ANALYTICS_ALLOWED_EMAIL='system@example
 window.listenerCounts={auth:0,negocio:0};
 export const onAuthStateChanged=(auth,cb)=>{window.listenerCounts.auth++;queueMicrotask(()=>cb({uid:'shop',email:'owner@example.com'}));return ()=>{};};
 export const doc=(db,...parts)=>parts.join('/');
-export const onSnapshot=(path,cb)=>{if(path.startsWith('autorizados'))window.refreshAuthorization=()=>cb({exists:()=>true,data:()=>({rol:'admin',activo:true,negocioId:'shop',cuentaPrincipalUid:'shop',suscripcionControlada:true,nombre:'Actualizado'})});queueMicrotask(()=>cb({exists:()=>true,data:()=>path.startsWith('autorizados')?{rol:'admin',activo:true,negocioId:'shop',cuentaPrincipalUid:'shop',suscripcionControlada:true}:{estado:'activo'}}));return ()=>{};};
+export const onSnapshot=(path,a,b)=>{const cb=typeof a==='function'?a:b;if(path.startsWith('autorizados'))window.refreshAuthorization=()=>cb({exists:()=>true,data:()=>({rol:'admin',activo:true,negocioId:'shop',cuentaPrincipalUid:'shop',suscripcionControlada:true,nombre:'Actualizado'})});queueMicrotask(()=>cb({exists:()=>true,data:()=>path.startsWith('autorizados')?{rol:'admin',activo:true,negocioId:'shop',cuentaPrincipalUid:'shop',suscripcionControlada:true}:{estado:'activo'}}));return ()=>{};};
 export const escucharNegocio=(id,cb)=>{window.listenerCounts.negocio++;window.confirmBusiness=(premium,fromCache=false,withExpiry=true)=>cb({premium,premiumUntil:premium && withExpiry ? new Date(Date.now()+86400000) : null,negocioId:id},{fromCache,hasPendingWrites:false});return ()=>{};};
 export const migrateLegacyTenantDataOnce=async()=>{};
 export const normalizeAutorizadoData=data=>data;
 export const normalizarPermisos=()=>({});export const tienePermiso=()=>true;
 export const resolverAccesoSuscripcion=({suscripcion})=>({permitido:true,suscripcion});
+export const mensajeDeErrorAcceso=(error,respaldo)=>respaldo||'No se pudo validar tu acceso.';
 export const clearTenantContext=()=>{};export const saveTenantContext=()=>{};
+// Estos modulos son puros (sin Firestore), asi que se reexportan de verdad en
+// lugar de simularse: el plan y la antiguedad del negocio se evaluan con las
+// mismas reglas que usa la aplicacion.
+export {syncTicketPlan} from '/src/js/services/ticket_plan.js';
+export {trazaSesionActiva} from '/src/js/services/ruta_sesion.js';
+export {canUseCashClosing,canUseCashReconciliation,canUseInventoryCount,canUseTicketEditor,esNegocioLegacy,showTicketEditorMigrationNotice} from '/src/js/services/plan_features.js';
 `;
 try {
  const context=await browser.newContext({viewport:{width:1440,height:900}});

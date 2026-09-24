@@ -121,10 +121,21 @@ function tableHeader(doc, y) {
     cell(doc, x, y, width, 12, label, { align: "center", bold: true, fill: BLUE, fontSize: 9.5 }));
 }
 
-export async function generarPdfBoletaVenta(data = {}) {
+/**
+ * Boleta en PDF.
+ *
+ * `empresaOverride` existe para la consulta publica: ahi el cliente no tiene
+ * sesion y `obtenerEmpresa()` no puede leer Firestore, asi que la marca del
+ * negocio llega ya resuelta desde la consulta publica. Sin el override, el
+ * documento saldria con el nombre y el logotipo del sistema.
+ */
+export async function generarPdfBoletaVenta(data = {}, options = {}) {
+  const { empresaOverride = null } = options;
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
-  let empresa = readEmpresaConfigCache();
-  try { empresa = await obtenerEmpresa(); } catch { /* usa caché */ }
+  let empresa = empresaOverride || readEmpresaConfigCache();
+  if (!empresaOverride) {
+    try { empresa = await obtenerEmpresa(); } catch { /* usa caché */ }
+  }
   // El logo del negocio (si lo subio) reemplaza al del sistema.
   const logoNegocio = String(empresa?.logo || "").trim();
   let logo = null;

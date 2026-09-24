@@ -1,4 +1,6 @@
 import { readEmpresaConfigCache } from "./configure_empresa";
+import { applyTicketPlan, getTicketPlan, isLegacyTicketBusiness } from "./ticket_plan.js";
+import { canUseTicketEditor } from "./plan_features.js";
 
 const TICKET_CONFIG_STORAGE_KEY = "pos_ticket_config_v1";
 
@@ -79,7 +81,17 @@ export function readTicketConfigStorage() {
   }
 }
 
-export function saveTicketConfigStorage(config) {
+export function saveTicketConfigStorage(config, now = Date.now(), legacy = isLegacyTicketBusiness()) {
+  // Unica puerta de escritura del diseño. Aunque alguien habilitara los
+  // controles por su cuenta, el guardado sigue respetando plan, antiguedad del
+  // negocio y fecha. La comprobacion se hace al guardar, asi que el corte del
+  // 21 de septiembre surte efecto sin recargar la pagina.
+  const permitido = canUseTicketEditor({
+    premiumState: getTicketPlan(),
+    negocioLegacy: legacy,
+    ahoraMs: now,
+  });
+  if (!permitido) return false;
   try {
     const normalized = buildTicketConfig(config);
     localStorage.setItem(TICKET_CONFIG_STORAGE_KEY, JSON.stringify(normalized));
@@ -87,6 +99,40 @@ export function saveTicketConfigStorage(config) {
   } catch {
     return false;
   }
+}
+
+export function resolveTicketConfig(
+  raw,
+  premiumState,
+  empresa = readEmpresaConfigCache(),
+  now = Date.now(),
+  legacy = isLegacyTicketBusiness(),
+) {
+  const config = applyTicketPlan(
+    buildTicketConfig(raw),
+    createDefaultTicketConfig(),
+    premiumState,
+    now,
+    legacy,
+  );
+  if (empresa.tipoNegocioId === "tienda-abarrotes") config.showStatusSection = false;
+  return config;
+}
+
+export function readTicketPrintConfig(raw, now = Date.now(), legacy = isLegacyTicketBusiness()) {
+  const plan = getTicketPlan();
+  if (plan === "loading") {
+    throw new Error("Espera a que termine de cargar tu plan para imprimir el ticket.");
+  }
+  // Imprimir nunca depende del plan: lo unico que cambia es el diseño que se
+  // aplica y la linea de publicidad.
+  return resolveTicketConfig(
+    raw || readTicketConfigStorage(),
+    plan,
+    readEmpresaConfigCache(),
+    now,
+    legacy,
+  );
 }
 
 export function splitTicketLines(text) {

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import QRCode from "react-qr-code";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import useServiciosConfig from "../hooks/useServiciosConfig";
 import PageLoader from "../components/PageLoader";
 
 import { buscarServicioPorFolio } from "../js/services/servicios_firestore";
@@ -9,10 +11,11 @@ import { getEstadoInfo } from "../js/services/estado_config";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useMonedaConfig from "../hooks/useMonedaConfig";
 import {
-  buildTicketConfig,
+  resolveTicketConfig,
   readTicketConfigStorage,
   splitTicketLines,
 } from "../js/services/ticket_config";
+import { isServiceReturnsLegend } from "../js/services/configure_servicios";
 import { getEtiquetaOpcionTipo, inferTipoNegocioServicio } from "../js/services/tipos_negocio";
 import useImpresorasConfig from "../hooks/useImpresorasConfig";
 import { captureElementToPngDataUrl, printImageSilently } from "../js/services/silent_print";
@@ -63,7 +66,7 @@ function clearDynamicTicketPrintStyle() {
   document.getElementById(DYNAMIC_TICKET_PRINT_STYLE_ID)?.remove();
 }
 
-function syncDynamicTicketPrintStyle(ticketWidth, isMobile) {
+function syncDynamicTicketPrintStyle(ticketWidth) {
   clearDynamicTicketPrintStyle();
   if (typeof document === "undefined") return;
 
@@ -107,7 +110,8 @@ export default function Ticket() {
   const { folio: folioParam } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { nombreEmpresa, logoEmpresa } = useEmpresaConfig();
+  const { empresa, nombreEmpresa, logoEmpresa } = useEmpresaConfig();
+  const { trackingEnabled } = useServiciosConfig();
   const {
     imprimirAlIniciarServicio,
     modoImpresion,
@@ -116,7 +120,9 @@ export default function Ticket() {
     tamanoTicket,
   } = useImpresorasConfig();
   const { formatCurrency } = useMonedaConfig();
-  const [ticketCfg] = useState(() => buildTicketConfig(readTicketConfigStorage()));
+  const { premiumState, puedeUsarRastreoServicios } = useAutorizacionActual();
+  const [ticketDraft] = useState(readTicketConfigStorage);
+  const ticketCfg = useMemo(() => resolveTicketConfig(ticketDraft, premiumState, empresa), [ticketDraft, premiumState, empresa]);
   const [esVistaMovil, setEsVistaMovil] = useState(() => detectMobileDevice());
   const autoPrintDoneRef = useRef(false);
   const folio = useMemo(() => {
@@ -150,7 +156,7 @@ export default function Ticket() {
   }, []);
 
   useEffect(() => {
-    syncDynamicTicketPrintStyle(tamanoTicket, esVistaMovil);
+    syncDynamicTicketPrintStyle(tamanoTicket);
     return () => clearDynamicTicketPrintStyle();
   }, [esVistaMovil, tamanoTicket]);
 
@@ -211,6 +217,7 @@ export default function Ticket() {
   }, [folio, servicio?.folio]);
 
   const imprimirTicketActual = useCallback(async ({ userInitiated = false } = {}) => {
+    if (premiumState === "loading") return;
     if (modoImpresion === "silenciosa") {
       try {
         const ticketElement = document.getElementById("ticket");
@@ -239,6 +246,7 @@ export default function Ticket() {
 
     window.print();
   }, [
+    premiumState,
     compartirTicketMovil,
     esVistaMovil,
     folio,
@@ -255,7 +263,7 @@ export default function Ticket() {
       location.state?.autoPrintSource === "service-start" &&
       imprimirAlIniciarServicio;
 
-    if (!servicio || !shouldAutoPrint || autoPrintDoneRef.current) return undefined;
+    if (premiumState === "loading" || !servicio || !shouldAutoPrint || autoPrintDoneRef.current) return undefined;
 
     autoPrintDoneRef.current = true;
     const timer = window.setTimeout(() => {
@@ -267,6 +275,7 @@ export default function Ticket() {
 
     return () => window.clearTimeout(timer);
   }, [
+    premiumState,
     imprimirAlIniciarServicio,
     imprimirTicketActual,
     location.pathname,
@@ -291,15 +300,18 @@ export default function Ticket() {
     ticketCfg.showBusinessData,
   ]);
   const topLines = useMemo(
-    () => splitTicketLines(ticketCfg.extraTopLines),
+    () => splitTicketLines(ticketCfg.extraTopLines).filter((line) => !isServiceReturnsLegend(line)),
     [ticketCfg.extraTopLines],
   );
   const bottomLines = useMemo(
-    () => splitTicketLines(ticketCfg.extraBottomLines),
+    () => splitTicketLines(ticketCfg.extraBottomLines)
+      .filter((line) => !isServiceReturnsLegend(line)),
     [ticketCfg.extraBottomLines],
   );
-  const footerText = String(ticketCfg.footerText || "").trim();
+  const footerCandidate = String(ticketCfg.footerText || "").trim();
+  const footerText = isServiceReturnsLegend(footerCandidate) ? "" : footerCandidate;
   const legendText = String(ticketCfg.legendText || "").trim();
+  const mostrarRastreo = puedeUsarRastreoServicios && trackingEnabled === true;
   const tituloPrincipal = businessLines[0] || "Hoja de Servicio";
   const tipoNegocioServicio = useMemo(() => inferTipoNegocioServicio(servicio), [servicio]);
   const tipoTicketLabel = useMemo(() => getTipoTicketLabel(servicio), [servicio]);
@@ -346,7 +358,7 @@ export default function Ticket() {
     });
   }, [formatCurrency, servicio?.costo, servicio?.precioDespues, servicio?.status]);
 
-  if (loading) return <PageLoader text="Cargando ticket..." />;
+  if (loading || premiumState === "loading") return <PageLoader text="Cargando ticket..." />;
   if (!servicio) return <div className="ticket-page">No encontrado: {folio}</div>;
 
   return (
@@ -436,24 +448,28 @@ export default function Ticket() {
             </div>
           )}
 
-          <div className="ticket-divider" />
-
-          <div className="ticket-qr">
-            <QRCode value={urlStatus} size={esVistaMovil ? 180 : 150} />
-            <div className="ticket-qr-text">
-              <b>Visualiza el estado de tu {sujetoTicket}</b>
-              <div>Escanea el QR o ingresa a:</div>
-              <div className="ticket-link">/status</div>
-            </div>
-          </div>
+          {mostrarRastreo && (
+            <>
+              <div className="ticket-divider" />
+              <div className="ticket-qr">
+                <QRCode value={urlStatus} size={esVistaMovil ? 180 : 150} />
+                <div className="ticket-qr-text">
+                  <b>Consulta el estado de tu {sujetoTicket}</b>
+                  <div>Escanea el QR o ingresa a:</div>
+                  <div className="ticket-link">/status</div>
+                </div>
+              </div>
+            </>
+          )}
 
           {bottomLines.map((line) => (
             <div key={line} className="ticket-footer">{line}</div>
           ))}
-          {ticketCfg.showLegend && legendText && (
+          {ticketCfg.showLegend && legendText && !isServiceReturnsLegend(legendText) && (
             <div className="ticket-footer">{legendText}</div>
           )}
           {footerText && <div className="ticket-footer">{footerText}</div>}
+          {ticketCfg.advertisingText && <div className="ticket-footer">{ticketCfg.advertisingText}</div>}
         </div>
       </div>
 

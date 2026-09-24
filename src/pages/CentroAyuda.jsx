@@ -22,6 +22,9 @@ import { FaWhatsapp } from "react-icons/fa";
 import AppFooter from "../components/AppFooter";
 import logo from "../assets/logo.png";
 import { getVideoEmbedUrl, subscribeSupportVideos } from "../js/services/support_videos";
+import { TIPO_ASESORIA, escucharConfigAsesoria } from "../js/services/soporte_tickets";
+import { auth } from "../initializer/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import "../css/centro-ayuda.css";
 
 const WHATSAPP_URL =
@@ -112,13 +115,13 @@ const ARTICLES = [
   {
     id: "corte-caja",
     category: "reportes",
-    title: "Realizar un corte de caja",
-    summary: "Consulta ventas, entradas, salidas y diferencias del turno.",
+    title: "Cerrar y arquear la caja",
+    summary: "Cierra el dia en cualquier plan; Premium agrega el arqueo detallado.",
     steps: [
       "Entra al inicio del sistema.",
       "Abre el módulo de corte de caja.",
-      "Verifica efectivo, tarjeta, transferencias y egresos.",
-      "Confirma el cierre después de revisar las diferencias.",
+      "Revisa ventas y egresos antes de confirmar el cierre.",
+      "Con Premium, cuenta denominaciones y documenta cualquier diferencia del arqueo.",
     ],
     destination: "/home",
     destinationLabel: "Ir al inicio",
@@ -174,6 +177,18 @@ export default function CentroAyuda() {
   const [guidesModalOpen, setGuidesModalOpen] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [videosLoading, setVideosLoading] = useState(true);
+  // El Centro de ayuda es publico: los accesos a soporte solo aparecen cuando
+  // hay una sesion, porque un ticket pertenece a un negocio.
+  const [sesionIniciada, setSesionIniciada] = useState(false);
+  const [costoAsesoria, setCostoAsesoria] = useState({ precioPorHora: 0, moneda: "MXN" });
+
+  useEffect(() => onAuthStateChanged(auth, (user) => setSesionIniciada(Boolean(user))), []);
+
+  useEffect(() => {
+    if (!sesionIniciada) return undefined;
+    const detener = escucharConfigAsesoria(setCostoAsesoria, () => {});
+    return () => detener?.();
+  }, [sesionIniciada]);
   const categoryId = searchParams.get("categoria") || "";
   const articleId = searchParams.get("articulo") || "";
 
@@ -345,8 +360,38 @@ export default function CentroAyuda() {
                   <section>
                     <strong>Estamos aquí para ayudarte</strong>
                     <p>Nuestro equipo de soporte está listo para resolver tus dudas.</p>
-                    <a className="primary" href="mailto:cajalibre.puntodeventa@gmail.com"><FiMail /> Enviar un mensaje</a>
+                    {sesionIniciada ? (
+                      <Link className="primary" to="/soporte?nuevo=1"><FiMail /> Contactar soporte</Link>
+                    ) : (
+                      <a className="primary" href="mailto:cajalibre.puntodeventa@gmail.com"><FiMail /> Enviar un mensaje</a>
+                    )}
                     <a href={WHATSAPP_URL} target="_blank" rel="noreferrer"><FaWhatsapp /> Iniciar chat por WhatsApp</a>
+                  </section>
+                </div>
+
+                {/* La asesoria no es lo mismo que reportar una falla: reportar
+                    un error del sistema nunca se cobra. */}
+                <div className="help-asesoria">
+                  <i><FiHeadphones /></i>
+                  <section>
+                    <strong>¿Necesitas asesoría personalizada?</strong>
+                    <p>
+                      Si necesitas ayuda para configurar tu negocio, capacitar a tu personal
+                      o recibir asesoría personalizada, puedes solicitar una sesión de
+                      asistencia.
+                    </p>
+                    <p className="help-asesoria-costo">
+                      La asesoría personalizada para usuarios del plan Free tiene costo por
+                      hora
+                      {costoAsesoria.precioPorHora
+                        ? `: $${costoAsesoria.precioPorHora} ${costoAsesoria.moneda} por hora.`
+                        : ". Te confirmamos el costo antes de agendar."}
+                    </p>
+                    {sesionIniciada ? (
+                      <Link to={`/soporte?nuevo=1&tipo=${TIPO_ASESORIA}`}>Solicitar asesoría</Link>
+                    ) : (
+                      <Link to="/login">Inicia sesión para solicitar asesoría</Link>
+                    )}
                   </section>
                 </div>
               </aside>

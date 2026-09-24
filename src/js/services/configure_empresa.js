@@ -7,6 +7,8 @@ import {
   getTenantConfigDocRef,
   withTenantData,
 } from "./tenant";
+import { getRestaurantPlanLimits, PLAN_LOADING } from "./plan_features.js";
+import { getTicketPlan } from "./ticket_plan.js";
 const EMPRESA_STORAGE_KEY = "empresa_config_cache_v1";
 
 export const DEFAULT_EMPRESA_CONFIG = {
@@ -19,7 +21,7 @@ export const DEFAULT_EMPRESA_CONFIG = {
   tipoNegocioId: "soporte-computo",
   tiposNegocio: getTiposNegocioPreset(),
   restaurante: {
-    pisos: [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 12 }],
+    pisos: [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 10 }],
   },
 };
 
@@ -59,6 +61,15 @@ function normalizeRestauranteConfig(raw = {}) {
       cantidadMesas: Math.min(200, Math.max(1, Math.trunc(Number(piso?.cantidadMesas) || 1))),
     })),
   };
+}
+
+export function aplicarLimitesRestaurante(config = {}) {
+  const normalized = normalizeEmpresaConfig(config);
+  const pisos = normalized.restaurante.pisos.map((piso) => ({
+    ...piso,
+    cantidadMesas: Math.max(1, piso.cantidadMesas),
+  }));
+  return { ...normalized, restaurante: { ...normalized.restaurante, pisos } };
 }
 
 // Mantiene estable la estructura de configuracion de empresa.
@@ -116,6 +127,15 @@ export function readEmpresaConfigCache() {
     return normalizeEmpresaConfig(JSON.parse(raw));
   } catch {
     return normalizeEmpresaConfig(DEFAULT_EMPRESA_CONFIG);
+  }
+}
+
+async function syncPublicTrackingBrand() {
+  try {
+    const { sincronizarMarcaRastreoPublico } = await import("./servicios_firestore.js");
+    await sincronizarMarcaRastreoPublico();
+  } catch (error) {
+    console.warn("[empresa] No se pudo actualizar la marca del rastreador público:", error?.code || error);
   }
 }
 
@@ -217,16 +237,50 @@ export const actualizarNombreEmpresa = async (nombre) => {
     },
     { merge: true },
   );
+  await syncPublicTrackingBrand();
 
   return normalized;
 };
 
 export const actualizarEmpresaConfig = async (config) => {
+  const premiumState = getTicketPlan();
+  if (premiumState === PLAN_LOADING) {
+    throw new Error("Espera a que termine de cargar el plan antes de guardar.");
+  }
   const empresaActual = await obtenerEmpresa();
   const empresaRef = getTenantConfigDocRef("empresa");
-  const normalized = normalizeEmpresaConfig({
-    ...empresaActual,
-    ...config,
+  const actualNormalizada = normalizeEmpresaConfig(empresaActual);
+  const propuestaNormalizada = normalizeEmpresaConfig({ ...actualNormalizada, ...config });
+  const limits = getRestaurantPlanLimits({ premiumState });
+  if (premiumState !== "premium") {
+    const pisosActuales = actualNormalizada.restaurante.pisos;
+    const pisosPropuestos = propuestaNormalizada.restaurante.pisos;
+    if (pisosPropuestos.length > Math.max(limits.maxPisos, pisosActuales.length)) {
+      throw new Error("CajaLibre Free permite administrar 1 piso. Actualiza a Premium para agregar más áreas o pisos.");
+    }
+    const mesasActuales = pisosActuales.reduce(
+      (total, piso) => total + Number(piso?.cantidadMesas || 0),
+      0,
+    );
+    const mesasPropuestas = pisosPropuestos.reduce(
+      (total, piso) => total + Number(piso?.cantidadMesas || 0),
+      0,
+    );
+    if (mesasPropuestas > limits.maxMesasTotal && mesasPropuestas > mesasActuales) {
+      throw new Error("El plan gratuito permite administrar hasta 10 mesas. Actualiza a Premium para agregar más mesas.");
+    }
+    pisosPropuestos.forEach((piso, index) => {
+      const anterior = pisosActuales[index];
+      const creoMesasFueraDeLimite = piso.cantidadMesas > limits.maxMesasPorPiso
+        && (!anterior || piso.cantidadMesas > anterior.cantidadMesas);
+      if (creoMesasFueraDeLimite) {
+        throw new Error("El plan gratuito permite administrar hasta 10 mesas. Actualiza a Premium para agregar más mesas.");
+      }
+    });
+  }
+  const normalized = aplicarLimitesRestaurante({
+    ...actualNormalizada,
+    ...propuestaNormalizada,
   });
 
   saveEmpresaConfigCache(normalized);
@@ -238,6 +292,7 @@ export const actualizarEmpresaConfig = async (config) => {
     },
     { merge: true },
   );
+  await syncPublicTrackingBrand();
 
   return normalized;
 };

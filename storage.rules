@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// ---------------------------------------------------------------------------
+// Reglas de Firebase Storage de CajaLibre.
+//
+// ESTE BUCKET ESTA CERRADO PARA LOS CLIENTES. No es un descuido: es la
+// decision de diseño.
+//
+// POR QUE
+//
+// El aislamiento por negocio depende de `autorizados/{uid}`, porque un
+// empleado tiene un uid distinto del id de su negocio: sin consultar Firestore
+// no hay forma de saber a que negocio pertenece quien sube un archivo.
+//
+// Las reglas de Storage de este proyecto NO pueden leer Firestore. Se
+// comprobo con reglas de diagnostico desplegadas a proposito, subiendo como un
+// usuario real:
+//
+//     PASA  (200)  regla con solo `request.auth != null`
+//     FALLA (403)  regla con `firestore.exists(autorizados/$(uid))`
+//     FALLA (403)  regla con `firestore.get(autorizados/$(uid))`
+//
+// Y eso despues de conceder al agente de reglas el rol
+// `roles/firebaserules.firestoreServiceAgent`, que es el requisito documentado.
+//
+// Ante eso habia dos caminos: relajar el aislamiento (permitir escribir segun
+// la ruta que mande el propio cliente, que es justo lo que un atacante
+// controla), o mover la subida al servidor. Se eligio el servidor.
+//
+// COMO FUNCIONA ENTONCES
+//
+// Las evidencias y las firmas las escriben Cloud Functions con el SDK de
+// administracion, que no pasa por estas reglas y SI puede comprobar en
+// Firestore el negocio, el permiso y el plan. Cada archivo se guarda con un
+// token de descarga: la aplicacion y el PDF muestran las imagenes con esa URL,
+// sin necesidad de permiso de lectura aqui.
+//
+// Consecuencia practica: si alguna pantalla nueva necesita leer o escribir
+// Storage directamente, NO se abre este archivo a lo bruto. Se añade una
+// funcion que valide, igual que las que ya existen.
+// ---------------------------------------------------------------------------
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

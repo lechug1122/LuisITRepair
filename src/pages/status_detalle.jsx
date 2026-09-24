@@ -1,673 +1,238 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { buscarServicioPublicoPorFolio } from "../js/services/servicios_firestore";
+import { observeServiceTracking } from "../js/services/service_tracking_live.js";
+import { getServiceTrackingState as stateInfo, getServiceTrackingSteps } from "../js/utils/service_tracking_status.js";
+import { generarPdfHojaServicio } from "../js/services/pdf_hoja_servicio.js";
+import { agruparEvidencias, leerEvidencias } from "../js/services/servicio_evidencias.js";
+import { generarPdfBoletaVenta } from "../js/services/pdf_boleta_venta.js";
+import { datosPdfBoleta, leerBoletaPublica } from "../js/services/servicio_boleta_publica.js";
+import StatusAceptacionCliente from "../components/StatusAceptacionCliente.jsx";
 import "../css/status.css";
 
-import {
-  collectionGroup,
-  query,
-  where,
-  limit,
-  onSnapshot,
-} from "firebase/firestore";
-import { db } from "../initializer/firebase";
-
-const COLLECTION = "servicios";
-
-function normalizarStatus(raw) {
-  if (!raw) return "";
-  return raw
-    .toString()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, "_")
-    .trim();
-}
-
-function permitePrecioCero(status) {
-  const s = normalizarStatus(status);
-  return s === "cancelado" || s === "no_reparable" || s === "abandonado";
-}
-
 function formatFecha(ts) {
-  if (!ts?.seconds) return "-";
-  return new Date(ts.seconds * 1000).toLocaleString("es-MX");
+  if (typeof ts?.seconds !== "number") return "Sin registrar";
+  return new Date(ts.seconds * 1000).toLocaleString("es-MX", {
+    day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+  });
 }
 
-function formatFechaDate(date) {
-  if (!(date instanceof Date)) return "-";
-  return date.toLocaleString("es-MX");
+function BackButton({ onClick }) {
+  return <button type="button" className="status-back-link" onClick={onClick} aria-label="Volver a la consulta" title="Volver">
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m12 5-7 7 7 7M5 12h14" /></svg>
+  </button>;
 }
 
-function money(value) {
-  const amount = Number(value) || 0;
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
-
-function timeAgo(date) {
-  if (!(date instanceof Date)) return "";
-  const diff = Date.now() - date.getTime();
-  const sec = Math.floor(diff / 1000);
-  if (sec < 10) return "hace unos segundos";
-  if (sec < 60) return `hace ${sec}s`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `hace ${min} min`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `hace ${hr} h`;
-  const days = Math.floor(hr / 24);
-  return `hace ${days} dia(s)`;
-}
-
-const STATUS_STEP_META = {
-  pendiente: {
-    currentStep: 0,
-    resultLabel: "Finalizado",
-    closeLabel: "Entregado",
-    theme: "blue",
-  },
-  revision: {
-    currentStep: 1,
-    resultLabel: "Finalizado",
-    closeLabel: "Entregado",
-    theme: "blue",
-  },
-  en_espera_de_refaccion: {
-    currentStep: 2,
-    resultLabel: "Finalizado",
-    closeLabel: "Entregado",
-    theme: "blue",
-  },
-  en_reparacion: {
-    currentStep: 3,
-    resultLabel: "Finalizado",
-    closeLabel: "Entregado",
-    theme: "blue",
-  },
-  trabajando: {
-    currentStep: 3,
-    resultLabel: "Finalizado",
-    closeLabel: "Entregado",
-    theme: "blue",
-  },
-  listo: {
-    currentStep: 4,
-    resultLabel: "Finalizado",
-    closeLabel: "Entregado",
-    theme: "blue",
-  },
-  finalizado: {
-    currentStep: 4,
-    resultLabel: "Finalizado",
-    closeLabel: "Entregado",
-    theme: "blue",
-  },
-  entregado: {
-    currentStep: 5,
-    resultLabel: "Finalizado",
-    closeLabel: "Entregado",
-    theme: "blue",
-  },
-  cancelado: {
-    currentStep: 4,
-    resultLabel: "Cancelado",
-    closeLabel: "Cierre",
-    theme: "danger",
-  },
-  no_reparable: {
-    currentStep: 4,
-    resultLabel: "No reparable",
-    closeLabel: "Cierre",
-    theme: "dark",
-  },
-  abandonado: {
-    currentStep: 5,
-    resultLabel: "Abandonado",
-    closeLabel: "Cierre",
-    theme: "warning",
-  },
-};
-
-function getStepperMeta(status) {
-  const key = normalizarStatus(status);
-  return {
-    key,
-    ...(STATUS_STEP_META[key] || STATUS_STEP_META.pendiente),
-  };
-}
-
-function getRevisionDetalle(statusKey) {
-  if (statusKey === "pendiente") {
-    return "Servicio recibido y esperando revision inicial.";
-  }
-  if (statusKey === "revision") return "Diagnostico inicial en curso.";
-  if (statusKey === "cancelado") {
-    return "La revision se detuvo antes de llegar a una conclusion final.";
-  }
-  if (statusKey === "abandonado") {
-    return "El servicio fue cerrado por abandono despues del plazo definido.";
-  }
-  if (statusKey === "no_reparable") {
-    return "La revision detecto una falla que impide la reparacion.";
-  }
-  return "Revision tecnica completada.";
-}
-
-function getRefaccionDetalle(statusKey, fechaAprox) {
-  if (statusKey === "en_espera_de_refaccion") {
-    return fechaAprox
-      ? `Esperando refaccion o autorizacion. Fecha estimada: ${fechaAprox}.`
-      : "Esperando refaccion o autorizacion para continuar.";
-  }
-  if (["pendiente", "revision"].includes(statusKey)) {
-    return "Este paso se usa cuando el equipo necesita piezas o aprobacion.";
-  }
-  return "Paso de refaccion cubierto o no requerido para continuar.";
-}
-
-function getReparacionDetalle(statusKey) {
-  if (statusKey === "en_reparacion" || statusKey === "trabajando") {
-    return "Equipo en trabajo tecnico dentro del taller.";
-  }
-  if (["pendiente", "revision", "en_espera_de_refaccion"].includes(statusKey)) {
-    return "La reparacion iniciara cuando el diagnostico y las piezas esten listas.";
-  }
-  if (statusKey === "cancelado") return "La reparacion ya no continuara.";
-  if (statusKey === "no_reparable") {
-    return "No fue posible llegar a una etapa de reparacion efectiva.";
-  }
-  if (statusKey === "abandonado") return "La reparacion ya no continuara por abandono.";
-  return "Reparacion finalizada correctamente.";
-}
-
-function getResultadoDetalle(statusKey) {
-  if (statusKey === "listo" || statusKey === "finalizado") {
-    return "El equipo ya termino proceso y esta listo para la siguiente etapa.";
-  }
-  if (statusKey === "cancelado") {
-    return "El servicio fue marcado como cancelado y quedo cerrado.";
-  }
-  if (statusKey === "no_reparable") {
-    return "No fue posible reparar el equipo y el servicio quedo cerrado.";
-  }
-  if (statusKey === "abandonado") {
-    return "El equipo supero el plazo de abandono y el servicio quedo cerrado.";
-  }
-  if (statusKey === "entregado") {
-    return "El resultado tecnico fue confirmado antes de la entrega.";
-  }
-  return "Se mostrara cuando el tecnico concluya el proceso.";
-}
-
-function getCloseDetail(statusKey, ultimaActualizacionTexto) {
-  if (statusKey === "entregado") {
-    return `Entrega confirmada. Ultima actualizacion: ${ultimaActualizacionTexto}`;
-  }
-  if (statusKey === "cancelado" || statusKey === "no_reparable") {
-    return "Servicio cerrado sin entrega al cliente.";
-  }
-  if (statusKey === "abandonado") {
-    return "Servicio cerrado por abandono del equipo.";
-  }
-  if (statusKey === "listo" || statusKey === "finalizado") {
-    return "Pendiente de entrega o cierre con cliente.";
-  }
-  return "Disponible cuando el servicio llegue a su etapa final.";
-}
-
-function StatusStepper({ status, createdAt, fechaAprox, ultimaActualizacionTexto }) {
-  const meta = useMemo(() => getStepperMeta(status), [status]);
-
-  const steps = useMemo(() => {
-    const baseSteps = [
-      {
-        key: "pendiente",
-        title: "Pendiente",
-        detail: createdAt
-          ? `Ingreso registrado: ${formatFecha(createdAt)}`
-          : "Ingreso pendiente de registrar.",
-      },
-      {
-        key: "revision",
-        title: "Revision",
-        detail: getRevisionDetalle(meta.key),
-      },
-      {
-        key: "refaccion",
-        title: "Espera de refaccion",
-        detail: getRefaccionDetalle(meta.key, fechaAprox),
-      },
-      {
-        key: "reparacion",
-        title: "Reparacion",
-        detail: getReparacionDetalle(meta.key),
-      },
-      {
-        key: "resultado",
-        title: meta.resultLabel,
-        detail: getResultadoDetalle(meta.key),
-      },
-      {
-        key: "cierre",
-        title: meta.closeLabel,
-        detail: getCloseDetail(meta.key, ultimaActualizacionTexto),
-      },
-    ];
-
-    return baseSteps.map((step, index) => {
-      let state = "pending";
-      if (meta.key === "entregado" && index <= meta.currentStep) {
-        state = "completed";
-      } else if (index < meta.currentStep) {
-        state = "completed";
-      } else if (index === meta.currentStep) {
-        state = "active";
-      }
-
-      let statusText = "Pendiente";
-      if (state === "completed") {
-        if (meta.key === "entregado" && index === meta.currentStep) {
-          statusText = "Entregado";
-        } else {
-          statusText = "Completado";
-        }
-      }
-      if (state === "active") {
-        if (step.key === "pendiente") statusText = "Registrado";
-        else if (step.key === "revision") statusText = "En revision";
-        else if (step.key === "refaccion") statusText = "En espera";
-        else if (step.key === "reparacion") statusText = "En reparacion";
-        else if (step.key === "resultado") statusText = meta.resultLabel;
-        else statusText = meta.closeLabel === "Cierre" ? "Cerrado" : meta.closeLabel;
-      }
-
-      return {
-        ...step,
-        state,
-        statusText,
-      };
-    });
-  }, [createdAt, fechaAprox, meta, ultimaActualizacionTexto]);
-
-  return (
-    <div className={`status-stepper-box status-stepper-theme-${meta.theme}`}>
-      {steps.map((step, index) => (
-        <div
-          key={step.key}
-          className={`status-stepper-step status-stepper-${step.state}`}
-        >
-          <div className="status-stepper-circle">
-            {step.state === "completed" ? (
-              <svg
-                viewBox="0 0 16 16"
-                fill="currentColor"
-                height="16"
-                width="16"
-                aria-hidden="true"
-              >
-                <path d="M12.736 3.97a.733.733 0 0 1 1.047 0c.286.289.29.756.01 1.05L7.88 12.01a.733.733 0 0 1-1.065.02L3.217 8.384a.757.757 0 0 1 0-1.06.733.733 0 0 1 1.047 0l3.052 3.093 5.4-6.425z"></path>
-              </svg>
-            ) : (
-              index + 1
-            )}
-          </div>
-          <div className="status-stepper-line"></div>
-          <div className="status-stepper-content">
-            <div className="status-stepper-title">{step.title}</div>
-            <div className="status-stepper-status">{step.statusText}</div>
-            <div className="status-stepper-time">{step.detail}</div>
-          </div>
+function StatusStepper({ info, createdAt, fechaAprox }) {
+  const details = [
+    `Ingreso: ${formatFecha(createdAt)}`,
+    "Diagnóstico del equipo y evaluación del trabajo.",
+    fechaAprox ? `Fecha estimada: ${fechaAprox}` : "Esta etapa se utiliza cuando se necesitan piezas o aprobación.",
+    "Trabajo técnico para resolver la falla.",
+    "Resultado del servicio y preparación de la entrega.",
+    "Entrega del equipo al cliente.",
+  ];
+  const steps = getServiceTrackingSteps(info.key);
+  return <ol className={`status-stepper-box status-stepper-theme-${info.theme}`} aria-label="Etapas del servicio">
+    {steps.map((step, index) => {
+      const state = info.key === "entregado" || index < info.step ? "completed" : index === info.step ? "active" : "pending";
+      return <li key={step.key} className={`status-stepper-step status-stepper-${state}`} aria-current={state === "active" ? "step" : undefined}>
+        <div className="status-stepper-circle" aria-hidden="true">{state === "completed" ? <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m5 12 4 4L19 6" /></svg> : index + 1}</div>
+        <div className="status-stepper-content"><div className="status-stepper-title">{step.title}</div>
+          <span className="status-stepper-status">{state === "active" ? "Etapa actual" : state === "completed" ? "Completado" : "Pendiente"}</span>
+          <p className="status-stepper-time">{state === "active" ? info.detail : details[index]}</p>
         </div>
-      ))}
-    </div>
-  );
+      </li>;
+    })}
+  </ol>;
 }
 
 export default function StatusDetalleCliente() {
   const { folio: folioParam } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const folio = useMemo(() => {
     const raw = String(folioParam || "").trim();
-    if (!raw) return "";
-    try {
-      return decodeURIComponent(raw);
-    } catch {
-      return raw;
-    }
+    try { return decodeURIComponent(raw); } catch { return raw; }
   }, [folioParam]);
-
   const [loading, setLoading] = useState(true);
   const [servicio, setServicio] = useState(null);
   const [lookupError, setLookupError] = useState("");
   const [lastClientUpdate, setLastClientUpdate] = useState(null);
+  const [exportingSheet, setExportingSheet] = useState(false);
+  const [exportingReceipt, setExportingReceipt] = useState(false);
+  const [downloadError, setDownloadError] = useState("");
+  const acceptanceReference = useMemo(
+    () => new URLSearchParams(location.search).get("aceptacion") || "",
+    [location.search],
+  );
 
   function handleGoBack() {
-    if (window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-    navigate("/status");
+    if (window.history.length > 1) navigate(-1);
+    else navigate("/status");
   }
 
   useEffect(() => {
-    const f = (folio || "").trim();
-    if (!f) return undefined;
-
-    setLoading(true);
-    setServicio(null);
-    setLookupError("");
-
-    const q = query(collectionGroup(db, COLLECTION), where("folio", "==", f), limit(1));
-
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setLoading(false);
-        setLookupError("");
-
-        if (snap.empty) {
-          setServicio(null);
+    let cancelled = false;
+    let unsubscribe;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setLoading(true);
+      setServicio(null);
+      setLookupError("");
+      unsubscribe = observeServiceTracking({
+        folio,
+        lookup: (folioConsultado) => buscarServicioPublicoPorFolio(
+          folioConsultado,
+          acceptanceReference,
+        ),
+        onData: (data) => {
+          setServicio(data);
           setLastClientUpdate(new Date());
-          return;
-        }
+          setLookupError("");
+          setLoading(false);
+        },
+        onError: (err) => {
+          console.error("Consulta pública de servicio:", err);
+          setLookupError("No se pudo actualizar el servicio. Volveremos a intentarlo automáticamente.");
+          setLoading(false);
+        },
+      });
+    });
+    return () => { cancelled = true; unsubscribe?.(); };
+  }, [acceptanceReference, folio]);
 
-        const doc = snap.docs[0];
-        setServicio({ id: doc.id, ...doc.data() });
-        setLastClientUpdate(new Date());
-      },
-      (err) => {
-        console.error("onSnapshot error:", err);
-        setLoading(false);
-        setServicio(null);
-        if ((err?.code || "").includes("permission-denied")) {
-          setLookupError("No hay permisos para consultar este servicio. Contacta al administrador.");
-        } else {
-          setLookupError("No se pudo consultar el servicio en este momento. Intenta de nuevo.");
-        }
-        setLastClientUpdate(new Date());
-      },
-    );
+  useEffect(() => {
+    if (loading || !acceptanceReference) return undefined;
+    const timer = window.setTimeout(() => {
+      document.getElementById("aceptacion-cliente")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [acceptanceReference, loading]);
 
-    return () => unsub();
-  }, [folio]);
+  if (loading) return <main className="status-page status-page--centered"><section className="status-box status-empty" role="status" aria-live="polite">
+    <span className="status-loader" aria-hidden="true" /><h1>Consultando tu servicio</h1><p>Estamos buscando la información de tu folio.</p>
+  </section></main>;
 
-  const precioTexto = useMemo(() => {
-    if (!servicio) return "-";
-    if (servicio?.precioDespues) {
-      return "El precio aparecera cuando el estatus sea actualizado.";
+  if (!servicio) return <main className="status-page status-page--centered"><section className="status-box status-empty">
+    <div className="status-header"><BackButton onClick={handleGoBack} /><span className="status-eyebrow">Consulta de servicio</span></div>
+    <h1>{lookupError ? "No se pudo consultar el servicio" : "Servicio no encontrado"}</h1>
+    <div className="status-empty-folio">Folio <strong>{folio}</strong></div>
+    <p role={lookupError ? "alert" : undefined}>{lookupError || "No hay un servicio disponible para consulta con ese folio. Comprueba que esté escrito correctamente."}</p>
+    <button className="status-button" type="button" onClick={() => navigate("/status")}>Consultar otro folio</button>
+  </section></main>;
+
+  const info = stateInfo(servicio.status);
+  const updatedAt = servicio.updatedAt || servicio.lastUpdate || servicio.modifiedAt;
+  const updatedText = typeof updatedAt?.seconds === "number" ? formatFecha(updatedAt) : lastClientUpdate?.toLocaleString("es-MX") || "Sin registrar";
+  const evidenceGroups = agruparEvidencias(leerEvidencias(servicio)).filter((group) => group.fotos.length);
+
+  const downloadServiceSheet = async () => {
+    if (exportingSheet) return;
+    setExportingSheet(true);
+    setDownloadError("");
+    try {
+      const result = await generarPdfHojaServicio({
+        ...servicio,
+        nombre: servicio.aceptacion?.nombreCliente || "Cliente",
+        telefono: "",
+        direccion: "",
+      }, servicio.folio || folio, {
+        download: true,
+        empresaOverride: {
+          nombre: servicio.negocioNombre || "CajaLibre",
+          logo: servicio.negocioLogo || "",
+        },
+      });
+      if (result?.ok === false) throw result.error || new Error("PDF no generado");
+    } catch (error) {
+      console.error("Descarga pública de hoja de servicio:", error);
+      setDownloadError("No pudimos preparar la hoja de servicio. Intenta nuevamente.");
+    } finally {
+      setExportingSheet(false);
     }
+  };
 
-    const raw = servicio?.costo;
-    const sanitized = String(raw ?? "").replace(/[^\d.]/g, "");
-    if (!sanitized) {
-      return "El precio aparecera cuando el estatus sea actualizado.";
+  // La boleta se arma con la marca que ya trajo la consulta publica: en esta
+  // pantalla el cliente no tiene sesion y el PDF no puede leer Firestore.
+  const downloadReceipt = async () => {
+    if (exportingReceipt) return;
+    const boleta = leerBoletaPublica(servicio);
+    if (!boleta) {
+      setDownloadError("Esta orden todavía no tiene una boleta desglosada.");
+      return;
     }
-
-    const amount = Number(sanitized);
-    if (
-      !Number.isFinite(amount) ||
-      amount < 0 ||
-      (amount === 0 && !permitePrecioCero(servicio?.status))
-    ) {
-      return "El precio aparecera cuando el estatus sea actualizado.";
+    setExportingReceipt(true);
+    setDownloadError("");
+    try {
+      await generarPdfBoletaVenta(
+        datosPdfBoleta(servicio, boleta, servicio.folio || folio),
+        {
+          empresaOverride: {
+            nombre: servicio.negocioNombre || "CajaLibre",
+            logo: servicio.negocioLogo || "",
+          },
+        },
+      );
+    } catch (error) {
+      console.error("Descarga pública de boleta:", error);
+      setDownloadError("No pudimos preparar la boleta. Intenta nuevamente.");
+    } finally {
+      setExportingReceipt(false);
     }
+  };
 
-    return money(amount);
-  }, [servicio]);
-
-  const ultimaActualizacionTexto = useMemo(() => {
-    if (!servicio && !lastClientUpdate) return "-";
-
-    const ts = servicio?.updatedAt || servicio?.lastUpdate || servicio?.modifiedAt || null;
-    if (ts?.seconds) {
-      const date = new Date(ts.seconds * 1000);
-      return `${formatFecha(ts)} (${timeAgo(date)})`;
-    }
-
-    if (lastClientUpdate instanceof Date) {
-      return `${formatFechaDate(lastClientUpdate)} (${timeAgo(lastClientUpdate)})`;
-    }
-
-    return "-";
-  }, [servicio, lastClientUpdate]);
-
-  if (loading) {
-    return (
-      <div className="page-container">
-        <div className="status-box status-box--wide">
-          <h2>Cargando...</h2>
-        </div>
+  return <main className="status-page"><div className="status-box status-box--wide">
+    <header className="status-toolbar">
+      <BackButton onClick={handleGoBack} />
+      <div className="status-business-brand">
+        {servicio.negocioLogo ? <img src={servicio.negocioLogo} alt="" width="64" height="64" onError={(event) => { event.currentTarget.style.display = "none"; }} /> : null}
+        <div className="status-business-copy"><span>Servicio de</span><strong>{servicio.negocioNombre || "CajaLibre"}</strong></div>
       </div>
-    );
-  }
+      <div className="status-toolbar-folio"><span>Folio de servicio</span><strong>{servicio.folio}</strong></div>
+    </header>
 
-  if (!servicio) {
-    return (
-      <div className="page-container">
-        <div className="status-box status-box--wide">
-          <div className="status-header">
-            <button
-              className="status-back-link"
-              type="button"
-              onClick={handleGoBack}
-              aria-label="Volver"
-              title="Volver"
-            >
-              <svg
-                viewBox="0 0 16 16"
-                fill="currentColor"
-                width="16"
-                height="16"
-                aria-hidden="true"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8"
-                ></path>
-              </svg>
-              <span>Volver</span>
-            </button>
-          </div>
+    <section className="status-hero" aria-labelledby="status-title">
+      <div className="status-title-copy"><span className="status-eyebrow">Consulta de servicio</span><h1 id="status-title">Seguimiento de tu servicio</h1><p>Revisa el avance de tu equipo y los detalles del trabajo.</p></div>
+      <div className="status-current-state"><span>Estado actual</span><strong className={`status-state-pill status-state-pill--${info.theme}`}><i aria-hidden="true" />{info.label}</strong></div>
+    </section>
+    <div className="status-sync-note" role="status" aria-live="polite">{lookupError || "Actualización automática cada 15 segundos mientras esta página esté abierta."}</div>
 
-          <h2>{lookupError ? "No se pudo consultar el servicio" : "Servicio no encontrado"}</h2>
-          <p>Folio: <b>{folio}</b></p>
-          <p>{lookupError || "No existe un servicio con ese folio."}</p>
-        </div>
-      </div>
-    );
-  }
+    <div className="status-progress-layout">
+      <section className="status-section status-section--progress" aria-labelledby="status-progress-title">
+        <div className="status-section-head"><div><h2 id="status-progress-title">Progreso del servicio</h2><p>La etapa resaltada indica dónde se encuentra tu equipo.</p></div></div>
+        <StatusStepper info={info} createdAt={servicio.createdAt} fechaAprox={servicio.fechaAprox} />
+      </section>
 
-  const boleta = servicio?.boleta || null;
-
-  return (
-    <div className="page-container">
-      <div className="status-box status-box--wide">
-        <div className="status-hero">
-          <button
-            type="button"
-            className="status-back-link"
-            onClick={handleGoBack}
-            aria-label="Volver"
-            title="Volver"
-          >
-            <svg
-              viewBox="0 0 16 16"
-              fill="currentColor"
-              width="16"
-              height="16"
-              aria-hidden="true"
-            >
-              <path
-                fillRule="evenodd"
-                d="M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8"
-              ></path>
-            </svg>
-            <span>Volver</span>
-          </button>
-
-          <div className="status-header-main">
-            <span className="status-eyebrow">Seguimiento en tiempo real</span>
-            <div className="status-header-topline">
-              <div className="status-title-copy">
-                <h2>Estado de tu servicio</h2>
-                <p>Revisa el avance del equipo y la informacion clave de tu servicio.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="status-section status-section--progress">
-          <div className="status-section-head">
-            <div>
-              <h3>Progreso</h3>
-              <p>Seguimiento visual del servicio desde el ingreso hasta la entrega final.</p>
-            </div>
-          </div>
-
-          <div className="status-progress-layout">
-            <StatusStepper
-              status={servicio.status}
-              createdAt={servicio.createdAt}
-              fechaAprox={servicio.fechaAprox}
-              ultimaActualizacionTexto={ultimaActualizacionTexto}
-            />
-
-            <div className="status-progress-side">
-              <div className="status-meta-grid status-meta-grid--side">
-                <div className="status-meta-card">
-                  <span>Folio</span>
-                  <strong>{servicio.folio}</strong>
-                </div>
-                <div className="status-meta-card">
-                  <span>Ingreso</span>
-                  <strong>{formatFecha(servicio.createdAt)}</strong>
-                </div>
-                <div className="status-meta-card status-meta-card-wide">
-                  <span>Ultima actualizacion</span>
-                  <strong>{ultimaActualizacionTexto}</strong>
-                </div>
-              </div>
-
-              <div className="status-kpis status-kpis--progress">
-                <div className="status-kpi status-kpi--state">
-                  <div className="k">Estado actual</div>
-                  <div className="v v--wrap">{servicio.status || "-"}</div>
-                </div>
-
-                <div className="status-kpi">
-                  <div className="k">Entrega aproximada</div>
-                  <div className="v v--wrap">{servicio.fechaAprox || "-"}</div>
-                </div>
-
-                <div className="status-kpi status-kpi--highlight">
-                  <div className="k">Costo</div>
-                  <div className="v v--wrap">{precioTexto}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="status-detail-grid">
-          <div className="status-section status-section--info">
-            <h3>Equipo</h3>
-            <p><b>Tipo:</b> {servicio.tipoDispositivo || "-"}</p>
-            <p><b>Marca:</b> {servicio.marca || "-"}</p>
-            <p><b>Modelo:</b> {servicio.modelo || "-"}</p>
-            <p>
-              <b>No. de serie:</b>{" "}
-              {servicio.omitirNumeroSerie ? "No proporcionado" : servicio.numeroSerie || "-"}
-            </p>
-          </div>
-
-          <div className="status-section status-section--info">
-            <h3>Servicio</h3>
-            <p><b>Descripcion:</b> {servicio.trabajo || "-"}</p>
-            <p><b>Direccion:</b> {servicio.direccion || "-"}</p>
-          </div>
-        </div>
-
-        <div className="status-section">
-          <h3>Observaciones</h3>
-          <div className="statusd-textarea">
-            {servicio.observaciones || "Sin observaciones por ahora."}
-          </div>
-        </div>
-
-        <div className="status-section">
-          <h3>Boleta de venta</h3>
-
-          {!boleta ? (
-            <div className="statusd-muted">Aun no se ha generado una boleta para este servicio.</div>
-          ) : (
-            <>
-              <div className="status-kpis">
-                <div className="status-kpi">
-                  <div className="k">Fecha</div>
-                  <div className="v">{boleta.fecha || "-"}</div>
-                </div>
-                <div className="status-kpi">
-                  <div className="k">Forma de pago</div>
-                  <div className="v">{boleta.formaPago || "-"}</div>
-                </div>
-                <div className="status-kpi">
-                  <div className="k">Total</div>
-                  <div className="v">{money(boleta.total ?? servicio.costo ?? 0)}</div>
-                </div>
-              </div>
-
-              {Array.isArray(boleta.items) && boleta.items.length > 0 ? (
-                <div className="statusd-tablewrap">
-                  <table className="statusd-table">
-                    <thead>
-                      <tr>
-                        <th>ITEM</th>
-                        <th>DESCRIPCION</th>
-                        <th style={{ textAlign: "right" }}>P. UNIT</th>
-                        <th style={{ textAlign: "right" }}>CANT</th>
-                        <th style={{ textAlign: "right" }}>IMPORTE</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {boleta.items.map((item, index) => {
-                        const price = Number(item?.pUnitario) || 0;
-                        const qty = Number(item?.cantidad) || 0;
-                        const total = price * qty;
-
-                        return (
-                          <tr key={index}>
-                            <td>{item?.item || "-"}</td>
-                            <td>{item?.descripcion || "-"}</td>
-                            <td style={{ textAlign: "right" }}>{money(price)}</td>
-                            <td style={{ textAlign: "right" }}>{qty}</td>
-                            <td style={{ textAlign: "right" }}>{money(total)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-
-              <div className="status-notes-block">
-                <b>Notas:</b>
-                <div className="statusd-textarea">
-                  {boleta.notas || "Sin notas."}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="statusd-foot">
-          <small>
-            Si tienes dudas, menciona tu folio <b>{servicio.folio}</b>.
-          </small>
-        </div>
-      </div>
+      <aside className="status-progress-side" aria-label="Información del servicio">
+        <section className="status-section"><h2>Fechas del servicio</h2><dl className="status-dates"><div><dt>Ingreso</dt><dd>{formatFecha(servicio.createdAt)}</dd></div><div><dt>Última actualización</dt><dd>{updatedText}</dd></div></dl>
+          <div className="status-delivery"><span>Entrega aproximada</span><strong>{servicio.fechaAprox || "Por confirmar"}</strong>{!servicio.fechaAprox ? <p>El negocio confirmará la fecha de entrega.</p> : null}</div>
+        </section>
+        <section className="status-section"><h2>Tu equipo</h2><dl className="status-equipment"><div><dt>Tipo</dt><dd>{servicio.tipoDispositivo || "Sin especificar"}</dd></div><div><dt>Marca</dt><dd>{servicio.marca || "Sin especificar"}</dd></div><div><dt>Modelo</dt><dd>{servicio.modelo || "Sin especificar"}</dd></div></dl></section>
+        <section className="status-section"><h2>Trabajo solicitado</h2><p className="status-service-description">{servicio.trabajo || "Sin descripción registrada."}</p></section>
+      </aside>
     </div>
-  );
+
+    <div className="status-customer-record">
+      <StatusAceptacionCliente
+        referencia={acceptanceReference}
+        servicio={servicio}
+        evidenceGroups={evidenceGroups}
+        onDownload={downloadServiceSheet}
+        onDownloadBoleta={downloadReceipt}
+        exportingSheet={exportingSheet}
+        exportingReceipt={exportingReceipt}
+        downloadError={downloadError}
+        onRespondida={(aceptacion, resultado) => setServicio((actual) => ({
+          ...actual,
+          aceptacion,
+          status: actual.status === "esperando_autorizacion"
+            ? (resultado.estado === "aceptado" ? "autorizado" : "rechazado")
+            : actual.status,
+        }))}
+      />
+
+    </div>
+    <footer className="statusd-foot"><span>¿Tienes dudas sobre tu servicio? Menciona tu folio <strong>{servicio.folio}</strong> al contactar al negocio.</span></footer>
+  </div></main>;
 }

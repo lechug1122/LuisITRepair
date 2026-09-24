@@ -231,116 +231,238 @@ export function evaluarSuscripcion(raw = {}, now = new Date()) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Resolucion central de la sesion del usuario.
+//
+// Este es el UNICO lugar donde se decide si un usuario entra al sistema, si
+// todavia debe terminar su registro inicial o si hay que mostrarle un error.
+// Recibe estados EXPLICITOS de existencia y de error para que una consulta que
+// aun no termina -o que fallo- nunca se confunda con "usuario sin negocio".
+// ---------------------------------------------------------------------------
+
+// Motivos que solo puede resolver el titular de la cuenta; el personal los ve
+// como un negocio en espera, nunca como una invitacion a crear otro negocio.
+export const MOTIVOS_ONBOARDING_TITULAR = [
+  "terminos_pendientes",
+  "configuracion_inicial_pendiente",
+];
+
+export function mensajeDeErrorAcceso(error, respaldo = "No se pudo validar tu acceso.") {
+  const code = String(error?.code || error?.name || "").trim().toLowerCase();
+
+  if (code.includes("permission-denied") || code.includes("insufficient")) {
+    return "Firestore rechazo la consulta de tu cuenta por permisos insuficientes. Avisa al administrador del sistema.";
+  }
+
+  if (code.includes("unavailable") || code.includes("deadline") || code.includes("network")) {
+    return "No se pudo contactar la base de datos. Revisa tu conexion e intenta de nuevo.";
+  }
+
+  return String(error?.message || "").trim() || respaldo;
+}
+
 export function resolverAccesoSuscripcion({
   uid = "",
-  autorizado = {},
+  autorizado = null,
   suscripcion = null,
   negocio = null,
   now = new Date(),
+  // Estados explicitos de carga. `perfilExiste` en null significa "deducelo del
+  // objeto recibido" para no romper a quien ya llamaba esta funcion.
+  perfilExiste = null,
+  perfilError = null,
+  negocioError = null,
 } = {}) {
-  const cuentaPrincipalUid = String(autorizado?.cuentaPrincipalUid || uid || "").trim();
-  const negocioId = String(autorizado?.negocioId || cuentaPrincipalUid || uid || "").trim();
-  const activo = autorizado?.activo !== false;
-  const superAdmin = autorizado?.superAdmin === true;
-  const suscripcionControlada = autorizado?.suscripcionControlada === true;
+  const datos = autorizado || {};
+  const hayPerfil = perfilExiste === null ? Boolean(autorizado) : perfilExiste === true;
+  const cuentaPrincipalUid = String(datos?.cuentaPrincipalUid || uid || "").trim();
+  // Sin perfil no hay negocio ni titularidad que suponer: se deja vacio para
+  // que ningun consumidor crea que la relacion ya existe.
+  const negocioId = hayPerfil
+    ? String(datos?.negocioId || cuentaPrincipalUid || uid || "").trim()
+    : "";
+  const esTitular = hayPerfil && Boolean(uid) && uid === cuentaPrincipalUid;
+  const activo = datos?.activo !== false;
+  const superAdmin = datos?.superAdmin === true;
+  const suscripcionControlada = datos?.suscripcionControlada === true;
+  const rol = String(datos?.rol || "").trim();
+  const permisos = datos?.permisos && typeof datos.permisos === "object" ? datos.permisos : null;
   const suscripcionEvaluada = suscripcion ? evaluarSuscripcion({
     ...suscripcion,
     cuentaPrincipalUid,
   }, now) : null;
 
-  if (!activo) {
+  // Todo resultado comparte la misma forma: quien es, a que negocio pertenece y
+  // si el sistema todavia debe pedirle que cree uno.
+  const base = {
+    cuentaPrincipalUid,
+    negocioId,
+    esTitular,
+    rol,
+    permisos,
+    negocio,
+    suscripcion: suscripcionEvaluada,
+    perfilExiste: hayPerfil,
+    perteneceANegocio: false,
+    requiereCrearNegocio: false,
+    esError: false,
+  };
+
+  const perteneceANegocio = hayPerfil && Boolean(negocioId) && (superAdmin || Boolean(negocio));
+
+  if (!uid) {
     return {
+      ...base,
       permitido: false,
-      motivo: "usuario_inactivo",
-      mensaje: "Usuario inactivo. Contacta al administrador.",
-      cuentaPrincipalUid,
-      negocioId,
-      suscripcion: suscripcionEvaluada,
+      motivo: "sin_uid",
+      mensaje: "No se encontro el usuario.",
     };
   }
 
-  if (!superAdmin && negocio) {
-    if (negocio.terminosAceptados !== true || autorizado.terminosAceptados !== true) {
+  // Un fallo de lectura NO es un usuario sin negocio: se reporta como error.
+  if (perfilError) {
+    return {
+      ...base,
+      permitido: false,
+      esError: true,
+      motivo: "error_carga",
+      mensaje: mensajeDeErrorAcceso(perfilError, "No se pudo leer tu perfil de usuario."),
+      error: perfilError,
+    };
+  }
+
+  // Sin documento en `autorizados` no existe ninguna relacion con un negocio:
+  // este es el unico usuario realmente nuevo.
+  if (!hayPerfil) {
+    return {
+      ...base,
+      permitido: false,
+      motivo: "sin_autorizacion",
+      mensaje: "Tu cuenta todavia no esta vinculada a un negocio.",
+      requiereCrearNegocio: true,
+    };
+  }
+
+  if (!activo) {
+    return {
+      ...base,
+      perteneceANegocio,
+      permitido: false,
+      motivo: "usuario_inactivo",
+      mensaje: "Usuario inactivo. Contacta al administrador.",
+    };
+  }
+
+  if (!superAdmin) {
+    // El negocio no se pudo leer: error real, jamas onboarding.
+    if (negocioError) {
       return {
+        ...base,
         permitido: false,
-        motivo: "terminos_pendientes",
-        mensaje: "Debes aceptar los Terminos y Condiciones de CajaLibre para continuar.",
-        cuentaPrincipalUid,
-        negocioId,
-        negocio,
-        suscripcion: suscripcionEvaluada,
+        esError: true,
+        motivo: "error_carga",
+        mensaje: mensajeDeErrorAcceso(negocioError, "No se pudo cargar la informacion de tu negocio."),
+        error: negocioError,
       };
     }
 
-    if (negocio.setupCompleto !== true || autorizado.setupCompleto !== true) {
+    if (!negocio) {
+      // Solo el titular puede quedarse sin documento de negocio (registro
+      // interrumpido). El personal depende de un negocio que ya deberia existir.
+      if (esTitular) {
+        return {
+          ...base,
+          permitido: false,
+          motivo: "sin_negocio",
+          mensaje: "Todavia no encontramos tu negocio. Vuelve a iniciar sesion para terminar de crearlo.",
+          requiereCrearNegocio: true,
+        };
+      }
+
       return {
+        ...base,
         permitido: false,
-        motivo: "configuracion_inicial_pendiente",
-        mensaje: "Completa la configuracion inicial de tu negocio para continuar.",
-        cuentaPrincipalUid,
-        negocioId,
-        negocio,
-        suscripcion: suscripcionEvaluada,
+        motivo: "negocio_bloqueado",
+        mensaje: "El negocio al que perteneces ya no esta disponible. Contacta al administrador.",
+      };
+    }
+
+    // El onboarding lo define UNICAMENTE el documento del negocio. Las marcas
+    // personales (`autorizados/{uid}`) se siguen escribiendo para la bitacora,
+    // pero no pueden bloquear a nadie: un titular cuyo negocio ya esta
+    // configurado quedaba atrapado en el asistente si su marca personal se
+    // habia perdido, y el personal nunca llega a tener esas marcas.
+    if (negocio.terminosAceptados !== true) {
+      return {
+        ...base,
+        perteneceANegocio,
+        permitido: false,
+        motivo: esTitular ? "terminos_pendientes" : "negocio_bloqueado",
+        mensaje: esTitular
+          ? "Debes aceptar los Terminos y Condiciones de CajaLibre para continuar."
+          : "El titular del negocio debe aceptar los Terminos y Condiciones. Contacta al administrador.",
+      };
+    }
+
+    if (negocio.setupCompleto !== true) {
+      return {
+        ...base,
+        perteneceANegocio,
+        permitido: false,
+        motivo: esTitular ? "configuracion_inicial_pendiente" : "negocio_bloqueado",
+        mensaje: esTitular
+          ? "Completa la configuracion inicial de tu negocio para continuar."
+          : "El titular del negocio debe completar la configuracion inicial. Contacta al administrador.",
       };
     }
 
     if (negocio.estado === "bloqueado" || negocio.estado === "suspendido") {
       return {
+        ...base,
+        perteneceANegocio,
         permitido: false,
         motivo: "negocio_bloqueado",
         mensaje: negocio.bloqueoRazon || "Tu negocio no tiene acceso operativo actualmente.",
-        cuentaPrincipalUid,
-        negocioId,
-        negocio,
-        suscripcion: suscripcionEvaluada,
       };
     }
   }
 
   if (superAdmin || !suscripcionControlada) {
     return {
+      ...base,
+      perteneceANegocio,
       permitido: true,
       motivo: "sin_control_suscripcion",
       mensaje: "",
-      cuentaPrincipalUid,
-      negocioId,
-      negocio,
-      suscripcion: suscripcionEvaluada,
     };
   }
 
   if (!suscripcionEvaluada) {
     return {
+      ...base,
+      perteneceANegocio,
       permitido: true,
       motivo: "suscripcion_no_configurada",
       mensaje: "",
-      cuentaPrincipalUid,
-      negocioId,
-      negocio,
-      suscripcion: null,
     };
   }
 
   if (!suscripcionEvaluada.accesoPermitido) {
     return {
+      ...base,
+      perteneceANegocio,
       permitido: false,
       motivo: "suscripcion_bloqueada",
       mensaje:
         "Tu suscripcion esta vencida y ya supero el lapso de gracia de 7 dias. Contacta al administrador del sistema.",
-      cuentaPrincipalUid,
-      negocioId,
-      negocio,
-      suscripcion: suscripcionEvaluada,
     };
   }
 
   return {
+    ...base,
+    perteneceANegocio,
     permitido: true,
     motivo: suscripcionEvaluada.codigo,
     mensaje: "",
-    cuentaPrincipalUid,
-    negocioId,
-    negocio,
-    suscripcion: suscripcionEvaluada,
   };
 }

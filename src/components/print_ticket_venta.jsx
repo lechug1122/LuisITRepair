@@ -1,6 +1,5 @@
 ﻿import {
-  buildTicketConfig,
-  readTicketConfigStorage,
+  readTicketPrintConfig,
   splitTicketLines,
 } from "../js/services/ticket_config";
 import { getTicketFontFamily } from "../js/services/apariencia_config";
@@ -119,7 +118,7 @@ export async function imprimirTicketVenta({
   precuenta = false,
 }) {
   const printerCfg = readImpresorasConfigCache();
-  const cfg = buildTicketConfig(ticketConfig || readTicketConfigStorage());
+  const cfg = readTicketPrintConfig(ticketConfig);
   const empresaCfg = readEmpresaConfigCache();
   const atendioTexto = String(atendio || "").trim() || "-";
   const ticketFontFamily = getTicketFontFamily();
@@ -610,6 +609,7 @@ export async function imprimirTicketVenta({
       ${bottomLinesHtml}
       ${legendHtml}
       ${footerHtml}
+      ${cfg.advertisingText ? `<div class="ticket-footer">${escapeHtml(cfg.advertisingText)}</div>` : ""}
     </div>
   `;
 

@@ -1,23 +1,30 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, serverTimestamp, setDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { useLocation, useNavigate } from "react-router-dom";
 import { auth, db } from "../initializer/firebase";
-import { obtenerEstadoAutorizacion } from "../js/services/autorizacion";
+import {
+  buscarMembresiaDeUsuario,
+  obtenerEstadoAutorizacion,
+} from "../js/services/autorizacion";
 import { consumeDeviceConflictMessage } from "../js/services/device_sessions";
-import { crearNegocioInicial } from "../js/services/negocios";
+import { PREMIUM_SITE_URL } from "../js/services/premium_config";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import { crearNegocioInicial, obtenerNegocio } from "../js/services/negocios";
 import { permisosBasePorRol } from "../js/services/permisos";
+import {
+  RUTA_LOGIN,
+  registrarRedireccion,
+  resolverRutaSesion,
+} from "../js/services/ruta_sesion";
+import { mensajeDeErrorAcceso } from "../js/services/suscripciones";
 import { getDocRef, saveTenantContext } from "../js/services/tenant";
 import intlTelInput from "intl-tel-input";
 import "intl-tel-input/styles";
 import "../css/login.scss";
+import "../css/sesion_dispositivo.css";
 
 const SYSTEM_NAME = "CajaLibre";
-const ACCESS_ROUTE_BY_MOTIVE = {
-  terminos_pendientes: "/terminos",
-  configuracion_inicial_pendiente: "/configuracion-inicial",
-  negocio_bloqueado: "/negocio-bloqueado",
-};
 
 function normalizeDigits(value = "") {
   return String(value || "").replace(/\D/g, "");
@@ -135,16 +142,44 @@ function buildAdministradorInicial({
   };
 }
 
-async function recuperarRegistroIncompleto(user) {
+class AccesoBloqueadoError extends Error {}
+
+/**
+ * Repara una cuenta autenticada que se quedo sin documento en `autorizados`.
+ *
+ * Nunca crea un negocio nuevo si el usuario ya pertenece a uno: eso es lo que
+ * convertia a un empleado en dueno de un negocio duplicado. Si el negocio
+ * propio ya existe, solo se reconstruye el perfil heredando su onboarding.
+ */
+async function repararRegistroIncompleto(user, { perfilExiste = false, negocioPropio = null } = {}) {
   const administrador = buildAdministradorInicial({
     uid: user.uid,
     nombre: user.displayName || "",
     correo: user.email || "",
   });
 
+  if (negocioPropio) {
+    // El negocio ya existe: solo falta el perfil. Se heredan sus marcas de
+    // onboarding para no devolver al dueno a la configuracion inicial.
+    await setDoc(
+      doc(db, "autorizados", user.uid),
+      {
+        ...administrador,
+        terminosAceptados: negocioPropio.terminosAceptados === true,
+        terminosVersion: negocioPropio.terminosVersion || "",
+        setupCompleto: negocioPropio.setupCompleto === true,
+      },
+      { merge: true },
+    );
+    return;
+  }
+
   // Este documento debe existir antes de crear el resto: las reglas lo usan
   // para resolver el tenant y los permisos de las escrituras posteriores.
-  await setDoc(doc(db, "autorizados", user.uid), administrador, { merge: true });
+  // Si el perfil ya existe no se toca: solo faltaba el negocio.
+  if (!perfilExiste) {
+    await setDoc(doc(db, "autorizados", user.uid), administrador, { merge: true });
+  }
   await crearNegocioInicial({
     negocioId: user.uid,
     administradorUid: user.uid,
@@ -180,6 +215,64 @@ async function recuperarRegistroIncompleto(user) {
   });
 }
 
+/**
+ * Resuelve la sesion completa de un usuario ya autenticado.
+ *
+ * Solo cuando Firestore confirma que NO existe perfil ni relacion con ningun
+ * negocio se repara/crea la cuenta propia. Cualquier duda (error de lectura,
+ * ficha de empleado encontrada) detiene el proceso con un mensaje claro.
+ */
+async function resolverSesionUsuario(user) {
+  let estado = await obtenerEstadoAutorizacion(user.uid);
+  if (!estado.requiereCrearNegocio) return estado;
+
+  const membresia = await buscarMembresiaDeUsuario(user.uid);
+
+  if (membresia.negocioId && !membresia.esTitular) {
+    throw new AccesoBloqueadoError(
+      "Tu cuenta pertenece a un negocio, pero todavia no tiene el acceso configurado. Pide al administrador que vuelva a darte de alta.",
+    );
+  }
+
+  if (membresia.error && !membresia.negocioId) {
+    throw new AccesoBloqueadoError(
+      mensajeDeErrorAcceso(
+        membresia.error,
+        "No se pudo confirmar a que negocio perteneces. Intenta de nuevo antes de crear uno nuevo.",
+      ),
+    );
+  }
+
+  const negocioPropio = membresia.esTitular && membresia.negocioId
+    ? await obtenerNegocio(membresia.negocioId)
+    : null;
+
+  await repararRegistroIncompleto(user, {
+    perfilExiste: estado.perfilExiste === true,
+    negocioPropio,
+  });
+  estado = await obtenerEstadoAutorizacion(user.uid);
+  return estado;
+}
+
+/**
+ * Espera a que el registro recien creado sea visible para las consultas.
+ *
+ * Sin esta confirmacion la cuenta nueva podia llegar a la ruta protegida antes
+ * de que existiera su negocio y rebotar por un instante.
+ */
+async function esperarRegistroListo(user, intentos = 6) {
+  let estado = null;
+
+  for (let intento = 0; intento < intentos; intento += 1) {
+    estado = await obtenerEstadoAutorizacion(user.uid);
+    if (estado.motivo !== "sin_negocio" && estado.motivo !== "sin_autorizacion") return estado;
+    await new Promise((resolve) => window.setTimeout(resolve, 400));
+  }
+
+  return estado;
+}
+
 export default function Login() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -194,23 +287,117 @@ export default function Login() {
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
-  const [storedAccessMessage] = useState(() => consumeDeviceConflictMessage());
+  // Aviso dejado por el equipo que fue reemplazado desde otro dispositivo.
+  const [avisoSesion, setAvisoSesion] = useState(() => consumeDeviceConflictMessage());
   const phoneInputRef = useRef(null);
   const phonePluginRef = useRef(null);
 
+  // El login NO decide el destino por su cuenta: lee el mismo estado de sesion
+  // que las guardias de ruta. Cuando ambos leian fuentes distintas podian
+  // contradecirse y producir el ciclo /login <-> /home.
+  const {
+    loading: sesionCargando,
+    uid: sesionUid,
+    rol: sesionRol,
+    cuentaPrincipalUid: sesionCuentaPrincipalUid,
+    negocioId: sesionNegocioId,
+    superAdmin: sesionSuperAdmin,
+    suscripcionControlada: sesionSuscripcionControlada,
+    accesoPermitido,
+    motivoAcceso,
+    mensajeAcceso,
+    requiereCrearNegocio,
+  } = useAutorizacionActual();
+  const reparacionRef = useRef("");
+
+  const guardarContextoSesion = useCallback(() => {
+    if (!sesionUid) return;
+    saveTenantContext({
+      uid: sesionUid,
+      cuentaPrincipalUid: sesionCuentaPrincipalUid || sesionUid,
+      negocioId: sesionNegocioId || sesionCuentaPrincipalUid || sesionUid,
+      superAdmin: sesionSuperAdmin === true,
+      suscripcionControlada: sesionSuscripcionControlada === true,
+    });
+    localStorage.setItem("rol", sesionRol || "");
+  }, [
+    sesionCuentaPrincipalUid,
+    sesionNegocioId,
+    sesionRol,
+    sesionSuperAdmin,
+    sesionSuscripcionControlada,
+    sesionUid,
+  ]);
+
   useEffect(() => {
+    // 1. Nada se decide mientras la sesion sigue resolviendose.
+    if (sesionCargando) return undefined;
+    // 2. Sin sesion activa el formulario simplemente espera.
+    if (!sesionUid) return undefined;
+    // 3. Durante un alta o un ingreso en curso manda ese flujo; al terminar,
+    //    este efecto vuelve a evaluar con el estado ya definitivo.
+    if (procesando) return undefined;
+
     let active = true;
 
-    auth.authStateReady().then(() => {
-      if (active && auth.currentUser) {
-        navigate("/home", { replace: true });
+    // 4. Un error de lectura se informa; no se navega a ningun lado.
+    if (motivoAcceso === "error_carga") {
+      setError(mensajeAcceso || "No se pudo validar tu acceso.");
+      return undefined;
+    }
+
+    // 5. Cuenta autenticada sin perfil ni negocio: se intenta reparar una sola
+    //    vez por usuario. El listener de autorizacion avisara del resultado.
+    if (requiereCrearNegocio) {
+      if (reparacionRef.current !== sesionUid) {
+        reparacionRef.current = sesionUid;
+        resolverSesionUsuario(auth.currentUser)
+          .catch(async (error) => {
+            if (!active) return;
+            setError(getFriendlyLoginError(error));
+            await signOut(auth).catch(() => {});
+          });
       }
+      return () => {
+        active = false;
+      };
+    }
+
+    const destino = resolverRutaSesion({
+      loading: sesionCargando,
+      uid: sesionUid,
+      accesoPermitido,
+      motivoAcceso,
     });
+
+    // 6. Con destino real se navega una sola vez.
+    if (destino.ruta && destino.ruta !== RUTA_LOGIN) {
+      registrarRedireccion("Login", RUTA_LOGIN, destino.ruta, destino.motivo);
+      guardarContextoSesion();
+      navigate(destino.ruta, { replace: true });
+      return () => {
+        active = false;
+      };
+    }
+
+    // 7. Sesion sin acceso y sin pantalla que lo resuelva: se informa aqui
+    //    mismo. Antes esto rebotaba a /home y volvia, agotando el navegador.
+    setError(mensajeAcceso || "No tienes acceso a este sistema.");
 
     return () => {
       active = false;
     };
-  }, [navigate]);
+  }, [
+    accesoPermitido,
+    guardarContextoSesion,
+    mensajeAcceso,
+    motivoAcceso,
+    navigate,
+    procesando,
+    requiereCrearNegocio,
+    sesionCargando,
+    sesionUid,
+  ]);
 
   useEffect(() => {
     if (!modoRegistro || !phoneInputRef.current) return undefined;
@@ -250,7 +437,7 @@ export default function Login() {
       if (phonePluginRef.current === instance) phonePluginRef.current = null;
     };
   }, [modoRegistro]);
-  const accessMessage = routeAccessMessage || storedAccessMessage;
+  const accessMessage = routeAccessMessage;
 
   const clearAccessMessage = () => {
     if (!routeAccessMessage) return;
@@ -312,19 +499,6 @@ export default function Login() {
     });
   };
 
-  const finalizarEntrada = async (user, autorizado, targetPath = "/home") => {
-    saveTenantContext({
-      uid: user.uid,
-      cuentaPrincipalUid: autorizado?.cuentaPrincipalUid || user.uid,
-      negocioId: autorizado?.negocioId || autorizado?.cuentaPrincipalUid || user.uid,
-      superAdmin: autorizado?.superAdmin === true,
-      suscripcionControlada: autorizado?.suscripcionControlada === true,
-    });
-
-    localStorage.setItem("rol", autorizado?.rol || "");
-    navigate(targetPath, { replace: true });
-  };
-
   const handleLogin = async () => {
     try {
       const userCredential = await signInWithEmailAndPassword(
@@ -334,17 +508,27 @@ export default function Login() {
       );
 
       const user = userCredential.user;
-      let estado = await obtenerEstadoAutorizacion(user.uid);
-      if (estado.motivo === "sin_autorizacion") {
-        await recuperarRegistroIncompleto(user);
-        estado = await obtenerEstadoAutorizacion(user.uid);
+      // Repara la cuenta si hiciera falta y confirma que hay acceso. La
+      // navegacion queda en manos del efecto de sesion: un solo responsable.
+      reparacionRef.current = user.uid;
+      const estado = await resolverSesionUsuario(user);
+
+      // Un fallo de lectura no es falta de acceso: se informa y se conserva la
+      // sesion, porque el listener en tiempo real puede resolverla enseguida.
+      if (estado.esError) {
+        setError(estado.mensaje || "No se pudo validar tu acceso.");
+        return;
       }
-      if (!estado.permitido) {
-        const targetRoute = ACCESS_ROUTE_BY_MOTIVE[estado.motivo];
-        if (targetRoute) {
-          await finalizarEntrada(user, estado.autorizado, targetRoute);
-          return;
-        }
+
+      // Si el motivo no tiene pantalla que lo resuelva, el acceso es terminal.
+      const destinoTrasLogin = resolverRutaSesion({
+        loading: false,
+        uid: user.uid,
+        accesoPermitido: estado.permitido,
+        motivoAcceso: estado.motivo,
+      });
+
+      if (destinoTrasLogin.ruta === RUTA_LOGIN) {
         await signOut(auth);
         setError(estado.mensaje || "No tienes acceso a este sistema.");
         return;
@@ -356,8 +540,6 @@ export default function Login() {
         online: true,
         lastActive: new Date(),
       }).catch(() => {});
-
-      await finalizarEntrada(user, estado.autorizado);
     } catch (error) {
       await signOut(auth).catch(() => {});
       setError(getFriendlyLoginError(error));
@@ -381,6 +563,9 @@ export default function Login() {
 
       const userCredential = await createUserWithEmailAndPassword(auth, correoLimpio, password);
       const user = userCredential.user;
+      // El alta la esta creando este mismo flujo: el efecto de sesion no debe
+      // intentar "reparar" la cuenta mientras se escriben los documentos.
+      reparacionRef.current = user.uid;
       const administrador = buildAdministradorInicial({
         uid: user.uid,
         nombre: nombreLimpio,
@@ -426,13 +611,9 @@ export default function Login() {
       await batch.commit().catch((error) => {
         console.warn("[registro] No se pudieron crear datos secundarios:", error?.code || error);
       });
-      await finalizarEntrada(user, {
-        rol: "Administrador",
-        cuentaPrincipalUid: user.uid,
-        negocioId: user.uid,
-        superAdmin: false,
-        suscripcionControlada: false,
-      }, "/terminos");
+      // Se espera a que el alta sea visible para las consultas; a partir de
+      // ahi, el efecto de sesion decide la pantalla (Terminos).
+      await esperarRegistroListo(user);
     } catch (error) {
       await signOut(auth).catch(() => {});
       setError(getFriendlyLoginError(error));
@@ -507,6 +688,33 @@ export default function Login() {
         </div>
 
         <form className="log-in" autoComplete="off" onSubmit={handleSubmit} noValidate>
+          {avisoSesion ? (
+            <div className="device-session-notice" role="status">
+              <h3>{avisoSesion.titulo}</h3>
+              <p>{avisoSesion.mensaje}</p>
+              <div className="device-session-notice-actions">
+                <button
+                  type="button"
+                  className="emp-btn emp-btn-primary"
+                  onClick={() => setAvisoSesion(null)}
+                >
+                  Aceptar
+                </button>
+                {avisoSesion.mostrarPremium ? (
+                  <button
+                    type="button"
+                    className="emp-btn emp-btn-soft"
+                    onClick={() => {
+                      window.open(PREMIUM_SITE_URL, "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    Conocer Premium
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           <h4>
             {modoRegistro ? "Crea tu cuenta en " : "Bienvenido a "}
             <span>{SYSTEM_NAME}</span>

@@ -9,6 +9,7 @@ import useEmpresaConfig from "../hooks/useEmpresaConfig";
 import useImpresorasConfig from "../hooks/useImpresorasConfig";
 import { descontarStock, obtenerProductos } from "../js/services/POS_firebase";
 import ModalPago from "../components/modal_pago";
+import PremiumFeatureModal from "../components/PremiumFeatureModal";
 import { imprimirTicketVenta } from "../components/print_ticket_venta";
 import { generarPdfCorteCajaDia } from "../js/services/pdf_corte_caja";
 import { obtenerResumenCajaHoy } from "../js/services/corte_caja_firestore";
@@ -122,7 +123,7 @@ function TurnoButton({ tenantId, actorUid, actorNombre, rol, resumen = {} }) {
 function MeseroView({ restauranteConfig, tenantId, actorUid, actorNombre }) {
   const pisos = restauranteConfig?.pisos?.length
     ? restauranteConfig.pisos
-    : [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 12 }];
+    : [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 10 }];
   const [pisoActivoId, setPisoActivoId] = useState(pisos[0].id);
   const [paginaMesas, setPaginaMesas] = useState(0);
   const [selectedTable, setSelectedTable] = useState(2);
@@ -1027,6 +1028,7 @@ function formatOrderTime(value) {
 }
 
 function CocinaView({ tenantId, actorUid, actorNombre }) {
+  const { puedeUsarLimiteCocina } = useAutorizacionActual();
   const [orders, setOrders] = useState([]);
   const [operacion, setOperacion] = useState({
     limiteCocineroActivo: false,
@@ -1150,7 +1152,7 @@ function CocinaView({ tenantId, actorUid, actorNombre }) {
   const advance = async (order) => {
     if (!order?.id || order.status === "lista" || actualizandoId) return;
     const nextStatus = order.status === "nueva" ? "preparando" : "lista";
-    if (nextStatus === "preparando" && operacion.limiteCocineroActivo) {
+    if (nextStatus === "preparando" && puedeUsarLimiteCocina && operacion.limiteCocineroActivo) {
       const platillosOrden = (order.items || [])
         .reduce((total, item) => total + Number(item.cantidad || 1), 0);
       if (platillosActivosCocinero + platillosOrden > operacion.maxPlatillosPorCocinero) {
@@ -1199,7 +1201,7 @@ function CocinaView({ tenantId, actorUid, actorNombre }) {
           {operacion.platillosAgotados?.length > 0 && <b>{operacion.platillosAgotados.length}</b>}
         </button>
       </div>
-      {operacion.limiteCocineroActivo && (
+      {puedeUsarLimiteCocina && operacion.limiteCocineroActivo && (
         <div className="rest-cook-capacity">
           <span>Carga del cocinero</span>
           <strong>{platillosActivosCocinero} / {operacion.maxPlatillosPorCocinero} platillos</strong>
@@ -1281,6 +1283,7 @@ function CocinaView({ tenantId, actorUid, actorNombre }) {
 export function CajaView({ posOnly = false, tenantId = "", actorUid = "", actorNombre = "" }) {
   const [searchParams] = useSearchParams();
   const { imprimirAlCobrar } = useImpresorasConfig();
+  const { puedeUsarReservaciones } = useAutorizacionActual();
   const vista = posOnly ? (searchParams.get("cuenta") || "nueva") : "abiertas";
   const [mostrarPago, setMostrarPago] = useState(false);
   const [tipoPago, setTipoPago] = useState("efectivo");
@@ -1310,6 +1313,7 @@ export function CajaView({ posOnly = false, tenantId = "", actorUid = "", actorN
   const [historialDetalle, setHistorialDetalle] = useState(null);
   const [reimprimiendoId, setReimprimiendoId] = useState("");
   const [imprimiendoPrecuenta, setImprimiendoPrecuenta] = useState(false);
+  const [modalReservacionesPremium, setModalReservacionesPremium] = useState(false);
 
   useEffect(() => escucharOrdenesRestaurante(
     tenantId,
@@ -1983,10 +1987,30 @@ export function CajaView({ posOnly = false, tenantId = "", actorUid = "", actorN
           </section>
         </section>
       )}
-      {vista === "reservaciones" && <ReservasView tenantId={tenantId} />}
+      {vista === "reservaciones" && (
+        puedeUsarReservaciones
+          ? <ReservasView tenantId={tenantId} />
+          : (
+              <section className="rest-pos-placeholder">
+                <FiCalendar />
+                <h2>Reservaciones · Premium</h2>
+                <p>Administra reservaciones, horarios, mesas y disponibilidad desde CajaLibre Premium.</p>
+                <button type="button" className="rest-print-prebill" onClick={() => setModalReservacionesPremium(true)}>
+                  Conocer Premium
+                </button>
+              </section>
+            )
+      )}
       {vista === "corte" && <div className="rest-pos-placeholder"><FiDollarSign /><h2>Corte de caja</h2><p>Consulta y realiza el corte desde el módulo de reportes.</p></div>}
       {vista === "mas" && <div className="rest-pos-placeholder"><FiGrid /><h2>Más opciones</h2><p>Próximamente habrá más herramientas de punto de venta.</p></div>}
       {mensaje && <p className={`rest-order-message ${mensaje.startsWith("No ") || mensaje.includes("menor") ? "error" : ""}`}>{mensaje}</p>}
+      <PremiumFeatureModal
+        abierto={modalReservacionesPremium}
+        titulo="Reservaciones"
+        mensaje="Las reservaciones, el calendario avanzado y la asignación de mesas están disponibles con CajaLibre Premium."
+        textoSecundario="Ahora no"
+        onCerrar={() => setModalReservacionesPremium(false)}
+      />
       {historialDetalle && (
         <div className="rest-ingredient-backdrop" role="presentation" onClick={() => setHistorialDetalle(null)}>
           <section className="rest-ingredient-modal rest-history-detail" role="dialog" aria-modal="true" aria-labelledby="rest-history-detail-title" onClick={(event) => event.stopPropagation()}>
@@ -2092,7 +2116,7 @@ function ReservasView({ tenantId }) {
   const mesasDisponibles = useMemo(() => {
     const pisos = empresa?.restaurante?.pisos?.length
       ? empresa.restaurante.pisos
-      : [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 12 }];
+      : [{ id: "piso-1", nombre: "Piso 1", cantidadMesas: 10 }];
     return pisos.flatMap((piso) => Array.from(
       { length: Math.max(1, Number(piso.cantidadMesas || 1)) },
       (_, index) => ({
@@ -2237,6 +2261,8 @@ function ReservasView({ tenantId }) {
 
 function AdminView({ tenantId, actorNombre, empresaNombre }) {
   const navigate = useNavigate();
+  // El PDF basico esta disponible para todos; la hoja de arqueo es Premium.
+  const { puedeUsarArqueoCaja } = useAutorizacionActual();
   const [orders, setOrders] = useState([]);
   const [syncError, setSyncError] = useState("");
   const [downloadingCut, setDownloadingCut] = useState(false);
@@ -2316,6 +2342,7 @@ function AdminView({ tenantId, actorNombre, empresaNombre }) {
         fechaKey: summary.fechaKey,
         negocioNombre: empresaNombre,
         restaurante: { orders, config: operacionConfig },
+        incluirArqueo: puedeUsarArqueoCaja,
       });
     } catch (error) {
       setSyncError(error?.message || "No se pudo generar el corte del restaurante.");

@@ -1,0 +1,377 @@
+/* Pagina publica de aceptacion de la orden.
+   Se diseña para el telefono del cliente: ahi es donde se va a firmar.
+   Nada de barra lateral, nada de navegacion: una sola tarea de arriba abajo. */
+
+.ao-pagina{
+  min-height: 100dvh;
+  padding: clamp(14px, 4vw, 34px) clamp(14px, 4vw, 20px);
+  padding-top: calc(clamp(14px, 4vw, 34px) + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(clamp(24px, 6vw, 44px) + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+  margin: 0 auto;
+  background: linear-gradient(180deg, #f3f7fc 0%, #f8fafc 34%, #f6f9fb 100%);
+}
+
+.ao-centrada{ justify-content: center; align-items: center; }
+
+/* ---------------------------------------------------------------------------
+   Encabezado
+--------------------------------------------------------------------------- */
+
+.ao-encabezado{
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 16px 18px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.ao-encabezado > div{ flex: 1; min-width: 0; }
+
+.ao-logo{
+  width: 46px;
+  height: 46px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 11px;
+  object-fit: contain;
+  background: #fff;
+}
+
+.ao-negocio{
+  margin: 0;
+  color: var(--sv-tenue);
+  font-size: .76rem;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.ao-encabezado h1{
+  margin: 3px 0 0;
+  font-size: clamp(1.12rem, 4vw, 1.42rem);
+  line-height: 1.2;
+}
+
+.ao-folio{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding-left: 13px;
+  border-left: 1px solid var(--sv-linea);
+}
+
+.ao-folio small{ color: var(--sv-tenue); font-size: .66rem; letter-spacing: .09em; text-transform: uppercase; }
+.ao-folio strong{ font-family: var(--sv-display); font-size: .95rem; letter-spacing: -.01em; }
+
+/* ---------------------------------------------------------------------------
+   Tarjetas de contenido
+--------------------------------------------------------------------------- */
+
+.ao-tarjeta{
+  padding: 17px 18px;
+  border: 1px solid var(--sv-linea);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.ao-tarjeta h2{
+  margin: 0 0 13px;
+  font-family: var(--sv-display);
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--sv-tenue);
+}
+
+.ao-datos{ display: grid; gap: 11px; margin: 0; }
+
+.ao-datos > div{
+  display: grid;
+  grid-template-columns: minmax(118px, 34%) 1fr;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.ao-datos > div:last-child{ border-bottom: 0; padding-bottom: 0; }
+.ao-datos dt{ color: var(--sv-tenue); font-size: .82rem; }
+.ao-datos dd{ margin: 0; font-size: .88rem; font-weight: 600; overflow-wrap: anywhere; }
+
+/* El total es el dato que decide: se le da peso tipografico, no una caja de
+   color que compita con los botones. */
+.ao-total{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 2px solid var(--sv-azul-tinta);
+}
+
+.ao-total span{ color: var(--sv-tinta-suave); font-size: .82rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.ao-total strong{ font-family: var(--sv-display); font-size: clamp(1.4rem, 6vw, 1.85rem); letter-spacing: -.03em; }
+
+.ao-terminos{ display: grid; gap: 8px; margin: 0; padding-left: 17px; }
+.ao-terminos li{ color: var(--sv-tinta-suave); font-size: .84rem; line-height: 1.55; }
+
+/* ---------------------------------------------------------------------------
+   Formulario de aceptacion
+--------------------------------------------------------------------------- */
+
+.ao-tarjeta--firma{ display: flex; flex-direction: column; gap: 15px; }
+
+.ao-campo{ display: flex; flex-direction: column; gap: 6px; }
+
+.ao-campo > span{ color: var(--sv-tinta-suave); font-size: .82rem; font-weight: 650; }
+
+.ao-campo input,
+.ao-campo textarea{
+  width: 100%;
+  min-height: 46px;
+  padding: 11px 13px;
+  border: 1px solid var(--sv-linea-fuerte);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--sv-tinta);
+  font-family: inherit;
+  font-size: 1rem; /* 16px: evita que iOS haga zoom al enfocar. */
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.ao-campo input:focus-visible,
+.ao-campo textarea:focus-visible{
+  outline: 2px solid var(--sv-azul);
+  outline-offset: 0;
+  border-color: var(--sv-azul);
+}
+
+.ao-condiciones{
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid var(--sv-linea-fuerte);
+  border-radius: 11px;
+  background: var(--sv-lienzo-suave);
+  cursor: pointer;
+  transition: border-color .16s ease-out, background .16s ease-out;
+}
+
+.ao-condiciones:has(input:checked){
+  border-color: var(--sv-verde);
+  background: var(--tono-positivo-fondo);
+}
+
+.ao-condiciones input{
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--sv-verde);
+  cursor: pointer;
+}
+
+.ao-condiciones span{ font-size: .87rem; line-height: 1.5; }
+
+.ao-faltante{
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--tono-espera-borde);
+  border-radius: 9px;
+  background: var(--tono-espera-fondo);
+  color: var(--tono-espera-tinta);
+  font-size: .82rem;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------------
+   Botones
+
+   El principal ocupa el ancho completo en movil y va abajo a la derecha en
+   pantallas grandes. Rechazar nunca se disfraza de secundario invisible: es
+   una salida legitima y tiene que poder encontrarse.
+--------------------------------------------------------------------------- */
+
+.ao-acciones{ display: flex; flex-direction: column-reverse; gap: 9px; }
+
+.ao-btn{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: .95rem;
+  font-weight: 750;
+  letter-spacing: -.005em;
+  cursor: pointer;
+  transition: background .16s ease-out, border-color .16s ease-out,
+              color .16s ease-out, transform .16s ease-out, opacity .16s ease-out;
+}
+
+.ao-btn:disabled{ opacity: .45; cursor: not-allowed; }
+.ao-btn:not(:disabled):active{ transform: translateY(1px); }
+.ao-btn:focus-visible{ outline: 2px solid var(--sv-azul-tinta); outline-offset: 2px; }
+
+.ao-btn--aceptar{
+  border-color: var(--sv-verde-fuerte);
+  background: var(--sv-verde);
+  color: #fff;
+}
+
+.ao-btn--aceptar:not(:disabled):hover{ background: var(--sv-verde-fuerte); }
+
+.ao-btn--rechazar{
+  border-color: var(--sv-linea-fuerte);
+  background: #fff;
+  color: var(--sv-tinta-suave);
+}
+
+.ao-btn--rechazar:not(:disabled):hover{
+  border-color: var(--tono-negativo-borde);
+  color: var(--tono-negativo-tinta);
+}
+
+.ao-btn--rechazar-firme{
+  border-color: #a41919;
+  background: var(--tono-negativo-tinta);
+  color: #fff;
+}
+
+.ao-btn--suave{
+  border-color: var(--sv-linea-fuerte);
+  background: #fff;
+  color: var(--sv-tinta);
+}
+
+.ao-btn--suave:not(:disabled):hover{ background: var(--sv-lienzo-suave); }
+
+/* ---------------------------------------------------------------------------
+   Modales
+--------------------------------------------------------------------------- */
+
+.ao-modal{
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  background: rgba(8, 17, 32, .62);
+  animation: ao-fundido .18s ease-out;
+}
+
+.ao-modal-caja{
+  width: 100%;
+  max-width: 520px;
+  max-height: 88dvh;
+  overflow-y: auto;
+  padding: 22px 20px calc(22px + env(safe-area-inset-bottom, 0px));
+  border-radius: 20px 20px 0 0;
+  background: #fff;
+  animation: ao-sube .24s cubic-bezier(.16, 1, .3, 1);
+}
+
+.ao-modal-caja h2{
+  margin: 0 0 9px;
+  font-size: 1.16rem;
+  letter-spacing: -.02em;
+}
+
+.ao-modal-caja p{ margin: 0 0 7px; font-size: .9rem; line-height: 1.55; }
+.ao-modal-nota{ color: var(--sv-tenue) !important; font-size: .84rem !important; }
+
+.ao-modal-acciones{ display: flex; flex-direction: column-reverse; gap: 9px; margin-top: 18px; }
+
+.ao-motivos{ display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+
+.ao-motivo{
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 48px;
+  padding: 0 13px;
+  border: 1px solid var(--sv-linea-fuerte);
+  border-radius: 11px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .15s ease-out, background .15s ease-out;
+}
+
+.ao-motivo.es-activo{ border-color: var(--sv-azul-tinta); background: var(--tono-info-fondo); }
+.ao-motivo input{ width: 20px; height: 20px; margin: 0; accent-color: var(--sv-azul); cursor: pointer; }
+.ao-motivo span{ font-size: .88rem; }
+.ao-motivo:has(input:focus-visible){ outline: 2px solid var(--sv-azul); outline-offset: 2px; }
+
+/* ---------------------------------------------------------------------------
+   Avisos de resultado y carga
+--------------------------------------------------------------------------- */
+
+.ao-aviso{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 11px;
+  max-width: 460px;
+  padding: clamp(26px, 6vw, 38px) clamp(20px, 5vw, 30px);
+  border: 1px solid var(--sv-aviso-borde, var(--sv-linea));
+  border-radius: 18px;
+  background: #fff;
+  text-align: center;
+}
+
+.ao-aviso--exito{ --sv-aviso-borde: var(--tono-positivo-borde); --sv-aviso-tinta: var(--tono-positivo-tinta); }
+.ao-aviso--error{ --sv-aviso-borde: var(--tono-negativo-borde); --sv-aviso-tinta: var(--tono-negativo-tinta); }
+.ao-aviso--neutro{ --sv-aviso-borde: var(--sv-linea-fuerte); --sv-aviso-tinta: var(--sv-tinta-suave); }
+
+.ao-aviso-icono{ color: var(--sv-aviso-tinta); font-size: 38px; line-height: 1; }
+.ao-aviso h1{ margin: 0; font-size: 1.28rem; letter-spacing: -.02em; }
+.ao-aviso p{ margin: 0; color: var(--sv-tinta-suave); font-size: .9rem; line-height: 1.6; }
+.ao-aviso-pie{ color: var(--sv-tenue) !important; font-size: .82rem !important; }
+
+.ao-cargando{
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--sv-tinta-suave);
+  font-size: .92rem;
+}
+
+.ao-spinner{
+  width: 19px;
+  height: 19px;
+  border: 2px solid var(--sv-linea-fuerte);
+  border-top-color: var(--sv-azul);
+  border-radius: 50%;
+  animation: ao-gira .7s linear infinite;
+}
+
+@keyframes ao-gira{ to{ transform: rotate(360deg); } }
+@keyframes ao-fundido{ from{ opacity: 0; } to{ opacity: 1; } }
+@keyframes ao-sube{ from{ transform: translateY(24px); } to{ transform: none; } }
+
+@media (prefers-reduced-motion: reduce){
+  .ao-modal, .ao-modal-caja{ animation: none; }
+  .ao-spinner{ animation-duration: 1.6s; }
+}
+
+@media (min-width: 560px){
+  .ao-acciones{ flex-direction: row; justify-content: flex-end; }
+  .ao-acciones .ao-btn--aceptar{ flex: 1; }
+  .ao-modal{ align-items: center; padding: 20px; }
+  .ao-modal-caja{ border-radius: 18px; }
+  .ao-modal-acciones{ flex-direction: row; justify-content: flex-end; }
+  @keyframes ao-sube{ from{ transform: scale(.97); opacity: .6; } to{ transform: none; opacity: 1; } }
+}

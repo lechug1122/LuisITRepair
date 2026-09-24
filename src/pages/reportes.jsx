@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -37,8 +37,12 @@ import { filterItemsByTenant, getTenantCollectionQuery } from "../js/services/te
 import ModalEgresos from "../components/modal_egresos";
 import { imprimirTicketVenta, visualizarTicketVenta } from "../components/print_ticket_venta";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import PremiumBadge from "../components/PremiumBadge";
+import PremiumFeatureModal from "../components/PremiumFeatureModal";
+import { LIMITE_HISTORIAL_CORTES_GRATUITO } from "../js/services/plan_features";
 import { obtenerEfectivoNetoVenta } from "../js/services/efectivo_venta";
-import { generarExcelFacturaGlobal, generarExcelReporteNegocio } from "../js/services/excel_reporte_negocio";
+import CentroExportaciones from "../components/CentroExportaciones";
 import "../css/reportes.css";
 
 const money = (value) =>
@@ -216,11 +220,21 @@ const TIPO_EGRESO_META = {
 };
 
 export default function Reportes() {
-  const { empresa, serviciosHabilitados } = useEmpresaConfig();
+  const { empresa, serviciosHabilitados, logoEmpresa, tipoNegocioActivo } = useEmpresaConfig();
+  // Cerrar caja es basico; el arqueo detallado y su hoja PDF son Premium.
+  const {
+    puedeUsarArqueoCaja,
+    premiumStatusLoaded,
+    premiumState,
+    negocioId,
+    nombre: nombreUsuario,
+  } = useAutorizacionActual();
+  const esRestaurante = tipoNegocioActivo?.id === "restaurante";
+  const [mostrarCentroExportaciones, setMostrarCentroExportaciones] = useState(false);
+  const [avisoCortePremium, setAvisoCortePremium] = useState(false);
   const [ventas, setVentas] = useState([]);
   const [cuentasPorCobrar, setCuentasPorCobrar] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [generandoExcel, setGenerandoExcel] = useState("");
   const [cerrandoCaja, setCerrandoCaja] = useState(false);
   const [cajaCerradaHoy, setCajaCerradaHoy] = useState(false);
   const [mostrarModalCierre, setMostrarModalCierre] = useState(false);
@@ -264,12 +278,23 @@ export default function Reportes() {
     }
   });
 
+  const cargarHistorialCortes = useCallback(async () => {
+    try {
+      const data = await listarCortesCaja(
+        puedeUsarArqueoCaja ? null : LIMITE_HISTORIAL_CORTES_GRATUITO,
+      );
+      setCortesHistorial(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Error cargando historial de cortes:", error);
+      setCortesHistorial([]);
+    }
+  }, [puedeUsarArqueoCaja]);
+
   useEffect(() => {
     const bootstrapReportes = async () => {
       await Promise.allSettled([
         obtenerVentas(),
         cargarEstadoCorteHoy(),
-        cargarHistorialCortes(),
         cargarEgresosDia(),
         cargarNombresEmpleados(),
         cargarCuentasPorCobrar(),
@@ -280,6 +305,11 @@ export default function Reportes() {
       console.warn("[reportes] No se pudo completar la carga inicial:", error?.code || error);
     });
   }, []);
+
+  useEffect(() => {
+    if (!premiumStatusLoaded) return;
+    cargarHistorialCortes().catch(() => {});
+  }, [premiumStatusLoaded, cargarHistorialCortes]);
 
   const cargarCuentasPorCobrar = async () => {
     const snapshot = await getDocs(getTenantCollectionQuery("fiados"));
@@ -340,16 +370,6 @@ export default function Reportes() {
       console.error("Error cargando estado de corte:", error);
       setCajaCerradaHoy(false);
       setCorteHoyDetalle(null);
-    }
-  };
-
-  const cargarHistorialCortes = async () => {
-    try {
-      const data = await listarCortesCaja();
-      setCortesHistorial(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error("Error cargando historial de cortes:", error);
-      setCortesHistorial([]);
     }
   };
 
@@ -518,57 +538,13 @@ export default function Reportes() {
     }
   };
 
-  const generarReporteFacturaGlobal = async () => {
-    const fechaBase = fechaHasta ? new Date(`${fechaHasta}T12:00:00`) : new Date();
-    const year = fechaBase.getFullYear();
-    const month = fechaBase.getMonth();
-    const ventasMes = ventas
-      .filter((venta) => {
-        const fecha = toDate(venta?.fecha);
-        return fecha && fecha.getFullYear() === year && fecha.getMonth() === month;
-      })
-      .sort((a, b) => (toDate(a?.fecha)?.getTime() || 0) - (toDate(b?.fecha)?.getTime() || 0));
-
-    if (ventasMes.length === 0) {
-      alert("No hay ventas registradas en el mes seleccionado.");
-      return;
-    }
-
-    try {
-      setGenerandoExcel("factura");
-      await generarExcelFacturaGlobal({ empresa, ventas: ventasMes, fechaBase });
-    } catch (error) {
-      console.error("No se pudo generar el reporte para factura global:", error);
-      alert("No se pudo generar el reporte para factura global.");
-    } finally {
-      setGenerandoExcel("");
-    }
-  };
-
-  const handleGenerarExcel = async () => {
-    if (generandoExcel) return;
-    if (!ventasFiltradas.length) {
-      alert("No hay ventas en el periodo seleccionado para generar el reporte.");
-      return;
-    }
-    try {
-      setGenerandoExcel("ejecutivo");
-      await generarExcelReporteNegocio({ empresa, ventas: ventasFiltradas, fechaDesde, fechaHasta });
-    } catch (error) {
-      console.error("No se pudo generar el reporte de Excel:", error);
-      alert("No se pudo generar el reporte de Excel. Intenta nuevamente.");
-    } finally {
-      setGenerandoExcel("");
-    }
-  };
-
   const handleCorteCaja = async () => {
     if (cerrandoCaja) return;
     if (!fondoInicialValido) {
       alert("Captura un fondo inicial valido (0 o mayor) antes de cerrar.");
       return;
     }
-    if (hayDescuadre && (!descuadreConfirmado || !notasCorte.trim())) {
+    if (puedeUsarArqueoCaja && hayDescuadre && (!descuadreConfirmado || !notasCorte.trim())) {
       alert(
         "El efectivo contado no coincide con el esperado. Para cerrar con un descuadre, confirma el faltante o sobrante y documenta el motivo en Notas del corte.",
       );
@@ -578,12 +554,15 @@ export default function Reportes() {
     try {
       setCerrandoCaja(true);
       const res = await cerrarCajaHoy(ventas, {
-        efectivoContado: Number(totalDenominaciones || 0),
+        realizarArqueo: puedeUsarArqueoCaja,
+        efectivoContado: puedeUsarArqueoCaja ? Number(totalDenominaciones || 0) : undefined,
         fondoInicialCaja: Number(fondoInicialNum || 0),
-        denominaciones: DENOMINACIONES.map((valor) => ({
-          valor,
-          cantidad: Number(denominaciones[String(valor)] || 0),
-        })),
+        denominaciones: puedeUsarArqueoCaja
+          ? DENOMINACIONES.map((valor) => ({
+              valor,
+              cantidad: Number(denominaciones[String(valor)] || 0),
+            }))
+          : [],
         retiros: [],
         egresos: egresosValidos,
         cajero: {
@@ -591,8 +570,8 @@ export default function Reportes() {
           email: auth.currentUser?.email || "",
           nombre: currentCajeroNombre || "",
         },
-        notasCorte,
-        permitirDescuadre: descuadreConfirmado,
+        notasCorte: puedeUsarArqueoCaja ? notasCorte : "",
+        permitirDescuadre: puedeUsarArqueoCaja && descuadreConfirmado,
       });
       setCajaCerradaHoy(true);
       setCorteHoyDetalle(res.corte || null);
@@ -601,13 +580,18 @@ export default function Reportes() {
       if (res.yaCerrado) {
         alert("La caja de hoy ya estaba cerrada. Se descargara el PDF del corte.");
       } else {
-        alert("Caja cerrada correctamente. No se podran registrar mas ventas hoy.");
+        alert(
+          puedeUsarArqueoCaja
+            ? "Caja cerrada correctamente con arqueo. No se podran registrar mas ventas hoy."
+            : "Caja cerrada correctamente. Se descargara el PDF basico del corte.",
+        );
       }
 
       await generarPdfCorteCajaDia(ventas, {
         corte: res.corte || null,
         fechaKey: res?.corte?.fechaKey || ymd(new Date()),
         cuentasPorCobrar,
+        incluirArqueo: puedeUsarArqueoCaja,
       });
       setMostrarModalCierre(false);
     } catch (err) {
@@ -624,6 +608,7 @@ export default function Reportes() {
         corte: corteHoyDetalle || null,
         fechaKey: ymd(new Date()),
         cuentasPorCobrar,
+        incluirArqueo: puedeUsarArqueoCaja,
       });
       return;
     }
@@ -644,6 +629,7 @@ export default function Reportes() {
       corte: corte || null,
       fechaKey: key,
       cuentasPorCobrar,
+      incluirArqueo: puedeUsarArqueoCaja,
     });
   };
 
@@ -1185,23 +1171,21 @@ export default function Reportes() {
           <h1>Reportes</h1>
           <div className="reportes-header-actions">
 
-            <details className="excel-report-menu">
-              <summary className={`btn-excel-report ${generandoExcel || loading ? "is-disabled" : ""}`}>
-                <FiBarChart2 aria-hidden="true" />
-                <span>{generandoExcel ? "Generando Excel..." : "Generar Excel"}</span>
-                <FiChevronDown className="excel-menu-chevron" aria-hidden="true" />
-              </summary>
-              <div className="excel-report-options">
-                <button type="button" onClick={handleGenerarExcel} disabled={!!generandoExcel || loading}>
-                  <FiBarChart2 aria-hidden="true" />
-                  <span><strong>Reporte ejecutivo</strong><small>Periodo y filtros seleccionados</small></span>
-                </button>
-                <button type="button" onClick={generarReporteFacturaGlobal} disabled={!!generandoExcel || loading}>
-                  <FiFileText aria-hidden="true" />
-                  <span><strong>Factura global</strong><small>Mes de la fecha final seleccionada</small></span>
-                </button>
-              </div>
-            </details>
+            <button
+              type="button"
+              className={`btn-excel-report ${loading ? "is-disabled" : ""}`}
+              onClick={() => setMostrarCentroExportaciones((abierto) => !abierto)}
+              aria-expanded={mostrarCentroExportaciones}
+              aria-controls="centro-exportaciones"
+              disabled={loading}
+            >
+              <FiBarChart2 aria-hidden="true" />
+              <span>Generar Excel</span>
+              <FiChevronDown
+                className={`excel-menu-chevron ${mostrarCentroExportaciones ? "abierto" : ""}`}
+                aria-hidden="true"
+              />
+            </button>
 
             <button
               className="btn-refresh"
@@ -1229,12 +1213,31 @@ export default function Reportes() {
               className="btn-corte"
               type="button"
               onClick={handleBotonCorte}
-              disabled={cerrandoCaja}
+              disabled={cerrandoCaja || !premiumStatusLoaded}
+              title={premiumStatusLoaded ? undefined : "Estamos verificando tu plan"}
             >
               {cajaCerradaHoy ? "Descargar corte de hoy (PDF)" : "Cerrar caja de hoy + PDF"}
             </button>
           </div>
         </div>
+
+        {mostrarCentroExportaciones && (
+          <div id="centro-exportaciones">
+            <CentroExportaciones
+              premiumState={premiumState}
+              premiumStatusLoaded={premiumStatusLoaded}
+              negocioId={negocioId}
+              negocioNombre={empresa?.nombre || ""}
+              usuario={nombreUsuario}
+              logo={logoEmpresa}
+              esRestaurante={esRestaurante}
+              /* Las ventas ya estan en memoria: exportar no vuelve a leerlas. */
+              ventas={ventas}
+              limiteCortesFree={LIMITE_HISTORIAL_CORTES_GRATUITO}
+              periodoInicial={{ desde: fechaDesde, hasta: fechaHasta }}
+            />
+          </div>
+        )}
 
         {aperturaPendiente && (
           <div className="apertura-alert">
@@ -1576,6 +1579,18 @@ export default function Reportes() {
             </span>
           </div>
 
+          {!puedeUsarArqueoCaja && premiumStatusLoaded && (
+            <button
+              type="button"
+              className="historial-premium-notice"
+              onClick={() => setAvisoCortePremium(true)}
+            >
+              <span><PremiumBadge size="sm" /></span>
+              <strong>Tu plan muestra los {LIMITE_HISTORIAL_CORTES_GRATUITO} cortes mas recientes.</strong>
+              <small>Cambiate a Premium para consultar todo el historial y los arqueos detallados.</small>
+            </button>
+          )}
+
           <div className="historial-cortes-filtros">
             <input
               type="date"
@@ -1604,9 +1619,9 @@ export default function Reportes() {
                   <th>Cajero</th>
                   <th>Tickets</th>
                   <th>IVA</th>
-                  <th>Efectivo esperado</th>
-                  <th>Contado</th>
-                  <th>Diferencia</th>
+                  {puedeUsarArqueoCaja && <th>Efectivo esperado</th>}
+                  {puedeUsarArqueoCaja && <th>Contado</th>}
+                  {puedeUsarArqueoCaja && <th>Diferencia</th>}
                   <th>Documento</th>
                 </tr>
               </thead>
@@ -1629,19 +1644,23 @@ export default function Reportes() {
                       <span className="historial-pill">{Number(c?.resumen?.tickets || 0)} tickets</span>
                     </td>
                     <td>{money(c?.resumen?.iva || 0)}</td>
-                    <td>{money(c?.conteoEfectivo?.esperado || 0)}</td>
-                    <td>{c?.conteoEfectivo?.contado == null ? "-" : money(c?.conteoEfectivo?.contado)}</td>
-                    <td>
-                      {c?.conteoEfectivo?.diferencia == null ? (
-                        "-"
-                      ) : (
-                        <span
-                          className={`historial-diff ${getDiferenciaTone(c?.conteoEfectivo?.diferencia)}`}
-                        >
-                          {money(c?.conteoEfectivo?.diferencia)}
-                        </span>
-                      )}
-                    </td>
+                    {puedeUsarArqueoCaja && <td>{money(c?.conteoEfectivo?.esperado || 0)}</td>}
+                    {puedeUsarArqueoCaja && (
+                      <td>{c?.conteoEfectivo?.contado == null ? "-" : money(c?.conteoEfectivo?.contado)}</td>
+                    )}
+                    {puedeUsarArqueoCaja && (
+                      <td>
+                        {c?.conteoEfectivo?.diferencia == null ? (
+                          "-"
+                        ) : (
+                          <span
+                            className={`historial-diff ${getDiferenciaTone(c?.conteoEfectivo?.diferencia)}`}
+                          >
+                            {money(c?.conteoEfectivo?.diferencia)}
+                          </span>
+                        )}
+                      </td>
+                    )}
                     <td>
                       <button
                         type="button"
@@ -1833,7 +1852,7 @@ export default function Reportes() {
             <div className="corte-modal">
               <h2>Cerrar caja de hoy</h2>
               <p className="corte-modal-sub">
-                Completa el arqueo de caja. Al confirmar se cerrara el dia y se generara el PDF.
+                Al confirmar se cerrara el dia y se generara el PDF del corte.
               </p>
 
               <div className="conteo-caja-grid">
@@ -1848,17 +1867,19 @@ export default function Reportes() {
                   />
                 </div>
                 <div>
-                  <label>Ventas netas en efectivo</label>
-                  <div className="conteo-caja-value">{money(efectivoEsperadoHoy)}</div>
+                  <label>Tickets de hoy</label>
+                  <div className="conteo-caja-value">{ventasHoy.length}</div>
                 </div>
                 <div>
-                  <label>Efectivo esperado</label>
-                  <div className="conteo-caja-value">{money(cajaFinalEsperada)}</div>
+                  <label>Ventas totales</label>
+                  <div className="conteo-caja-value">{money(kpis.totalHoy)}</div>
                 </div>
               </div>
 
+              {puedeUsarArqueoCaja ? (
+                <>
               <div className="denominaciones-wrap">
-                <h4>Denominaciones</h4>
+                <h4>Arqueo por denominaciones</h4>
                 <div className="denominaciones-grid">
                   {DENOMINACIONES.map((valor) => (
                     <div key={`modal-den-${valor}`} className="den-item">
@@ -1910,6 +1931,40 @@ export default function Reportes() {
                     Confirmo que revisé el conteo y deseo registrar este descuadre.
                   </label>
                 </div>
+              )}
+
+              <div className="conteo-caja-notas">
+                <label>Notas del arqueo</label>
+                <input value={notasCorte} onChange={(e) => setNotasCorte(e.target.value)} />
+              </div>
+                </>
+              ) : (
+                <section className="arqueo-premium-shell" aria-label="Arqueo de caja Premium bloqueado">
+                  <div className="arqueo-premium-preview" aria-hidden="true">
+                    <h4>Arqueo por denominaciones</h4>
+                    <div className="denominaciones-grid">
+                      {[1000, 500, 200, 100, 50, 20].map((valor) => (
+                        <div key={`premium-preview-${valor}`} className="den-item">
+                          <label>{money(valor)}</label>
+                          <input type="number" disabled value="0" readOnly />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="conteo-caja-grid">
+                      <div><label>Efectivo esperado</label><div className="conteo-caja-value">$0.00</div></div>
+                      <div><label>Total contado</label><div className="conteo-caja-value">$0.00</div></div>
+                      <div><label>Diferencia</label><div className="conteo-caja-value">$0.00</div></div>
+                    </div>
+                  </div>
+                  <div className="arqueo-premium-lock">
+                    <PremiumBadge size="sm" />
+                    <strong>El arqueo de caja es para Premium</strong>
+                    <span>Si deseas realizar el arqueo y agregarlo al PDF, cambiate a Premium.</span>
+                    <button type="button" onClick={() => setAvisoCortePremium(true)}>
+                      Cambiarme a Premium
+                    </button>
+                  </div>
+                </section>
               )}
 
               <div className="retiros-wrap">
@@ -1966,17 +2021,12 @@ export default function Reportes() {
                 </div>
               </div>
 
-              <div className="conteo-caja-notas">
-                <label>Notas del corte</label>
-                <input value={notasCorte} onChange={(e) => setNotasCorte(e.target.value)} />
-              </div>
-
               <div className="corte-modal-actions">
                 <button
                   className="btn-corte"
                   type="button"
                   onClick={handleCorteCaja}
-                  disabled={cerrandoCaja || !cierreConDescuadreDocumentado}
+                  disabled={cerrandoCaja || (puedeUsarArqueoCaja && !cierreConDescuadreDocumentado)}
                 >
                   {cerrandoCaja ? "Cerrando..." : "Confirmar cierre y generar PDF"}
                 </button>
@@ -2064,6 +2114,15 @@ export default function Reportes() {
           </aside>
         )}
       </div>
+
+      <PremiumFeatureModal
+        abierto={avisoCortePremium}
+        titulo="El arqueo de caja es una funcion Premium"
+        mensaje={`El cierre basico y sus ultimos ${LIMITE_HISTORIAL_CORTES_GRATUITO} cortes siguen disponibles. Cambiate a Premium para contar denominaciones, detectar diferencias, incluir el arqueo en el PDF y consultar todo el historial.`}
+        textoPrincipal="Conocer Premium"
+        textoSecundario="Cancelar"
+        onCerrar={() => setAvisoCortePremium(false)}
+      />
     </Layout>
   );
 }

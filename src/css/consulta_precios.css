@@ -1,0 +1,48 @@
+.consulta-precios{display:flex;flex-direction:column;height:calc(100dvh - 80px);padding:16px 20px 18px;overflow:hidden;background:radial-gradient(ellipse at 50% 0%,#fff0dc 0%,#f6f8fc 60%);color:#17253a;font-family:inherit;box-sizing:border-box}
+.consulta-precios:fullscreen{height:100dvh;padding-top:16px}
+.consulta-toolbar{display:flex;flex:0 0 auto;justify-content:space-between;gap:16px;width:100%;max-width:1180px;margin:0 auto 12px}
+.consulta-toolbar a,.consulta-toolbar button{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;color:#526079;font:inherit;font-size:13px;font-weight:650;text-decoration:none;cursor:pointer}
+.consulta-toolbar a:hover,.consulta-toolbar button:hover{border-color:#fdba74;color:#9a3412;background:#fff7ed}
+.consulta-screen-notice{text-align:center;color:#64748b;font-size:14px}
+.consulta-card{display:flex;flex:1 1 auto;flex-direction:column;min-height:0;width:100%;max-width:1180px;margin:0 auto;overflow:hidden;border:1px solid #e4e9f1;border-top:4px solid #f97316;border-radius:24px;background:#fff;box-shadow:0 18px 60px #25344d0b}
+.consulta-header{flex:0 0 auto;padding:22px 44px 20px;text-align:center;background:linear-gradient(180deg,#fffcf7,#fff)}
+.consulta-negocio-nombre{display:block;max-width:100%;color:#17253a;font-size:clamp(20px,3.4vw,26px);font-weight:850;letter-spacing:-.3px;line-height:1.2;overflow-wrap:anywhere}
+.consulta-header h1{margin:12px 0 7px;font-size:clamp(22px,4vw,30px);font-weight:800;letter-spacing:-.7px}
+.consulta-header>p{margin:0;color:#64748b;font-size:15px}.consulta-barcode{display:block;width:118px;height:38px;margin:14px auto;color:#26354c}
+.consulta-form{max-width:580px;margin:0 auto;text-align:left}.consulta-form>label{display:block;margin-bottom:7px;color:#34435b;font-size:12px;font-weight:750}
+.consulta-input-row{display:flex;gap:10px}.consulta-input-row input{min-width:0;flex:1;min-height:50px;padding:12px 15px;border:1px solid #dbe3ef;border-radius:12px;background:#f8fafc;color:#17253a;font:inherit;font-size:16px;letter-spacing:.3px;box-sizing:border-box}
+.consulta-input-row input::placeholder{color:#8692a6;font-size:14px}.consulta-input-row button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:50px;padding:12px 23px;border:0;border-radius:12px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;font:inherit;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 4px 12px #ea580c20;white-space:nowrap}
+.consulta-input-row button:hover{background:#c2410c}.consulta-input-row input:focus-visible,.consulta-precios a:focus-visible,.consulta-precios button:focus-visible{outline:3px solid #fdba74;outline-offset:3px}
+.consulta-form>small{display:block;margin-top:8px;color:#8b97aa;font-size:11px;text-align:center}
+.consulta-result{position:relative;display:flex;flex:1 1 auto;flex-direction:column;align-items:center;justify-content:center;min-height:0;overflow:auto;padding:24px 40px;border-top:1px solid #edf0f5;text-align:center;box-sizing:border-box}
+/* Marca de agua con el logo del negocio: vive en un pseudo-elemento para no
+   robarle clics ni lectura al resultado que se muestra encima. */
+.consulta-result-logo::before{content:"";position:absolute;inset:18px;background-image:var(--consulta-logo);background-repeat:no-repeat;background-position:center;background-size:contain;opacity:.07;pointer-events:none;z-index:0}
+.consulta-result-logo>*{position:relative;z-index:1}
+.consulta-result-label{display:inline-flex;align-items:center;gap:7px;color:#168052;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}
+.consulta-product-name{max-width:100%;margin:14px 0 4px;font-size:clamp(23px,3.4vw,42px);line-height:1.25;font-weight:800;letter-spacing:-.6px;overflow-wrap:anywhere}
+.consulta-presentation{max-width:680px;margin:4px 0 0;color:#74829a;font-size:clamp(15px,1.3vw,19px);overflow-wrap:anywhere}
+.consulta-price-label{margin-top:18px;color:#8390a4;font-size:11px;font-weight:800;letter-spacing:2px;text-transform:uppercase}
+.consulta-price{margin:3px 0 9px;color:#15263e;font-size:clamp(44px,7.4vw,102px);line-height:1.15;font-weight:850;letter-spacing:-2.5px;max-width:100%;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.consulta-stock{display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;background:#eefbf4;color:#158051;font-size:12px;font-weight:700}.consulta-stock i{width:6px;height:6px;border-radius:50%;background:#22a66b}.consulta-stock-empty{background:#fff7ed;color:#b45309}.consulta-stock-empty i{background:#f59e0b}
+.consulta-promo{display:flex;flex-direction:column;align-items:center;gap:8px;width:min(430px,100%);margin-top:16px;padding:15px 18px;border:1px solid #fed7aa;border-radius:14px;background:linear-gradient(135deg,#fff7ed,#fffbeb);color:#9a3412;box-sizing:border-box}
+.consulta-promo>span{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:850;letter-spacing:1.7px;text-transform:uppercase}.consulta-promo>strong{font-size:23px;font-weight:850;overflow-wrap:anywhere}.consulta-promo>small{font-size:12px;line-height:1.5}
+.consulta-promo-notice{max-width:400px;color:#92400e;font-size:12px}.consulta-result-code{margin-top:14px;color:#9aa5b7;font-size:11px;overflow-wrap:anywhere}
+.consulta-empty{max-width:430px;color:#8190a6}.consulta-empty>svg{width:33px;height:33px;padding:16px;border:1px solid #e5ebf3;border-radius:19px;background:#f8fafc;box-sizing:content-box}.consulta-empty h2{margin:18px 0 9px;color:#495a73;font-size:20px;font-weight:750}.consulta-empty p{margin:0;font-size:14px;line-height:1.6;overflow-wrap:anywhere}.consulta-empty small{display:block;margin-top:10px;font-size:12px}.consulta-error h2{color:#b45309}
+.consulta-spinner{display:inline-block;width:35px;height:35px;border:3px solid #ffedd5;border-top-color:#f97316;border-radius:50%;animation:consulta-spin .8s linear infinite}@keyframes consulta-spin{to{transform:rotate(360deg)}}
+.consulta-footer{flex:0 0 auto;padding:14px 25px 13px;border-top:1px solid #edf0f5;background:#fcfdff;text-align:center}.consulta-footer p{margin:0;color:#52637b;font-size:13px;font-weight:650}.consulta-countdown{max-width:260px;margin:9px auto 0}.consulta-countdown>span{display:block;height:3px;margin:0 0 8px;border-radius:4px;background:linear-gradient(to right,#fdba74 var(--consulta-progress),#edf0f5 var(--consulta-progress))}.consulta-countdown small{color:#8b97aa;font-size:11px}
+@media(max-width:600px){.consulta-precios{padding:10px 12px 12px}.consulta-toolbar{gap:8px;margin-bottom:12px}.consulta-toolbar a,.consulta-toolbar button{padding:7px 9px;font-size:11px}.consulta-card{border-radius:18px}.consulta-header{padding:24px 18px 20px}.consulta-header>p{font-size:13px}.consulta-input-row{flex-direction:column;gap:9px}.consulta-input-row button{width:100%;min-height:45px}.consulta-input-row input{width:100%}.consulta-result{padding:20px 16px}.consulta-promo>strong{font-size:21px}.consulta-footer{padding:12px 16px}.consulta-result-logo::before{inset:12px}}
+/* A partir de tablet la tarjeta se parte en dos: a la izquierda se captura el
+   codigo, a la derecha se muestra el precio. Asi se aprovecha el ancho de la
+   pantalla en vez de dejar el resultado debajo del pliegue. Solo se toca
+   padding-inline para no pelear con las consultas por alto de mas abajo. */
+@media(min-width:900px){
+  .consulta-card{display:grid;grid-template-columns:minmax(330px,1fr) 1.2fr;grid-template-rows:1fr auto}
+  .consulta-header{display:flex;flex-direction:column;justify-content:center;grid-row:1/3;min-height:0;overflow:auto;padding-inline:36px;border-right:1px solid #edf0f5}
+  .consulta-result{grid-column:2;grid-row:1;border-top:0}
+  .consulta-footer{grid-column:2;grid-row:2}
+}
+@media(max-height:760px){.consulta-barcode{display:none}.consulta-price{font-size:clamp(40px,6vw,70px)}.consulta-product-name{margin:10px 0 4px;font-size:clamp(21px,2.6vw,32px)}.consulta-price-label{margin-top:12px}.consulta-header{padding-block:16px}.consulta-header h1{margin:8px 0 4px;font-size:clamp(19px,2.6vw,24px)}.consulta-header>p{font-size:13px}.consulta-form>small{margin-top:6px}.consulta-footer{padding-block:11px 10px}}
+@media(max-height:620px){.consulta-header>p,.consulta-form>label{display:none}.consulta-price{font-size:clamp(34px,5vw,54px)}.consulta-result{padding-block:16px}.consulta-negocio-nombre{font-size:clamp(17px,2.2vw,21px)}}
+@media(min-width:900px) and (min-height:560px){.consulta-barcode{display:block}}
+@media(prefers-reduced-motion:reduce){.consulta-spinner{animation:none}}

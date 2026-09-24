@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { FiArrowRight, FiStar } from "react-icons/fi";
 import useServiciosConfig from "../hooks/useServiciosConfig";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
+import useAutorizacionActual from "../hooks/useAutorizacionActual";
+import PremiumFeatureModal from "../components/PremiumFeatureModal";
 import {
   actualizarServiciosConfig,
   DEFAULT_TERMINOS_SERVICIO,
@@ -34,17 +37,22 @@ function createTermRow(text = "") {
 
 export default function ConfiguracionServicios() {
   const { serviciosHabilitados } = useEmpresaConfig();
+  const { isPremium, premiumState } = useAutorizacionActual();
+  const [avisoPremium, setAvisoPremium] = useState(false);
   const {
     precioRevision,
     catalogoCanjes,
-    habilitarCanjes,
     hojaServicioHabilitada,
-    terminosServicio,
     politicaRetardo,
+    trackingEnabled: trackingConfigurado,
+    config,
+    terminosPersonalizados,
+    loading,
   } = useServiciosConfig();
 
   const [precio, setPrecio] = useState(String(precioRevision || 0));
-  const [canjesDeshabilitados, setCanjesDeshabilitados] = useState(habilitarCanjes);
+  const [canjesDeshabilitados, setCanjesDeshabilitados] = useState(config.habilitarCanjes);
+  const [personalizarTerminos, setPersonalizarTerminos] = useState(terminosPersonalizados);
   const [emitirHojaServicio, setEmitirHojaServicio] = useState(hojaServicioHabilitada);
   const [retardoHabilitado, setRetardoHabilitado] = useState(!!politicaRetardo?.habilitado);
   const [retardoDias, setRetardoDias] = useState(String(politicaRetardo?.diasTolerancia ?? 3));
@@ -63,7 +71,8 @@ export default function ConfiguracionServicios() {
   const [canjes, setCanjes] = useState([createCanjeRow()]);
   const [terminos, setTerminos] = useState(DEFAULT_TERMINOS_SERVICIO.map((item) => createTermRow(item)));
 
-  const mostrarCanjesEnVistas = !canjesDeshabilitados;
+  const mostrarCanjesEnVistas = isPremium && !canjesDeshabilitados;
+  const puedeEditarTerminos = isPremium && personalizarTerminos && emitirHojaServicio;
   const hojaServicioActiva = !!emitirHojaServicio;
   const politicaRetardoPreview = describeRetardoConfig({
     habilitado: retardoHabilitado,
@@ -79,8 +88,12 @@ export default function ConfiguracionServicios() {
   }, [precioRevision]);
 
   useEffect(() => {
-    setCanjesDeshabilitados(habilitarCanjes);
-  }, [habilitarCanjes]);
+    setCanjesDeshabilitados(config.habilitarCanjes);
+  }, [config.habilitarCanjes]);
+
+  useEffect(() => {
+    setPersonalizarTerminos(terminosPersonalizados);
+  }, [terminosPersonalizados]);
 
   useEffect(() => {
     setEmitirHojaServicio(hojaServicioHabilitada);
@@ -88,11 +101,11 @@ export default function ConfiguracionServicios() {
 
   useEffect(() => {
     setTerminos(
-      Array.isArray(terminosServicio) && terminosServicio.length
-        ? terminosServicio.map((item) => createTermRow(item))
+      Array.isArray(config.hojaServicio?.terminos) && config.hojaServicio.terminos.length
+        ? config.hojaServicio.terminos.map((item) => createTermRow(item))
         : DEFAULT_TERMINOS_SERVICIO.map((item) => createTermRow(item)),
     );
-  }, [terminosServicio]);
+  }, [config.hojaServicio?.terminos]);
 
   useEffect(() => {
     setRetardoHabilitado(!!politicaRetardo?.habilitado);
@@ -154,14 +167,17 @@ export default function ConfiguracionServicios() {
   );
 
   const updateCanje = (id, patch) => {
+    if (!mostrarCanjesEnVistas) return;
     setCanjes((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   };
 
   const addCanje = () => {
+    if (!mostrarCanjesEnVistas) return;
     setCanjes((prev) => [...prev, createCanjeRow()]);
   };
 
   const removeCanje = (id) => {
+    if (!mostrarCanjesEnVistas) return;
     setCanjes((prev) => {
       const next = prev.filter((item) => item.id !== id);
       return next.length ? next : [createCanjeRow()];
@@ -169,14 +185,17 @@ export default function ConfiguracionServicios() {
   };
 
   const updateTerm = (id, text) => {
+    if (!puedeEditarTerminos) return;
     setTerminos((prev) => prev.map((item) => (item.id === id ? { ...item, text } : item)));
   };
 
   const addTerm = () => {
+    if (!puedeEditarTerminos) return;
     setTerminos((prev) => [...prev, createTermRow("")]);
   };
 
   const removeTerm = (id) => {
+    if (!puedeEditarTerminos) return;
     setTerminos((prev) => {
       const next = prev.filter((item) => item.id !== id);
       return next.length ? next : [createTermRow(DEFAULT_TERMINOS_SERVICIO[0])];
@@ -184,7 +203,7 @@ export default function ConfiguracionServicios() {
   };
 
   const handleGuardar = async () => {
-    if (guardando) return;
+    if (guardando || loading || premiumState === "loading") return;
 
     try {
       setGuardando(true);
@@ -192,6 +211,7 @@ export default function ConfiguracionServicios() {
 
       await actualizarServiciosConfig({
         precioRevision: moneyInput(precio),
+        trackingEnabled: trackingConfigurado,
         habilitarCanjes: canjesDeshabilitados,
         catalogoCanjes: canjes
           .filter((item) => item.productId)
@@ -207,6 +227,7 @@ export default function ConfiguracionServicios() {
           }),
         hojaServicio: {
           habilitada: hojaServicioActiva,
+          terminosPersonalizados: personalizarTerminos,
           terminos: terminos.map((item) => item.text.trim()).filter(Boolean),
           retardo: {
             habilitado: retardoHabilitado,
@@ -290,7 +311,7 @@ export default function ConfiguracionServicios() {
                 type="button"
                 className="cfg-ticket-test-btn"
                 onClick={addTerm}
-                disabled={!hojaServicioActiva}
+                disabled={!puedeEditarTerminos}
               >
                 + Agregar termino
               </button>
@@ -323,6 +344,27 @@ export default function ConfiguracionServicios() {
               <span>{hojaServicioActiva ? "PDF automatico activo" : "PDF automatico apagado"}</span>
             </div>
 
+            <div className="cfg-ticket-block cfg-ticket-block-wide">
+              <label className="cfg-check-row">
+                <input type="checkbox" checked={isPremium && personalizarTerminos}
+                  disabled={!isPremium || loading}
+                  onChange={(event) => setPersonalizarTerminos(event.target.checked)} />
+                <span>Modificar y agregar términos y condiciones · Premium</span>
+              </label>
+              <small className="cfg-pos-help">Al desactivar esta opción se usan los términos predeterminados. Tus términos personalizados se conservan.</small>
+              {!isPremium && (
+                <button
+                  type="button"
+                  className="cfg-premium-inline cfg-premium-block"
+                  onClick={() => setAvisoPremium(true)}
+                >
+                  <span className="cfg-premium-inline-badge"><FiStar aria-hidden="true" /> Premium</span>
+                  <span className="cfg-premium-inline-text">Redacta tus propios términos y condiciones</span>
+                  <span className="cfg-premium-inline-cta">Conocer Premium <FiArrowRight aria-hidden="true" /></span>
+                </button>
+              )}
+            </div>
+
             <div className="cfg-servicios-terms-list">
               {terminos.map((item, index) => (
                 <div key={item.id} className="cfg-servicios-term-row">
@@ -335,7 +377,7 @@ export default function ConfiguracionServicios() {
                         value={item.text}
                         onChange={(e) => updateTerm(item.id, e.target.value)}
                         placeholder="Escribe la condicion del servicio"
-                        disabled={!hojaServicioActiva}
+                        disabled={!puedeEditarTerminos}
                       />
                     </label>
                   </div>
@@ -344,7 +386,7 @@ export default function ConfiguracionServicios() {
                     type="button"
                     className="cfg-servicios-remove-btn"
                     onClick={() => removeTerm(item.id)}
-                    disabled={!hojaServicioActiva}
+                    disabled={!puedeEditarTerminos}
                   >
                     Quitar
                   </button>
@@ -442,7 +484,7 @@ export default function ConfiguracionServicios() {
             type="button"
             className="cfg-ticket-test-btn"
             onClick={addCanje}
-            disabled={canjesDeshabilitados}
+            disabled={!mostrarCanjesEnVistas}
           >
             + Agregar canje
           </button>
@@ -453,10 +495,11 @@ export default function ConfiguracionServicios() {
           <label className="cfg-check-row">
             <input
               type="checkbox"
-              checked={canjesDeshabilitados}
-              onChange={(e) => setCanjesDeshabilitados(e.target.checked)}
+              checked={mostrarCanjesEnVistas}
+              disabled={!isPremium || loading}
+              onChange={(e) => setCanjesDeshabilitados(!e.target.checked)}
             />
-            <span>Deshabilitar canjes y ocultar su vista en POS y Clientes</span>
+            <span>Activar canjes y programa de puntos · Premium</span>
           </label>
 
           <div className="cfg-empresa-preview">
@@ -464,10 +507,22 @@ export default function ConfiguracionServicios() {
             {mostrarCanjesEnVistas ? "Visible en POS y Clientes" : "Oculto en POS y Clientes"}
           </div>
 
-              <small className="cfg-pos-help">
-                Cuando actives este ajuste, el catalogo se conserva pero los puntos, metas y canjes
-                dejan de mostrarse. La busqueda y el registro de clientes siguen disponibles.
-              </small>
+          <small className="cfg-pos-help">
+            Cuando desactives este ajuste, el catálogo se conserva pero los puntos, metas y canjes
+            dejan de mostrarse. La búsqueda y el registro de clientes siguen disponibles.
+          </small>
+
+          {!isPremium && (
+            <button
+              type="button"
+              className="cfg-premium-inline cfg-premium-block"
+              onClick={() => setAvisoPremium(true)}
+            >
+              <span className="cfg-premium-inline-badge"><FiStar aria-hidden="true" /> Premium</span>
+              <span className="cfg-premium-inline-text">Premia a tus clientes con puntos y canjes</span>
+              <span className="cfg-premium-inline-cta">Conocer Premium <FiArrowRight aria-hidden="true" /></span>
+            </button>
+          )}
         </div>
 
         <div className="cfg-servicios-canje-summary">
@@ -488,7 +543,7 @@ export default function ConfiguracionServicios() {
                     <select
                       value={item.productId}
                       onChange={(e) => updateCanje(item.id, { productId: e.target.value })}
-                      disabled={canjesDeshabilitados}
+                      disabled={!mostrarCanjesEnVistas}
                     >
                       <option value="">Seleccionar producto</option>
                       {productosDisponibles.map((productoItem) => (
@@ -507,7 +562,7 @@ export default function ConfiguracionServicios() {
                       value={item.puntos}
                       onChange={(e) => updateCanje(item.id, { puntos: integerInput(e.target.value) })}
                       placeholder="Ej. 250"
-                      disabled={canjesDeshabilitados}
+                      disabled={!mostrarCanjesEnVistas}
                     />
                   </label>
 
@@ -516,7 +571,7 @@ export default function ConfiguracionServicios() {
                       type="checkbox"
                       checked={item.activo !== false}
                       onChange={(e) => updateCanje(item.id, { activo: e.target.checked })}
-                      disabled={canjesDeshabilitados}
+                      disabled={!mostrarCanjesEnVistas}
                     />
                     Activo
                   </label>
@@ -540,7 +595,7 @@ export default function ConfiguracionServicios() {
                   type="button"
                   className="cfg-servicios-remove-btn"
                   onClick={() => removeCanje(item.id)}
-                  disabled={canjesDeshabilitados}
+                  disabled={!mostrarCanjesEnVistas}
                 >
                   Quitar
                 </button>
@@ -561,7 +616,7 @@ export default function ConfiguracionServicios() {
           type="button"
           className="cfg-ticket-test-btn"
           onClick={handleGuardar}
-          disabled={guardando}
+          disabled={guardando || loading || premiumState === "loading"}
         >
           {guardando ? "Guardando..." : "Guardar cambios"}
         </button>
@@ -569,6 +624,10 @@ export default function ConfiguracionServicios() {
         {mensaje ? <small className="cfg-pos-saved">{mensaje}</small> : null}
         {errorDetalle ? <small className="cfg-pos-help">Detalle: {errorDetalle}</small> : null}
       </div>
+
+      <PremiumFeatureModal abierto={avisoPremium} titulo="Canjes y t?rminos personalizados"
+        mensaje="Activa canjes y modifica los t?rminos y condiciones de tus servicios con CajaLibre Premium."
+        onCerrar={() => setAvisoPremium(false)} />
     </section>
   );
 }

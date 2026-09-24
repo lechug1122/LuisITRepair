@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import "../css/pos.css";
 import useAutorizacionActual from "../hooks/useAutorizacionActual";
 import useEmpresaConfig from "../hooks/useEmpresaConfig";
-import { FiBarChart2, FiChevronLeft, FiChevronRight, FiClipboard, FiClock, FiCreditCard, FiFileText, FiGift, FiPackage, FiPlusCircle, FiShoppingCart, FiTag, FiUsers } from "react-icons/fi";
+import usePOSFeatures from "../hooks/usePOSFeatures";
+import { FiBarChart2, FiChevronLeft, FiChevronRight, FiClipboard, FiClock, FiCreditCard, FiFileText, FiGift, FiPackage, FiPlusCircle, FiSearch, FiShoppingCart, FiTag, FiUsers } from "react-icons/fi";
 
 export default function Layout({ children, restaurantMode = false }) {
   const MOBILE_WORKSPACE_BREAKPOINT = 900;
@@ -12,6 +13,7 @@ export default function Layout({ children, restaurantMode = false }) {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { puede } = useAutorizacionActual();
+  const funcionesPOS = usePOSFeatures();
   const { nombreEmpresa, tipoNegocioActivo } = useEmpresaConfig();
   const modoRestaurante = restaurantMode || tipoNegocioActivo?.id === "restaurante";
   const esRutaPOS = String(location.pathname || "").toLowerCase() === "/pos";
@@ -71,6 +73,13 @@ export default function Layout({ children, restaurantMode = false }) {
       active: location.pathname === "/productos",
     },
     {
+      label: "Consulta precios",
+      path: "/consulta-precios",
+      icon: FiSearch,
+      permissionsAny: ["productos.ver", "ventas.pos"],
+      active: location.pathname === "/consulta-precios",
+    },
+    {
       label: "Clientes",
       path: esRutaPOS && !modoRestaurante ? "/POS?vista=clientes" : "/clientes",
       icon: FiUsers,
@@ -111,6 +120,9 @@ export default function Layout({ children, restaurantMode = false }) {
       label: "Reportes", path: "/reportes", icon: FiBarChart2, permission: "reportes.ver", active: location.pathname === "/reportes",},
   ];
   const menuItems = (modoRestaurante && (esRutaPOS || esRutaReportes) ? menuItemsRestaurante : menuItemsBase)
+    .filter((item) => (item.path !== "/fiado" || funcionesPOS.fiado)
+      && (item.path !== "/promociones" || funcionesPOS.promocionesDescuentos)
+      && (item.path !== "/consulta-precios" || funcionesPOS.consultaPrecios))
     .filter((item) => (
       (!item.permission || puede(item.permission))
       && (!item.permissionsAny || item.permissionsAny.some((permission) => puede(permission)))

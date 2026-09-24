@@ -1,3 +1,4 @@
+import { readPOSFeatureConfig } from "./pos_feature_config.js";
 import { addDoc, doc, getDocs, onSnapshot, runTransaction, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "../../initializer/firebase";
 import { getCollectionRef, getDocRef, withTenantData } from "./tenant";
@@ -32,6 +33,7 @@ export async function buscarFiadosPorTelefono(telefono = "") {
 }
 
 export async function crearFiado(data = {}) {
+  if (!readPOSFeatureConfig().fiado) throw new Error("Las ventas fiadas requieren Premium y estar activadas.");
   const monto = numero(data.monto);
   const limiteCredito = Math.max(monto, numero(data.limiteCredito));
   const diasCredito = Math.max(1, Math.floor(Number(data.diasCredito) || 30));
@@ -60,6 +62,7 @@ export async function crearFiado(data = {}) {
 }
 
 export async function registrarVentaFiada(venta = {}, cuenta = {}) {
+  if (!readPOSFeatureConfig().fiado) throw new Error("Las ventas fiadas requieren Premium y estar activadas.");
   const ventaRef = doc(getCollectionRef("ventas"));
   const fiadoRef = doc(getCollectionRef(COLLECTION));
   const monto = numero(cuenta.monto);
@@ -97,6 +100,7 @@ export async function registrarVentaFiada(venta = {}, cuenta = {}) {
 }
 
 export async function registrarPagoFiado(id, { monto, metodo = "Efectivo" } = {}) {
+  if (!readPOSFeatureConfig().fiado) throw new Error("Las ventas fiadas requieren Premium y estar activadas.");
   const abono = numero(monto);
   if (abono <= 0) throw new Error("Ingresa un monto válido.");
   const ref = getDocRef(COLLECTION, id);
@@ -118,6 +122,7 @@ export async function registrarPagoFiado(id, { monto, metodo = "Efectivo" } = {}
 }
 
 export async function actualizarNotasFiado(id, notas) {
+  if (!readPOSFeatureConfig().fiado) throw new Error("Las ventas fiadas requieren Premium y estar activadas.");
   await updateDoc(getDocRef(COLLECTION, id), {
     notas: String(notas || "").trim(),
     actualizadoISO: fechaISO(),

@@ -1,84 +1,40 @@
-export const ESTADOS = [
-  // 0
-  { key: "pendiente", label: "Pendiente", step: 0, color: "#f59e0b" },
+// Compatibilidad: la tabla de estados se declara ahora en
+// `servicio_estados.js`, que es la fuente unica. Este archivo solo conserva la
+// forma `{ key, label, step, color }` que espera el ticket impreso.
+//
+// Antes vivia aqui una tercera lista de estados, distinta de la de
+// `status_map.js` y de la del rastreador: el mismo servicio podia aparecer
+// como "Cotizacion" en el ticket y como "Pendiente" en el detalle. Quien
+// escriba codigo nuevo deberia importar de `servicio_estados.js`.
 
-  // 1
-  { key: "revision", label: "En revisión", step: 1, color: "#3b82f6" },
+import {
+  ESTADOS_SERVICIO,
+  getEstadoServicio,
+  normalizarEstadoServicio,
+} from "./servicio_estados.js";
+import { statusInfo } from "../utils/status_map.js";
 
-  // 2
-  { key: "diagnostico", label: "Diagnóstico", step: 2, color: "#2563eb" },
+export const ESTADOS = ESTADOS_SERVICIO.map((estado) => ({
+  key: estado.key,
+  label: estado.label,
+  step: estado.orden,
+  color: statusInfo(estado.key).color,
+}));
 
-  // 3
-  { key: "cotizacion", label: "Cotización", step: 3, color: "#0ea5e9" },
-
-  // 4
-  { key: "espera_refaccion", label: "Esperando refacción", step: 4, color: "#a855f7" },
-
-  // 5
-  { key: "reparacion", label: "En reparación", step: 5, color: "#8b5cf6" },
-
-  // 6
-  { key: "pruebas", label: "En pruebas", step: 6, color: "#14b8a6" },
-
-  // 7
-  { key: "listo", label: "Listo para entregar", step: 7, color: "#22c55e" },
-
-  // 8
-  { key: "finalizado", label: "Finalizado", step: 8, color: "#16a34a" },
-
-  // 9
-  { key: "entregado", label: "Entregado", step: 9, color: "#15803d" },
-
-  // extra (no es parte del avance normal)
-  { key: "cancelado", label: "Cancelado", step: 99, color: "#ef4444" },
-];
-
-// Normaliza texto a key
-export function normalizarEstado(raw) {
-  const s = (raw || "").toLowerCase().trim();
-
-  // cancelado
-  if (s.includes("cancel")) return "cancelado";
-
-  // entregado
-  if (s.includes("entreg")) return "entregado";
-
-  // finalizado / terminado
-  if (s.includes("finaliz") || s.includes("terminad") || s.includes("complet")) return "finalizado";
-
-  // listo
-  if (s.includes("listo") || s.includes("list")) return "listo";
-
-  // pruebas
-  if (s.includes("prueb") || s.includes("test")) return "pruebas";
-
-  // reparación / arreglando
-  if (s.includes("repara") || s.includes("arregl") || s.includes("fix")) return "reparacion";
-
-  // esperando refacción / refacciones / piezas
-  if (s.includes("refacc") || s.includes("pieza") || s.includes("espera")) return "espera_refaccion";
-
-  // cotización / presupuesto / precio
-  if (s.includes("cotiz") || s.includes("presup") || s.includes("precio")) return "cotizacion";
-
-  // diagnóstico
-  if (s.includes("diagn")) return "diagnostico";
-
-  // revisión / revisando
-  if (s.includes("revisi") || s.includes("revisando")) return "revision";
-
-  // pendiente
-  if (s.includes("pend")) return "pendiente";
-
-  return "pendiente";
-}
+/** Texto libre -> clave canonica. */
+export const normalizarEstado = normalizarEstadoServicio;
 
 export function getEstadoInfo(raw) {
-  const key = normalizarEstado(raw);
-  return ESTADOS.find((e) => e.key === key) || ESTADOS[0];
+  const estado = getEstadoServicio(raw);
+  return {
+    key: estado.key,
+    label: estado.label,
+    step: estado.orden,
+    color: statusInfo(estado.key).color,
+  };
 }
 
-// Útil para tu select (ya viene ordenado por step)
+/** Ya viene ordenado por avance del servicio. */
 export function getEstadosOrdenados() {
   return [...ESTADOS].sort((a, b) => a.step - b.step);
 }
